@@ -19,6 +19,18 @@ class ChangelogValidatorTest {
     @TempDir
     Path tempDir;
 
+    private static String master(String changeSets) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
+                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+                %s
+                </databaseChangeLog>
+                """.formatted(changeSets);
+    }
+
     /**
      * A file whose name does not start with a three-digit, zero-padded prefix
      * is reported as invalid, while correctly prefixed files (using either
@@ -76,17 +88,5 @@ class ChangelogValidatorTest {
         List<Path> orphaned = ChangelogValidator.findOrphanedSqlFiles(changes);
 
         assertEquals(List.of(), orphaned);
-    }
-
-    private static String master(String changeSets) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(changeSets);
     }
 }
