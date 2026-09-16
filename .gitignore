@@ -30,3 +30,8 @@ target/
 .idea/
 *.iml
 .vscode/
+
+# Beads / Dolt files
+.beads/
+.dolt/
+.beads-credential-key
