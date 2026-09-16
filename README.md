@@ -10,13 +10,14 @@ A collection of test logic to validate Liquibase changelogs and changesets.
 
 ## Using the library
 
-The library is published to GitHub Packages on every push to `main`:
+The library is published to GitHub Packages from a `v*` tag (for example
+`v0.1.0`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -29,9 +30,6 @@ packages. Add the repository to the consuming POM:
     <repository>
         <id>github</id>
         <url>https://maven.pkg.github.com/eyupmiduck/liquibase_validation</url>
-        <snapshots>
-            <enabled>true</enabled>
-        </snapshots>
     </repository>
 </repositories>
 ```
@@ -54,6 +52,15 @@ token with the `read:packages` scope is required):
 Before a consuming repository's `GITHUB_TOKEN` can read the package, grant
 that repository read access under the package's **Manage Actions access**
 settings.
+
+## Releasing
+
+1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
+2. Merge to `main`.
+3. Push a matching tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`.
+
+The `Publish` workflow fails if the tag does not equal `v` + the POM version.
+Consumer POMs must then be updated to the new version explicitly.
 
 ## Building
 
