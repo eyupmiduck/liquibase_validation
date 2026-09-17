@@ -8,14 +8,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Deque;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -46,16 +39,6 @@ public final class ChangelogValidator {
     }
 
     /**
-     * A changeset whose id does not follow the {@code NNN-name} convention.
-     *
-     * @param changelogFile the changelog file that declares the changeset
-     * @param id the offending id, or an empty string when the attribute is
-     *           missing
-     */
-    public record InvalidChangeSet(Path changelogFile, String id) {
-    }
-
-    /**
      * Finds {@code .sql} files under {@code changelogRoot} whose file name does
      * not start with a three-digit, zero-padded integer followed by {@code -}
      * or {@code _} (for example {@code 001-create.sql}).
@@ -82,8 +65,8 @@ public final class ChangelogValidator {
      * Finds changesets in the changelog graph rooted at {@code masterChangelog}
      * whose id does not follow the {@code NNN-name} convention.
      *
-     * @param changelogRoot the changelog root, used to resolve includes that
-     *                      are not relative to the changelog file
+     * @param changelogRoot   the changelog root, used to resolve includes that
+     *                        are not relative to the changelog file
      * @param masterChangelog the master changelog file to traverse
      * @return the invalidly named changesets, sorted by file then id
      * @throws IOException if a changelog file cannot be read
@@ -111,7 +94,7 @@ public final class ChangelogValidator {
      * reachable from {@code masterChangelog} references via a {@code <sqlFile>}
      * element.
      *
-     * @param changelogRoot the changelog directory to scan
+     * @param changelogRoot   the changelog directory to scan
      * @param masterChangelog the master changelog file to traverse
      * @return the orphaned SQL files, relative to {@code changelogRoot}
      * @throws IOException if a changelog file cannot be read
@@ -199,5 +182,15 @@ public final class ChangelogValidator {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to parse " + changelogFile, e);
         }
+    }
+
+    /**
+     * A changeset whose id does not follow the {@code NNN-name} convention.
+     *
+     * @param changelogFile the changelog file that declares the changeset
+     * @param id            the offending id, or an empty string when the attribute is
+     *                      missing
+     */
+    public record InvalidChangeSet(Path changelogFile, String id) {
     }
 }
