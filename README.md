@@ -1,5 +1,7 @@
 # liquibase_validation
 
+[![codecov](https://codecov.io/gh/eyupmiduck/liquibase_validation/branch/main/graph/badge.svg)](https://codecov.io/gh/eyupmiduck/liquibase_validation)
+
 A collection of test logic to validate Liquibase changelogs and changesets.
 
 ## Contents
