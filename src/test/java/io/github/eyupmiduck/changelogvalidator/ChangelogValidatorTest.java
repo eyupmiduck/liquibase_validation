@@ -54,6 +54,28 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * SQL files under a {@code functions} or {@code procedures} directory (at
+     * any depth) are routine bodies and are exempt from the naming rule, while
+     * other SQL files are still checked.
+     */
+    @Test
+    void exemptsRoutineDirectoriesFromNaming() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path functions = Files.createDirectories(changes.resolve("functions"));
+        Files.writeString(functions.resolve("alter_table.sql"), "");
+        Path routineRollback = Files.createDirectories(functions.resolve("rollback"));
+        Files.writeString(routineRollback.resolve("alter_table-rollback.sql"), "");
+        Path procedures = Files.createDirectories(changes.resolve("procedures"));
+        Files.writeString(procedures.resolve("do_thing.sql"), "");
+        Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
+        Files.writeString(sqlChanges.resolve("bad.sql"), "");
+
+        List<Path> invalid = ChangelogValidator.findInvalidlyNamedSqlFiles(changes);
+
+        assertEquals(List.of(Path.of("sql_changes/bad.sql")), invalid);
+    }
+
+    /**
      * Changesets reachable through an include are checked by id; ids without a
      * three-digit prefix and changesets missing an id are reported, and
      * correctly named ones are not.
@@ -134,6 +156,54 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * A SQL file referenced as the body of a {@code createProcedure} element is
+     * not orphaned, while an unreferenced routine body is.
+     */
+    @Test
+    void referencesRoutineBodiesViaCreateProcedurePath() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path functions = Files.createDirectories(changes.resolve("functions"));
+        Files.writeString(functions.resolve("alter_table.sql"), "");
+        Files.writeString(functions.resolve("orphan_function.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="functions.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("functions.xml"), databaseChangeLog("""
+                <changeSet id="005-create-functions" author="test">
+                    <createProcedure path="functions/alter_table.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        List<Path> orphaned = ChangelogValidator.findOrphanedSqlFiles(changes, master);
+
+        assertEquals(List.of(Path.of("functions/orphan_function.sql")), orphaned);
+    }
+
+    /**
+     * A {@code createFunction} body is followed too, and a path with
+     * {@code relativeToChangelogFile="false"} resolves against the changelog
+     * root rather than the changelog file.
+     */
+    @Test
+    void followsCreateFunctionPathRelativeToChangelogRoot() throws IOException {
+        Path root = Files.createDirectories(tempDir.resolve("changelog"));
+        Path functions = Files.createDirectories(root.resolve("functions"));
+        Files.writeString(functions.resolve("alter_table.sql"), "");
+        Path master = root.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="functions.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(root.resolve("functions.xml"), databaseChangeLog("""
+                <changeSet id="005-create-functions" author="test">
+                    <createFunction path="functions/alter_table.sql" relativeToChangelogFile="false"/>
+                </changeSet>
+                """));
+
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(root, master));
+    }
+
+    /**
      * A cycle of includes is traversed once and does not loop forever.
      */
     @Test
@@ -167,6 +237,7 @@ class ChangelogValidatorTest {
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
                     <sqlFile/>
+                    <createProcedure/>
                 </changeSet>
                 """));
 
