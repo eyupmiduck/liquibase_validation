@@ -136,6 +136,52 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * findSqlFiles lists every {@code .sql} file under the root, relative to
+     * it and sorted, ignoring non-SQL files.
+     */
+    @Test
+    void listsEverySqlFileRelativeToRoot() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
+        Files.writeString(changes.resolve("002-b.sql"), "");
+        Files.writeString(changes.resolve("001-a.sql"), "");
+        Files.writeString(sqlChanges.resolve("003-c.sql"), "");
+        Files.writeString(changes.resolve("readme.txt"), "");
+
+        List<Path> sqlFiles = ChangelogValidator.findSqlFiles(changes);
+
+        assertEquals(List.of(
+                Path.of("001-a.sql"),
+                Path.of("002-b.sql"),
+                Path.of("sql_changes/003-c.sql")), sqlFiles);
+    }
+
+    /**
+     * findReferencedSqlFiles lists only the SQL files the changelog graph
+     * rooted at the master references.
+     */
+    @Test
+    void listsOnlyReferencedSqlFiles() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
+        Files.writeString(sqlChanges.resolve("001-referenced.sql"), "");
+        Files.writeString(sqlChanges.resolve("002-orphan.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile path="sql_changes/001-referenced.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        List<Path> referenced = ChangelogValidator.findReferencedSqlFiles(changes, master);
+
+        assertEquals(List.of(Path.of("sql_changes/001-referenced.sql")), referenced);
+    }
+
+    /**
      * Includes and SQL references with {@code relativeToChangelogFile="false"}
      * are resolved against the changelog root rather than the including file.
      */

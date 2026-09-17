@@ -135,10 +135,7 @@ public final class ChangelogValidator {
      */
     public static List<Path> findOrphanedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
-        Set<Path> referenced = new HashSet<>();
-        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            referenced.addAll(referencedSqlFiles(root, changelogFile));
-        }
+        Set<Path> referenced = new HashSet<>(findReferencedSqlFiles(root, masterChangelog));
 
         List<Path> orphaned = new ArrayList<>();
         for (Path sqlFile : findSqlFiles(root)) {
@@ -146,8 +143,31 @@ public final class ChangelogValidator {
                 orphaned.add(sqlFile);
             }
         }
-        orphaned.sort(Path::compareTo);
         return orphaned;
+    }
+
+    /**
+     * Finds the {@code .sql} files referenced by the changelog graph rooted at
+     * {@code masterChangelog}, relative to {@code changelogRoot}. Callers can
+     * use this to assert that the graph references content, so an orphan check
+     * cannot pass while traversing nothing.
+     *
+     * @param changelogRoot   the changelog root, used to resolve references
+     *                        that are not relative to the changelog file
+     * @param masterChangelog the master changelog file to traverse
+     * @return the referenced SQL files, relative to {@code changelogRoot},
+     * sorted
+     * @throws IOException if a changelog file cannot be read
+     */
+    public static List<Path> findReferencedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
+        Path root = changelogRoot.toAbsolutePath().normalize();
+        Set<Path> referenced = new HashSet<>();
+        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
+            referenced.addAll(referencedSqlFiles(root, changelogFile));
+        }
+        List<Path> result = new ArrayList<>(referenced);
+        result.sort(Path::compareTo);
+        return result;
     }
 
     /**
@@ -180,13 +200,25 @@ public final class ChangelogValidator {
         return List.copyOf(visited);
     }
 
-    private static Set<Path> findSqlFiles(Path root) throws IOException {
-        Set<Path> result = new HashSet<>();
+    /**
+     * Finds every {@code .sql} file under {@code changelogRoot}, relative to
+     * that root. Callers can use this to assert that validation saw content.
+     *
+     * @param changelogRoot the changelog directory to scan
+     * @return the SQL files, relative to {@code changelogRoot}, sorted
+     * @throws IOException if the directory cannot be read
+     */
+    public static List<Path> findSqlFiles(Path changelogRoot) throws IOException {
+        Path root = changelogRoot.toAbsolutePath().normalize();
+        List<Path> result = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".sql"))
-                    .forEach(p -> result.add(root.relativize(p).normalize()));
+                    .map(root::relativize)
+                    .map(Path::normalize)
+                    .forEach(result::add);
         }
+        result.sort(Path::compareTo);
         return result;
     }
 
