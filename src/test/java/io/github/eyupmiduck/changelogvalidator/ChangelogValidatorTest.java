@@ -54,9 +54,9 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * SQL files under a {@code functions} or {@code procedures} directory (at
-     * any depth) are routine bodies and are exempt from the naming rule, while
-     * other SQL files are still checked.
+     * SQL files under a routine directory ({@code functions}, {@code procedures},
+     * or their {@code -rollback} variants, at any depth) are exempt from the
+     * naming rule, while other SQL files are still checked.
      */
     @Test
     void exemptsRoutineDirectoriesFromNaming() throws IOException {
@@ -65,8 +65,12 @@ class ChangelogValidatorTest {
         Files.writeString(functions.resolve("alter_table.sql"), "");
         Path routineRollback = Files.createDirectories(functions.resolve("rollback"));
         Files.writeString(routineRollback.resolve("alter_table-rollback.sql"), "");
+        Path functionsRollback = Files.createDirectories(changes.resolve("functions-rollback"));
+        Files.writeString(functionsRollback.resolve("alter_table-rollback.sql"), "");
         Path procedures = Files.createDirectories(changes.resolve("procedures"));
         Files.writeString(procedures.resolve("do_thing.sql"), "");
+        Path proceduresRollback = Files.createDirectories(changes.resolve("procedures-rollback"));
+        Files.writeString(proceduresRollback.resolve("do_thing-rollback.sql"), "");
         Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("bad.sql"), "");
 

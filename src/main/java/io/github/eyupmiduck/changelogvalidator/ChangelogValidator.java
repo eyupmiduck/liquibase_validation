@@ -24,8 +24,9 @@ import java.util.stream.Stream;
  * external body of a {@code <createProcedure>} (or {@code <createFunction>})
  * element through its {@code path} attribute. Stored-routine bodies are usually
  * named after the routine rather than with an {@code NNN-} prefix, so SQL files
- * under a {@code functions} or {@code procedures} directory are exempt from the
- * naming rule while still being checked for references.
+ * under a stored-routine directory ({@code functions}, {@code procedures}, or
+ * their {@code -rollback} variants) are exempt from the naming rule while still
+ * being checked for references.
  */
 public final class ChangelogValidator {
 
@@ -52,7 +53,8 @@ public final class ChangelogValidator {
      * Directory names whose SQL files are routine bodies and are therefore
      * exempt from the {@code NNN-} naming rule.
      */
-    private static final List<String> ROUTINE_DIRECTORIES = List.of("functions", "procedures");
+    private static final List<String> ROUTINE_DIRECTORIES =
+            List.of("functions", "procedures", "functions-rollback", "procedures-rollback");
 
     private ChangelogValidator() {
     }
@@ -61,8 +63,8 @@ public final class ChangelogValidator {
      * Finds {@code .sql} files under {@code changelogRoot} whose file name does
      * not start with a three-digit, zero-padded integer followed by {@code -}
      * or {@code _} (for example {@code 001-create.sql}). Files under a
-     * {@code functions} or {@code procedures} directory are routine bodies and
-     * are exempt.
+     * stored-routine directory (see {@link #ROUTINE_DIRECTORIES}) are routine
+     * bodies and are exempt.
      *
      * @param changelogRoot the changelog directory to scan
      * @return the invalidly named SQL files, relative to {@code changelogRoot}

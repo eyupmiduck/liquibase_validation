@@ -11,8 +11,8 @@ A collection of test logic to validate Liquibase changelogs and changesets.
   and finds invalidly named changeSets and SQL files as well as orphaned SQL
   files. SQL is recognised both in `<sqlFile>` elements and as the external
   body of a `<createProcedure>`/`<createFunction>` element; files under a
-  `functions` or `procedures` directory are exempt from the `NNN-` SQL naming
-  rule.
+  routine directory (`functions`, `procedures`, or their `-rollback` variants)
+  are exempt from the `NNN-` SQL naming rule.
 
 ## Using the library
 
