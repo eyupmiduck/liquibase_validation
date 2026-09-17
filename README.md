@@ -6,9 +6,10 @@ A collection of test logic to validate Liquibase changelogs and changesets.
 
 ## Contents
 
-- `io.github.eyupmiduck.changelogvalidator.ChangelogValidator` — finds
-  invalidly named changelog files and orphaned SQL files in a changelog
-  directory.
+- `io.github.eyupmiduck.changelogvalidator.ChangelogValidator` — traverses a
+  changelog graph from its master file, following nested `<include>` elements,
+  and finds invalidly named changeSets and SQL files as well as orphaned SQL
+  files.
 
 ## Using the library
 
