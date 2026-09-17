@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/eyupmiduck/liquibase_validation/security/advisories/new
+    about: Report security issues privately. Please do not open a public issue.
+  - name: Usage and setup
+    url: https://github.com/eyupmiduck/liquibase_validation/blob/main/README.md
+    about: How to consume the library and authenticate to GitHub Packages.
