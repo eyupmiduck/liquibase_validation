@@ -19,6 +19,13 @@ import java.util.stream.Stream;
  * {@code <include>} elements form the changelog graph. Only changesets and SQL
  * files referenced by that graph are considered valid; SQL files no XML in the
  * graph references are reported as orphaned.
+ *
+ * <p>SQL files are referenced either by a {@code <sqlFile>} element or as the
+ * external body of a {@code <createProcedure>} (or {@code <createFunction>})
+ * element through its {@code path} attribute. Stored-routine bodies are usually
+ * named after the routine rather than with an {@code NNN-} prefix, so SQL files
+ * under a {@code functions} or {@code procedures} directory are exempt from the
+ * naming rule while still being checked for references.
  */
 public final class ChangelogValidator {
 
@@ -35,13 +42,27 @@ public final class ChangelogValidator {
      */
     private static final Pattern SQL_FILE_NAME = Pattern.compile("\\d{3}[-_].+\\.sql");
 
+    /**
+     * Change types that load SQL from an external file through a {@code path}
+     * attribute.
+     */
+    private static final List<String> SQL_REFERENCE_ELEMENTS = List.of("sqlFile", "createProcedure", "createFunction");
+
+    /**
+     * Directory names whose SQL files are routine bodies and are therefore
+     * exempt from the {@code NNN-} naming rule.
+     */
+    private static final List<String> ROUTINE_DIRECTORIES = List.of("functions", "procedures");
+
     private ChangelogValidator() {
     }
 
     /**
      * Finds {@code .sql} files under {@code changelogRoot} whose file name does
      * not start with a three-digit, zero-padded integer followed by {@code -}
-     * or {@code _} (for example {@code 001-create.sql}).
+     * or {@code _} (for example {@code 001-create.sql}). Files under a
+     * {@code functions} or {@code procedures} directory are routine bodies and
+     * are exempt.
      *
      * @param changelogRoot the changelog directory to scan
      * @return the invalidly named SQL files, relative to {@code changelogRoot}
@@ -53,12 +74,22 @@ public final class ChangelogValidator {
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .filter(p -> !isRoutineSqlFile(root, p))
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
                     .forEach(invalid::add);
         }
         invalid.sort(Path::compareTo);
         return invalid;
+    }
+
+    private static boolean isRoutineSqlFile(Path root, Path sqlFile) {
+        for (Path segment : root.relativize(sqlFile)) {
+            if (ROUTINE_DIRECTORIES.contains(segment.toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -91,8 +122,9 @@ public final class ChangelogValidator {
 
     /**
      * Finds {@code .sql} files under {@code changelogRoot} that no changelog XML
-     * reachable from {@code masterChangelog} references via a {@code <sqlFile>}
-     * element.
+     * reachable from {@code masterChangelog} references, either via a
+     * {@code <sqlFile>} element or as the external body of a
+     * {@code <createProcedure>} or {@code <createFunction>} element.
      *
      * @param changelogRoot   the changelog directory to scan
      * @param masterChangelog the master changelog file to traverse
@@ -103,7 +135,7 @@ public final class ChangelogValidator {
         Path root = changelogRoot.toAbsolutePath().normalize();
         Set<Path> referenced = new HashSet<>();
         for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            referenced.addAll(sqlFileReferences(root, changelogFile));
+            referenced.addAll(referencedSqlFiles(root, changelogFile));
         }
 
         List<Path> orphaned = new ArrayList<>();
@@ -156,20 +188,22 @@ public final class ChangelogValidator {
         return result;
     }
 
-    private static Set<Path> sqlFileReferences(Path root, Path changelogFile) {
+    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile) {
         Set<Path> result = new HashSet<>();
         Document document = parse(changelogFile);
-        NodeList sqlFiles = document.getElementsByTagName("sqlFile");
-        for (int i = 0; i < sqlFiles.getLength(); i++) {
-            Element element = (Element) sqlFiles.item(i);
-            String path = element.getAttribute("path");
-            if (path.isBlank()) {
-                continue;
+        for (String elementName : SQL_REFERENCE_ELEMENTS) {
+            NodeList elements = document.getElementsByTagName(elementName);
+            for (int i = 0; i < elements.getLength(); i++) {
+                Element element = (Element) elements.item(i);
+                String path = element.getAttribute("path");
+                if (path.isBlank()) {
+                    continue;
+                }
+                boolean relativeToChangelogFile =
+                        "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
+                Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
+                result.add(root.relativize(base.resolve(path).normalize()));
             }
-            boolean relativeToChangelogFile =
-                    "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
-            Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
-            result.add(root.relativize(base.resolve(path).normalize()));
         }
         return result;
     }
