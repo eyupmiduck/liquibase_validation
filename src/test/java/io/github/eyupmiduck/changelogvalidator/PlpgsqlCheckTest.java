@@ -15,11 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Exercises {@link PlpgsqlCheck} against a real PostgreSQL with the
@@ -90,6 +86,10 @@ class PlpgsqlCheckTest {
         if (postgres != null) {
             postgres.stop();
         }
+    }
+
+    private static ByteArrayInputStream stream(String yaml) {
+        return new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -189,9 +189,5 @@ class PlpgsqlCheckTest {
 
         assertEquals("s.f:7: warning: msg", finding.describe());
         assertEquals("s.f warning: msg", new PlpgsqlCheck.AllowedFinding("s", "f", "warning", null, "msg").describe());
-    }
-
-    private static ByteArrayInputStream stream(String yaml) {
-        return new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8));
     }
 }

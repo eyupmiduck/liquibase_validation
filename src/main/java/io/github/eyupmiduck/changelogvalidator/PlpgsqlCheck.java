@@ -178,6 +178,10 @@ public final class PlpgsqlCheck {
     public record AllowedFinding(String schema, String function, String level,
                                  String statement, String message) {
 
+        private static boolean matches(String expected, String actual) {
+            return expected == null || expected.equals(actual);
+        }
+
         /**
          * Returns whether this entry accepts the given finding.
          *
@@ -199,10 +203,6 @@ public final class PlpgsqlCheck {
          */
         public String describe() {
             return schema + "." + function + " " + level + ": " + message;
-        }
-
-        private static boolean matches(String expected, String actual) {
-            return expected == null || expected.equals(actual);
         }
     }
 
