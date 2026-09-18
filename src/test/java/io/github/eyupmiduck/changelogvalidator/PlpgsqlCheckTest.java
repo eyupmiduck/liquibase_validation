@@ -57,6 +57,8 @@ class PlpgsqlCheckTest {
                         RETURN missing_column + 1;
                     END;
                     $$""");
+            // A non-PL/pgSQL function must be skipped, not checked.
+            statement.execute("CREATE FUNCTION checked.sql_language() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$");
         }
     }
 
@@ -167,12 +169,27 @@ class PlpgsqlCheckTest {
     }
 
     /**
-     * loadWhitelist rejects a document that is not a list of mappings.
+     * Overlapping entries are all marked as used, so a finding matched by more
+     * than one entry does not leave the other entries stale.
+     */
+    @Test
+    void overlappingEntriesAreNotStale() throws Exception {
+        PlpgsqlCheck.Report report = PlpgsqlCheck.check(connection, List.of("checked"), List.of(
+                new PlpgsqlCheck.AllowedFinding("checked", "warned", null, null, null),
+                new PlpgsqlCheck.AllowedFinding("checked", null, null, null, null)));
+
+        assertTrue(report.isEmpty());
+    }
+
+    /**
+     * loadWhitelist rejects a document that is not a list of mappings, and an
+     * entry that sets none of the recognised keys.
      */
     @Test
     void rejectsMalformedWhitelist() {
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("schema: x")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- just-a-string")));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- schemas: misspelled")));
     }
 
     /**

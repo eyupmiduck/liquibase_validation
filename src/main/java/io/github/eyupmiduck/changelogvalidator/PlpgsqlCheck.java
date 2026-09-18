@@ -1,6 +1,8 @@
 package io.github.eyupmiduck.changelogvalidator;
 
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,11 +46,13 @@ public final class PlpgsqlCheck {
                        (issue).statement, (issue).message
                 FROM pg_catalog.pg_proc AS p
                 JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+                JOIN pg_catalog.pg_language AS l ON l.oid = p.prolang
                 CROSS JOIN LATERAL plpgsql_check_function_tb(
                         p.oid::regprocedure, all_warnings => true
                     ) AS issue
                 WHERE n.nspname = ANY (?)
                     AND p.prokind = 'f'
+                    AND l.lanname = 'plpgsql'
                 ORDER BY 1, 2, 3
                 """)) {
             statement.setArray(1, connection.createArrayOf("text", names));
@@ -90,7 +94,6 @@ public final class PlpgsqlCheck {
                 if (allowed.get(i).matches(finding)) {
                     accepted = true;
                     matched[i] = true;
-                    break;
                 }
             }
             if (!accepted) {
@@ -110,14 +113,17 @@ public final class PlpgsqlCheck {
     /**
      * Reads an allow-list from a YAML document: a list of mappings with
      * {@code schema}, {@code function}, {@code level}, {@code statement} and
-     * {@code message} keys (any other keys are ignored).
+     * {@code message} keys (any other keys are ignored). Each entry must set at
+     * least one of those keys, so a misspelled entry cannot silently become a
+     * catch-all.
      *
      * @param input the YAML document
      * @return the accepted findings
-     * @throws IOException if the document is not a list of mappings
+     * @throws IOException if the document is not a list of mappings, or an
+     *                     entry sets none of the recognised keys
      */
     public static List<AllowedFinding> loadWhitelist(InputStream input) throws IOException {
-        Object loaded = new Yaml().load(input);
+        Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(input);
         if (!(loaded instanceof List<?> entries)) {
             throw new IOException("plpgsql_check whitelist must be a YAML list");
         }
@@ -127,12 +133,18 @@ public final class PlpgsqlCheck {
             if (!(item instanceof Map<?, ?> entry)) {
                 throw new IOException("plpgsql_check whitelist entries must be mappings");
             }
-            allowed.add(new AllowedFinding(
+            AllowedFinding finding = new AllowedFinding(
                     asString(entry.get("schema")),
                     asString(entry.get("function")),
                     asString(entry.get("level")),
                     asString(entry.get("statement")),
-                    asString(entry.get("message"))));
+                    asString(entry.get("message")));
+            if (finding.schema() == null && finding.function() == null && finding.level() == null
+                    && finding.statement() == null && finding.message() == null) {
+                throw new IOException("plpgsql_check whitelist entries must set at least one of "
+                        + "schema, function, level, statement or message");
+            }
+            allowed.add(finding);
         }
         return allowed;
     }
