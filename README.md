@@ -22,13 +22,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.8.0`), and each artifact version is immutable:
+`v0.8.1`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.8.0</version>
+    <version>0.8.1</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -94,7 +94,7 @@ The allow-list is YAML; each entry names any of `schema`, `function`, `level`,
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.8.0 && git push origin v0.8.0`.
+3. Push a matching tag, e.g. `git tag v0.8.1 && git push origin v0.8.1`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.
