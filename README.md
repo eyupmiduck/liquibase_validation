@@ -18,17 +18,23 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
   entries. The database must have the `plpgsql_check` extension installed.
+- `io.github.eyupmiduck.changelogvalidator.AuditColumnsCheck` — checks the
+  audit-column convention on a set of schemas: every base table has
+  `created_at` and `updated_at`, both `timestamptz NOT NULL DEFAULT now()`, with
+  an enabled `BEFORE UPDATE ... FOR EACH ROW` trigger. A behavioral probe can
+  verify on a real row that an `UPDATE` refreshes `updated_at` and preserves
+  `created_at`, rolling the change back.
 
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.10.0`), and each artifact version is immutable:
+`v0.11.0`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.10.0</version>
+    <version>0.11.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -93,11 +99,40 @@ The allow-list is YAML; each entry names any of `schema`, `function`, `level`,
   message: text type variable is not sanitized
 ```
 
+## Audit columns
+
+`AuditColumnsCheck` enforces a project-wide audit-column convention. The catalog
+check reports every base table that is missing `created_at`/`updated_at`, has
+the wrong type, is nullable, does not default to `now()`, or lacks an enabled
+`BEFORE UPDATE ... FOR EACH ROW` trigger:
+
+```java
+List<AuditColumnsCheck.Violation> violations =
+        AuditColumnsCheck.findViolations(connection, List.of("my_schema"));
+// violations is empty when every table complies
+```
+
+The behavioral probe verifies the trigger actually works on a real row: it
+updates one row's `updated_at` to a sentinel in the past and reads it back, so a
+working trigger overwrites the sentinel and leaves `created_at` alone. The
+update is rolled back, and a caller's in-flight transaction is preserved (the
+probe uses a savepoint when the connection is not in autocommit mode):
+
+```java
+AuditColumnsCheck.probeUpdate(connection, "my_schema", "my_table")
+        .ifPresent(probe -> {
+            // probe.passed() is true when updated_at was refreshed and
+            // created_at was preserved
+        });
+```
+
+An empty table has no row to probe, so the result is empty.
+
 ## Releasing
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.10.0 && git push origin v0.10.0`.
+3. Push a matching tag, e.g. `git tag v0.11.0 && git push origin v0.11.0`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.
