@@ -106,6 +106,27 @@ public final class ChangelogValidator {
      */
     public static List<InvalidChangeSet> findInvalidlyNamedChangeSets(Path changelogRoot, Path masterChangelog)
             throws IOException {
+        return findInvalidlyNamedChangeSets(changelogRoot, masterChangelog, CHANGE_SET_ID);
+    }
+
+    /**
+     * Finds changesets in the changelog graph rooted at {@code masterChangelog}
+     * whose id does not match {@code changeSetIdPattern}.
+     *
+     * <p>Projects whose stored-routine changesets are named after the routine
+     * rather than with an {@code NNN-} prefix can pass a pattern that also
+     * accepts those ids, while the default {@link #findInvalidlyNamedChangeSets(Path, Path)}
+     * keeps the {@code NNN-name} rule.
+     *
+     * @param changelogRoot      the changelog root, used to resolve includes
+     *                           that are not relative to the changelog file
+     * @param masterChangelog    the master changelog file to traverse
+     * @param changeSetIdPattern the pattern a changeSet id must match
+     * @return the invalidly named changesets, sorted by file then id
+     * @throws IOException if a changelog file cannot be read
+     */
+    public static List<InvalidChangeSet> findInvalidlyNamedChangeSets(Path changelogRoot, Path masterChangelog,
+                                                                      Pattern changeSetIdPattern) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         List<InvalidChangeSet> invalid = new ArrayList<>();
         for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
@@ -113,7 +134,7 @@ public final class ChangelogValidator {
             NodeList changeSets = document.getElementsByTagName("changeSet");
             for (int i = 0; i < changeSets.getLength(); i++) {
                 String id = ((Element) changeSets.item(i)).getAttribute("id");
-                if (!CHANGE_SET_ID.matcher(id).matches()) {
+                if (!changeSetIdPattern.matcher(id).matches()) {
                     invalid.add(new InvalidChangeSet(changelogFile, id));
                 }
             }

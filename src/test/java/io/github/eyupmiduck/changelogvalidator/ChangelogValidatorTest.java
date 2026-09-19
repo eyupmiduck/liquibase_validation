@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -104,6 +105,34 @@ class ChangelogValidatorTest {
         assertEquals(List.of(
                 new ChangelogValidator.InvalidChangeSet(changesXml, ""),
                 new ChangelogValidator.InvalidChangeSet(changesXml, "create-example")), invalid);
+    }
+
+    /**
+     * A caller-supplied id pattern can accept stored-routine changesets named
+     * after the routine while still flagging ids that match neither rule.
+     */
+    @Test
+    void acceptsCustomChangeSetIdPattern() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="functions.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("functions.xml"), databaseChangeLog("""
+                <changeSet id="function-ddl_utils.set_not_null" author="test"/>
+                <changeSet id="function-ddl_utils_lib.set_not_null" author="test"/>
+                <changeSet id="procedure-ddl_utils.ensure_not_null" author="test"/>
+                <changeSet id="006-set_database_lock_settings" author="test"/>
+                <changeSet id="not-named" author="test"/>
+                """));
+        Pattern pattern = Pattern.compile(
+                "\\d{3}[-_].+|(function|procedure)-[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*");
+
+        List<ChangelogValidator.InvalidChangeSet> invalid =
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master, pattern);
+
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(
+                changes.resolve("functions.xml"), "not-named")), invalid);
     }
 
     /**
