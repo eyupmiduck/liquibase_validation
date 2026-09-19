@@ -68,6 +68,11 @@ class AuditColumnsCheckTest {
         }
         throw failure;
     }
+
+    private static List<String> problems(List<AuditColumnsCheck.Violation> violations) {
+        return violations.stream().map(AuditColumnsCheck.Violation::describe).toList();
+    }
+
     /**
      * Drops the fixtures so each test starts from a clean schema.
      */
@@ -108,10 +113,6 @@ class AuditColumnsCheckTest {
         execute("CREATE TRIGGER %s_set_updated_at BEFORE UPDATE ON audited.%s"
                 .formatted(table, table)
                 + " FOR EACH ROW EXECUTE FUNCTION audited.set_updated_at()");
-    }
-
-    private static List<String> problems(List<AuditColumnsCheck.Violation> violations) {
-        return violations.stream().map(AuditColumnsCheck.Violation::describe).toList();
     }
 
     /**

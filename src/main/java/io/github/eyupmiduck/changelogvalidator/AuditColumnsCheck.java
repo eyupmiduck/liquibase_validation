@@ -1,16 +1,8 @@
 package io.github.eyupmiduck.changelogvalidator;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Savepoint;
+import java.sql.*;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Checks the project-wide audit-column convention on a set of schemas: every
@@ -237,10 +229,10 @@ public final class AuditColumnsCheck {
      * The result of {@link #probeUpdate}: whether an {@code UPDATE} refreshed
      * {@code updated_at} and preserved {@code created_at}.
      *
-     * @param schema              the probed table's schema
-     * @param table               the probed table name
-     * @param updatedAtRefreshed  whether the trigger overwrote the sentinel
-     * @param createdAtPreserved  whether {@code created_at} was left unchanged
+     * @param schema             the probed table's schema
+     * @param table              the probed table name
+     * @param updatedAtRefreshed whether the trigger overwrote the sentinel
+     * @param createdAtPreserved whether {@code created_at} was left unchanged
      */
     public record Probe(String schema, String table, boolean updatedAtRefreshed, boolean createdAtPreserved) {
 
