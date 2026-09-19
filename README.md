@@ -22,13 +22,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.9.0`), and each artifact version is immutable:
+`v0.10.0`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.9.0</version>
+    <version>0.10.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -68,7 +68,10 @@ settings.
 
 `PlpgsqlCheck` runs `plpgsql_check_function_tb(..., all_warnings => true)` over
 the routines in the given schemas and matches each finding against an
-allow-list, so a build fails on an unexpected finding or a stale entry:
+allow-list, so a build fails on an unexpected finding or a stale entry. A
+trigger function is analysed through each relation its trigger is attached to;
+an unattached trigger function is skipped, because the analyser needs a trigger
+relation to resolve `NEW`/`OLD`.
 
 ```java
 try (InputStream in = getClass().getClassLoader()
@@ -94,7 +97,7 @@ The allow-list is YAML; each entry names any of `schema`, `function`, `level`,
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.9.0 && git push origin v0.9.0`.
+3. Push a matching tag, e.g. `git tag v0.10.0 && git push origin v0.10.0`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.

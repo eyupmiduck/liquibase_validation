@@ -66,6 +66,41 @@ class PlpgsqlCheckTest {
                         SELECT missing_column INTO l_x FROM pg_class;
                     END;
                     $$""");
+            // A trigger function is analysed through the relation it is
+            // attached to; an unattached one has no relation to analyse.
+            statement.execute("CREATE TABLE checked.audited(id integer, updated_at timestamptz)");
+            statement.execute("CREATE TABLE checked.audited_broken(id integer, updated_at timestamptz)");
+            statement.execute("""
+                    CREATE FUNCTION checked.trigger_clean() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN
+                        NEW.updated_at := now();
+                        RETURN NEW;
+                    END;
+                    $$""");
+            statement.execute("""
+                    CREATE FUNCTION checked.trigger_warned() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN
+                        NEW.updated_at := missing_column;
+                        RETURN NEW;
+                    END;
+                    $$""");
+            statement.execute("""
+                    CREATE FUNCTION checked.trigger_unattached() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN
+                        NEW.updated_at := now();
+                        RETURN NEW;
+                    END;
+                    $$""");
+            statement.execute("""
+                    CREATE TRIGGER audited_set_updated_at
+                        BEFORE UPDATE ON checked.audited
+                        FOR EACH ROW EXECUTE FUNCTION checked.trigger_clean()
+                    """);
+            statement.execute("""
+                    CREATE TRIGGER audited_broken_set_updated_at
+                        BEFORE UPDATE ON checked.audited_broken
+                        FOR EACH ROW EXECUTE FUNCTION checked.trigger_warned()
+                    """);
         }
     }
 
@@ -126,13 +161,41 @@ class PlpgsqlCheckTest {
     }
 
     /**
+     * A trigger function is analysed through its trigger relation, so its
+     * findings are reported and a clean one produces none.
+     */
+    @Test
+    void analysesAttachedTriggerFunctions() throws Exception {
+        List<PlpgsqlCheck.Finding> findings = PlpgsqlCheck.findFindings(connection, List.of("checked"));
+
+        assertTrue(findings.stream().anyMatch(finding -> finding.function().equals("trigger_warned")),
+                () -> "expected a finding for trigger_warned; got: " + findings);
+        assertTrue(findings.stream().noneMatch(finding -> finding.function().equals("trigger_clean")),
+                () -> "trigger_clean should produce no finding; got: " + findings);
+    }
+
+    /**
+     * A trigger function attached to no relation cannot be analysed (the
+     * analyser needs a trigger relation to resolve NEW/OLD), so it is skipped
+     * rather than failing the whole check.
+     */
+    @Test
+    void skipsUnattachedTriggerFunctions() throws Exception {
+        List<PlpgsqlCheck.Finding> findings = PlpgsqlCheck.findFindings(connection, List.of("checked"));
+
+        assertTrue(findings.stream().noneMatch(finding -> finding.function().equals("trigger_unattached")),
+                () -> "trigger_unattached should be skipped; got: " + findings);
+    }
+
+    /**
      * A finding is accepted when an allow-list entry matches it.
      */
     @Test
     void acceptsWhitelistedFindings() throws Exception {
         PlpgsqlCheck.Report report = PlpgsqlCheck.check(connection, List.of("checked"),
                 List.of(new PlpgsqlCheck.AllowedFinding("checked", "warned", null, null, null),
-                        new PlpgsqlCheck.AllowedFinding("checked", "broken_procedure", null, null, null)));
+                        new PlpgsqlCheck.AllowedFinding("checked", "broken_procedure", null, null, null),
+                        new PlpgsqlCheck.AllowedFinding("checked", "trigger_warned", null, null, null)));
 
         assertTrue(report.isEmpty());
     }

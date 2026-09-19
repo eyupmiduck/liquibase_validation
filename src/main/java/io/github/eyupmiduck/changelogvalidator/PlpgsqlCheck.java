@@ -22,7 +22,10 @@ import java.util.Map;
  *
  * <p>The database must have the {@code plpgsql_check} extension installed.
  * Findings are produced by {@code plpgsql_check_function_tb(...,
- * all_warnings => true)}.
+ * all_warnings => true)}. A trigger function is analysed once per relation it
+ * is attached to (the analyser needs the trigger relation to resolve
+ * {@code NEW}/{@code OLD}); an unattached trigger function is skipped, since it
+ * cannot be analysed without one.
  */
 public final class PlpgsqlCheck {
 
@@ -42,17 +45,30 @@ public final class PlpgsqlCheck {
         String[] names = schemas.toArray(String[]::new);
         List<Finding> findings = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT n.nspname, p.proname, (issue).lineno, (issue).level,
+                SELECT DISTINCT n.nspname, p.proname, (issue).lineno, (issue).level,
                        (issue).statement, (issue).message
                 FROM pg_catalog.pg_proc AS p
                 JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
                 JOIN pg_catalog.pg_language AS l ON l.oid = p.prolang
+                CROSS JOIN LATERAL (
+                    -- A regular routine is analysed with no trigger relation;
+                    -- a trigger function is analysed once per attached
+                    -- relation, and skipped when it has none.
+                    SELECT tg.tgrelid AS relid
+                    FROM pg_catalog.pg_trigger AS tg
+                    WHERE tg.tgfoid = p.oid
+                    UNION ALL
+                    SELECT 0::oid
+                    WHERE p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
+                ) AS r
                 CROSS JOIN LATERAL plpgsql_check_function_tb(
-                        p.oid::regprocedure, all_warnings => true
+                        p.oid::regprocedure, r.relid::regclass, all_warnings => true
                     ) AS issue
                 WHERE n.nspname = ANY (?)
                     AND p.prokind IN ('f', 'p')
                     AND l.lanname = 'plpgsql'
+                    AND (p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
+                         OR EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS tg WHERE tg.tgfoid = p.oid))
                 ORDER BY 1, 2, 3
                 """)) {
             statement.setArray(1, connection.createArrayOf("text", names));
