@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Runs the {@code plpgsql_check} static analyser over the PL/pgSQL functions in
+ * Runs the {@code plpgsql_check} static analyser over the PL/pgSQL routines in
  * a set of schemas and validates the findings against an allow-list, so a
  * project can fail its build on any unexpected warning.
  *
@@ -30,8 +30,8 @@ public final class PlpgsqlCheck {
     }
 
     /**
-     * Finds every plpgsql_check warning or error for the functions in
-     * {@code schemas}, with all warning categories enabled.
+     * Finds every plpgsql_check warning or error for the functions and
+     * procedures in {@code schemas}, with all warning categories enabled.
      *
      * @param connection an open connection to the database to check
      * @param schemas    the schemas whose functions are checked
@@ -51,7 +51,7 @@ public final class PlpgsqlCheck {
                         p.oid::regprocedure, all_warnings => true
                     ) AS issue
                 WHERE n.nspname = ANY (?)
-                    AND p.prokind = 'f'
+                    AND p.prokind IN ('f', 'p')
                     AND l.lanname = 'plpgsql'
                 ORDER BY 1, 2, 3
                 """)) {
@@ -72,8 +72,9 @@ public final class PlpgsqlCheck {
     }
 
     /**
-     * Checks the functions in {@code schemas} against the allow-list and
-     * reports findings no entry accepted and entries that matched nothing.
+     * Checks the functions and procedures in {@code schemas} against the
+     * allow-list and reports findings no entry accepted and entries that matched
+     * nothing.
      *
      * @param connection an open connection to the database to check
      * @param schemas    the schemas whose functions are checked

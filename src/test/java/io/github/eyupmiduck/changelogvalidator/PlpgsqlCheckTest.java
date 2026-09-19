@@ -59,6 +59,13 @@ class PlpgsqlCheckTest {
                     $$""");
             // A non-PL/pgSQL function must be skipped, not checked.
             statement.execute("CREATE FUNCTION checked.sql_language() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$");
+            statement.execute("""
+                    CREATE PROCEDURE checked.broken_procedure() LANGUAGE plpgsql AS $$
+                    DECLARE l_x integer;
+                    BEGIN
+                        SELECT missing_column INTO l_x FROM pg_class;
+                    END;
+                    $$""");
         }
     }
 
@@ -95,14 +102,27 @@ class PlpgsqlCheckTest {
     }
 
     /**
-     * findFindings reports the warned function and not the clean one.
+     * findFindings reports the warned function and not the clean or non-PL/pgSQL
+     * functions.
      */
     @Test
     void findsWarnings() throws Exception {
         List<PlpgsqlCheck.Finding> findings = PlpgsqlCheck.findFindings(connection, List.of("checked"));
 
-        assertFalse(findings.isEmpty());
-        assertTrue(findings.stream().allMatch(finding -> finding.function().equals("warned")));
+        assertTrue(findings.stream().anyMatch(finding -> finding.function().equals("warned")));
+        assertTrue(findings.stream().noneMatch(finding -> finding.function().equals("clean")
+                || finding.function().equals("sql_language")));
+    }
+
+    /**
+     * findFindings reports a broken procedure, not only broken functions.
+     */
+    @Test
+    void findsWarningsInProcedures() throws Exception {
+        List<PlpgsqlCheck.Finding> findings = PlpgsqlCheck.findFindings(connection, List.of("checked"));
+
+        assertTrue(findings.stream().anyMatch(finding -> finding.function().equals("broken_procedure")),
+                () -> "expected a finding for broken_procedure; got: " + findings);
     }
 
     /**
@@ -111,7 +131,8 @@ class PlpgsqlCheckTest {
     @Test
     void acceptsWhitelistedFindings() throws Exception {
         PlpgsqlCheck.Report report = PlpgsqlCheck.check(connection, List.of("checked"),
-                List.of(new PlpgsqlCheck.AllowedFinding("checked", "warned", null, null, null)));
+                List.of(new PlpgsqlCheck.AllowedFinding("checked", "warned", null, null, null),
+                        new PlpgsqlCheck.AllowedFinding("checked", "broken_procedure", null, null, null)));
 
         assertTrue(report.isEmpty());
     }

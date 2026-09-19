@@ -15,20 +15,20 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   routine directory (`functions`, `procedures`, or their `-rollback` variants)
   are exempt from the `NNN-` SQL naming rule.
 - `io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck` — runs
-  `plpgsql_check` over the PL/pgSQL functions in a set of schemas and validates
+  `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
   entries. The database must have the `plpgsql_check` extension installed.
 
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.8.1`), and each artifact version is immutable:
+`v0.9.0`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.8.1</version>
+    <version>0.9.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -67,7 +67,7 @@ settings.
 ## PL/pgSQL static analysis
 
 `PlpgsqlCheck` runs `plpgsql_check_function_tb(..., all_warnings => true)` over
-the functions in the given schemas and matches each finding against an
+the routines in the given schemas and matches each finding against an
 allow-list, so a build fails on an unexpected finding or a stale entry:
 
 ```java
@@ -94,7 +94,7 @@ The allow-list is YAML; each entry names any of `schema`, `function`, `level`,
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.8.1 && git push origin v0.8.1`.
+3. Push a matching tag, e.g. `git tag v0.9.0 && git push origin v0.9.0`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.
