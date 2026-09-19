@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator;
 import java.sql.*;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Checks the project-wide audit-column convention on a set of schemas: every
@@ -22,10 +23,13 @@ public final class AuditColumnsCheck {
     private static final String TIMESTAMPTZ = "timestamp with time zone";
 
     /**
-     * Default expressions that are equivalent to {@code now()}.
+     * A default expression that evaluates to the transaction timestamp, after
+     * allowing for a precision specifier, an explicit cast and surrounding
+     * parentheses, all of which {@code pg_get_expr} may render.
      */
-    private static final Set<String> NOW_DEFAULTS =
-            Set.of("now()", "CURRENT_TIMESTAMP", "transaction_timestamp()");
+    private static final Pattern NOW_DEFAULT = Pattern.compile(
+            "\\(?(now\\(\\)|current_timestamp(?:\\(\\d*\\))?|transaction_timestamp\\(\\))\\)?(?:::.*)?",
+            Pattern.CASE_INSENSITIVE);
 
     /**
      * The value the probe writes to {@code updated_at}; a working trigger
@@ -37,13 +41,13 @@ public final class AuditColumnsCheck {
             SELECT n.nspname AS schema_name,
                    c.relname AS table_name,
                    max(CASE WHEN a.attname = 'created_at'
-                       THEN format_type(a.atttypid, a.atttypmod) END) AS created_type,
+                       THEN format_type(a.atttypid, NULL) END) AS created_type,
                    max(CASE WHEN a.attname = 'created_at'
                        THEN a.attnotnull::text END) AS created_not_null,
                    max(CASE WHEN a.attname = 'created_at'
                        THEN pg_get_expr(d.adbin, d.adrelid) END) AS created_default,
                    max(CASE WHEN a.attname = 'updated_at'
-                       THEN format_type(a.atttypid, a.atttypmod) END) AS updated_type,
+                       THEN format_type(a.atttypid, NULL) END) AS updated_type,
                    max(CASE WHEN a.attname = 'updated_at'
                        THEN a.attnotnull::text END) AS updated_not_null,
                    max(CASE WHEN a.attname = 'updated_at'
@@ -177,8 +181,11 @@ public final class AuditColumnsCheck {
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
         } finally {
             if (autoCommit) {
-                connection.rollback();
-                connection.setAutoCommit(true);
+                try {
+                    connection.rollback();
+                } finally {
+                    connection.setAutoCommit(true);
+                }
             } else if (savepoint != null) {
                 connection.rollback(savepoint);
             }
@@ -197,7 +204,7 @@ public final class AuditColumnsCheck {
         if (!"true".equals(notNull)) {
             violations.add(new Violation(schema, table, column + " must be NOT NULL"));
         }
-        if (defaultValue == null || !NOW_DEFAULTS.contains(defaultValue)) {
+        if (defaultValue == null || !NOW_DEFAULT.matcher(defaultValue).matches()) {
             violations.add(new Violation(schema, table, column + " must default to now(), was " + defaultValue));
         }
     }

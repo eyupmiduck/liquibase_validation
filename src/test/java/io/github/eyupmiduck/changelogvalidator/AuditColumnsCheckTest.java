@@ -8,6 +8,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -221,8 +223,8 @@ class AuditColumnsCheckTest {
     }
 
     /**
-     * Equivalent spellings of now() (CURRENT_TIMESTAMP, transaction_timestamp)
-     * are accepted as defaults.
+     * Equivalent spellings of now() (CURRENT_TIMESTAMP, transaction_timestamp,
+     * a precision specifier and a redundant cast) are accepted as defaults.
      */
     @Test
     void acceptsEquivalentNowDefaults() throws Exception {
@@ -237,11 +239,42 @@ class AuditColumnsCheckTest {
                 """);
         execute("CREATE TRIGGER equivalent_set_updated_at BEFORE UPDATE ON audited.equivalent"
                 + " FOR EACH ROW EXECUTE FUNCTION audited.set_updated_at()");
+        execute("""
+                CREATE TABLE audited.precision (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                    updated_at timestamptz NOT NULL DEFAULT now()::timestamptz(3)
+                )
+                """);
+        execute("CREATE TRIGGER precision_set_updated_at BEFORE UPDATE ON audited.precision"
+                + " FOR EACH ROW EXECUTE FUNCTION audited.set_updated_at()");
 
         List<AuditColumnsCheck.Violation> violations =
                 AuditColumnsCheck.findViolations(connection, List.of("audited"));
 
         assertEquals(List.of(), problems(violations));
+    }
+
+    /**
+     * A non-transaction timestamp default (statement_timestamp) is still
+     * reported, so the relaxed default matching does not accept everything.
+     */
+    @Test
+    void rejectsNonTransactionTimestampDefault() throws Exception {
+        execute("""
+                CREATE TABLE unaudited.untracked (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+                    updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+                )
+                """);
+
+        List<String> problems = problems(AuditColumnsCheck.findViolations(connection, List.of("unaudited")));
+
+        assertTrue(problems.stream().anyMatch(p -> p.contains("created_at must default to now()")),
+                () -> "statement_timestamp must not be accepted; got: " + problems);
+        assertTrue(problems.stream().anyMatch(p -> p.contains("updated_at must default to now()")),
+                () -> "clock_timestamp must not be accepted; got: " + problems);
     }
 
     /**
@@ -337,6 +370,36 @@ class AuditColumnsCheckTest {
             assertTrue(probe.isPresent());
             assertTrue(probe.get().passed(), () -> probe.get().describe());
             assertTrue(autocommit.getAutoCommit(), "autocommit must be restored");
+        }
+    }
+
+    /**
+     * Autocommit is restored even when the probe's rollback fails, so a
+     * connection is not left in manual-commit mode.
+     */
+    @Test
+    void restoresAutoCommitWhenRollbackFails() throws Exception {
+        createAuditedTable("orders");
+        execute("INSERT INTO audited.orders (id) VALUES (1)");
+
+        try (Connection delegate = openConnection()) {
+            Connection failing = (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("rollback") && (args == null || args.length == 0)) {
+                            throw new SQLException("rollback failed");
+                        }
+                        try {
+                            return method.invoke(delegate, args);
+                        } catch (InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    });
+
+            assertThrows(SQLException.class,
+                    () -> AuditColumnsCheck.probeUpdate(failing, "audited", "orders"));
+            assertTrue(delegate.getAutoCommit(), "autocommit must be restored even when rollback fails");
         }
     }
 
