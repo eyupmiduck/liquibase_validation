@@ -2,7 +2,10 @@ package io.github.eyupmiduck.changelogvalidator;
 
 import java.sql.*;
 import java.time.OffsetDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
