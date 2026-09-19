@@ -10,10 +10,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 - `io.github.eyupmiduck.changelogvalidator.ChangelogValidator` — traverses a
   changelog graph from its master file, following nested `<include>` elements,
   and finds invalidly named changeSets and SQL files as well as orphaned SQL
-  files. SQL is recognised both in `<sqlFile>` elements and as the external
-  body of a `<createProcedure>`/`<createFunction>` element; files under a
-  routine directory (`functions`, `procedures`, or their `-rollback` variants)
-  are exempt from the `NNN-` SQL naming rule.
+  files. ChangeSet ids must match the `NNN-name` pattern by default, or a
+  caller-supplied `Pattern` passed to the overload (for example to accept
+  `function-<schema>.<name>` routine changesets). SQL is recognised both in
+  `<sqlFile>` elements and as the external body of a
+  `<createProcedure>`/`<createFunction>` element; files under a routine
+  directory (`functions`, `procedures`, or their `-rollback` variants) are
+  exempt from the `NNN-` SQL naming rule.
 - `io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck` — runs
   `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
@@ -28,13 +31,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.11.0`), and each artifact version is immutable:
+`v0.12.0`), and each artifact version is immutable:
 
 ```xml
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.11.0</version>
+    <version>0.12.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -132,7 +135,7 @@ An empty table has no row to probe, so the result is empty.
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.11.0 && git push origin v0.11.0`.
+3. Push a matching tag, e.g. `git tag v0.12.0 && git push origin v0.12.0`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.
