@@ -39,6 +39,13 @@ the changeset attributes. The first rules require a statement PostgreSQL forbids
 inside a transaction (for example `CREATE INDEX CONCURRENTLY`) to live in a
 `runInTransaction="false"` changeset and to be that changeset's only statement.
 
+Before a rule runs, the SQL is normalised the way Liquibase would execute it:
+`${property}` placeholders are substituted, the changeset's `<modifySql>`
+transformations are applied (honouring `applyToRollback` and the `dbms` filter),
+and the `createTable`/`createIndex`/`dropIndex` change types are rendered to SQL.
+The limits of this normalisation are recorded in
+[docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
+
 Run it with the executable jar (published as the `cli` classifier and, from
 0.15.0, attached to the release), or from the library API:
 

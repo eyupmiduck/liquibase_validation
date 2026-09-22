@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
+import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlNormalizer;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 
@@ -100,15 +101,16 @@ public final class Linter {
 
     private RuleContext context(ChangeSet changeSet) throws IOException {
         return new RuleContext(changeSet,
-                units(changeSet, changeSet.sqlSources()),
-                units(changeSet, changeSet.rollbackSources()));
+                units(changeSet, changeSet.sqlSources(), false),
+                units(changeSet, changeSet.rollbackSources(), true));
     }
 
-    private List<SqlUnit> units(ChangeSet changeSet, List<SqlSource> sources) throws IOException {
+    private List<SqlUnit> units(ChangeSet changeSet, List<SqlSource> sources, boolean rollback) throws IOException {
         List<SqlUnit> units = new ArrayList<>();
         for (SqlSource source : sources) {
             Path file = source.isInline() ? changeSet.changelogFile() : source.path();
-            String sql = source.isInline() ? source.text() : Files.readString(file);
+            String raw = source.isInline() ? source.text() : Files.readString(file);
+            String sql = SqlNormalizer.normalise(raw, changeSet.normalisation(), rollback);
             List<Token> tokens = SqlLexer.tokenize(sql);
             List<SqlStatement> statements = SqlStatementSplitter.split(sql, source.splitStatements(),
                     source.endDelimiter(), source.stripComments());
