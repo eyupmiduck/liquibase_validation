@@ -16,6 +16,14 @@ public final class SarifReporter implements Reporter {
     private static final String SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json";
     private static final String TOOL_NAME = "liquibase-linter";
 
+    private static String level(Severity severity) {
+        return switch (severity) {
+            case ERROR -> "error";
+            case WARNING -> "warning";
+            case INFO -> "note";
+        };
+    }
+
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         Map<String, Severity> ruleSeverities = new LinkedHashMap<>();
@@ -50,13 +58,5 @@ public final class SarifReporter implements Reporter {
                     .append("}}}]}");
         }
         out.append("]}]}");
-    }
-
-    private static String level(Severity severity) {
-        return switch (severity) {
-            case ERROR -> "error";
-            case WARNING -> "warning";
-            case INFO -> "note";
-        };
     }
 }

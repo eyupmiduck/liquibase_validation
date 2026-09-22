@@ -99,7 +99,8 @@ public final class ChangelogModel {
                     booleanAttribute(element, "stripComments", false),
                     optionalAttribute(element, "dbms")));
             case "sqlFile" -> fileSource(SqlSource.Kind.SQL_FILE, root, changelogFile, element);
-            case "createProcedure", "createFunction" -> fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
+            case "createProcedure", "createFunction" ->
+                    fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
             default -> List.of();
         };
     }

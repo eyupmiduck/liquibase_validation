@@ -1,11 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
-import io.github.eyupmiduck.changelogvalidator.linter.Finding;
-import io.github.eyupmiduck.changelogvalidator.linter.Linter;
-import io.github.eyupmiduck.changelogvalidator.linter.Rule;
-import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
-import io.github.eyupmiduck.changelogvalidator.linter.Severity;
-import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
+import io.github.eyupmiduck.changelogvalidator.linter.*;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
@@ -27,6 +22,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SingleStatementRuleTest {
 
     private static final Path FILE = Path.of("/db/changes.sql");
+
+    private static RuleContext context(boolean runInTransaction, String forwardSql, String... rollbackSql) {
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), runInTransaction, false,
+                null, null, null, List.of(), false, List.of());
+        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
+        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(SingleStatementRuleTest::unit).toList();
+        return new RuleContext(changeSet, forward, rollback);
+    }
+
+    private static SqlUnit unit(String sql) {
+        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
+    }
 
     /**
      * A forbidden statement that shares a non-transactional changeset with
@@ -113,18 +121,5 @@ class SingleStatementRuleTest {
         assertEquals(1, findings.size());
         assertEquals(SingleStatementRule.ID, findings.get(0).ruleId());
         assertEquals(Severity.ERROR, findings.get(0).severity());
-    }
-
-    private static RuleContext context(boolean runInTransaction, String forwardSql, String... rollbackSql) {
-        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), runInTransaction, false,
-                null, null, null, List.of(), false, List.of());
-        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
-        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(SingleStatementRuleTest::unit).toList();
-        return new RuleContext(changeSet, forward, rollback);
-    }
-
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
     }
 }

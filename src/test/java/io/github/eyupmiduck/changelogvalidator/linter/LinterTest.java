@@ -14,10 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link Linter}: it evaluates rules over inline and file SQL, adds the
@@ -31,6 +28,16 @@ class LinterTest {
 
     @TempDir
     Path tempDir;
+
+    private static Finding findingWith(Severity severity) {
+        return new Finding(RULE_ID, severity, "cs-1", "me", Path.of("/changelog.xml"), 1, 1, "m", null);
+    }
+
+    private static ChangeSet inlineChangeSet(String sql) {
+        return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
+                List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null)),
+                false, List.of());
+    }
 
     /**
      * A rule violation carries the rule id, severity, changeset context and the
@@ -131,16 +138,6 @@ class LinterTest {
         assertFalse(linter.fails(List.of()));
         assertFalse(linter.fails(List.of(findingWith(Severity.INFO))));
         assertTrue(linter.fails(List.of(findingWith(Severity.ERROR))));
-    }
-
-    private static Finding findingWith(Severity severity) {
-        return new Finding(RULE_ID, severity, "cs-1", "me", Path.of("/changelog.xml"), 1, 1, "m", null);
-    }
-
-    private static ChangeSet inlineChangeSet(String sql) {
-        return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
-                List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null)),
-                false, List.of());
     }
 
     /**

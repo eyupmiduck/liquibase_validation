@@ -9,46 +9,74 @@ package io.github.eyupmiduck.changelogvalidator.linter.lexer;
  */
 public enum TokenType {
 
-    /** Spaces, tabs and line breaks. */
+    /**
+     * Spaces, tabs and line breaks.
+     */
     WHITESPACE,
 
-    /** A {@code --} line comment that is not a Liquibase directive. */
+    /**
+     * A {@code --} line comment that is not a Liquibase directive.
+     */
     LINE_COMMENT,
 
-    /** A block comment, including nested block comments. */
+    /**
+     * A block comment, including nested block comments.
+     */
     BLOCK_COMMENT,
 
-    /** A Liquibase formatted-SQL directive line, for example {@code --changeset}. */
+    /**
+     * A Liquibase formatted-SQL directive line, for example {@code --changeset}.
+     */
     DIRECTIVE,
 
-    /** A standard string literal, including the {@code B'...'} and {@code X'...'} forms. */
+    /**
+     * A standard string literal, including the {@code B'...'} and {@code X'...'} forms.
+     */
     STRING,
 
-    /** An {@code E'...'} string literal with backslash escapes. */
+    /**
+     * An {@code E'...'} string literal with backslash escapes.
+     */
     E_STRING,
 
-    /** A dollar-quoted string, for example {@code $$...$$} or {@code $tag$...$tag$}. */
+    /**
+     * A dollar-quoted string, for example {@code $$...$$} or {@code $tag$...$tag$}.
+     */
     DOLLAR_STRING,
 
-    /** A double-quoted identifier. */
+    /**
+     * A double-quoted identifier.
+     */
     QUOTED_IDENTIFIER,
 
-    /** A positional parameter, for example {@code $1}. */
+    /**
+     * A positional parameter, for example {@code $1}.
+     */
     PARAMETER,
 
-    /** A numeric literal. */
+    /**
+     * A numeric literal.
+     */
     NUMBER,
 
-    /** A bare word: an identifier or a keyword. */
+    /**
+     * A bare word: an identifier or a keyword.
+     */
     WORD,
 
-    /** An operator such as {@code =}, {@code ||} or {@code ::}. */
+    /**
+     * An operator such as {@code =}, {@code ||} or {@code ::}.
+     */
     OPERATOR,
 
-    /** Structural punctuation: {@code ( ) [ ] , ; .}. */
+    /**
+     * Structural punctuation: {@code ( ) [ ] , ; .}.
+     */
     PUNCTUATION,
 
-    /** Input the lexer could not classify, for example an unterminated string. */
+    /**
+     * Input the lexer could not classify, for example an unterminated string.
+     */
     ERROR;
 
     /**

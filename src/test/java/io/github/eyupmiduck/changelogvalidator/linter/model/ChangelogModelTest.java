@@ -9,11 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link ChangelogModel} against a changelog graph laid out like
@@ -27,6 +23,25 @@ class ChangelogModelTest {
     Path changelogRoot;
 
     private Path master;
+
+    private static ChangeSet byId(List<ChangeSet> changesets, String id) {
+        return changesets.stream()
+                .filter(changeset -> changeset.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no changeset " + id));
+    }
+
+    private static String changelog(String body) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
+                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+                %s
+                </databaseChangeLog>
+                """.formatted(body);
+    }
 
     @BeforeEach
     void createChangelog() throws IOException {
@@ -217,25 +232,6 @@ class ChangelogModelTest {
                 () -> new ChangeSet("id", null, master, true, false, null, null, null, List.of(), false, List.of()));
         assertThrows(NullPointerException.class,
                 () -> new ChangeSet("id", "a", null, true, false, null, null, null, List.of(), false, List.of()));
-    }
-
-    private static ChangeSet byId(List<ChangeSet> changesets, String id) {
-        return changesets.stream()
-                .filter(changeset -> changeset.id().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("no changeset " + id));
-    }
-
-    private static String changelog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
     }
 
     private void write(String relativePath, String content) throws IOException {

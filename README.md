@@ -47,13 +47,13 @@ liquibase-linter --changelog-root src/main/resources/db/changelog
 liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sarif --fail-on warning
 ```
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `-r, --changelog-root DIR` | required | changelog directory |
-| `-m, --master FILE` | `DIR/db.changelog-master.xml` | master changelog |
-| `-c, --config FILE` | `.liquibase-linter.yml` | YAML configuration |
-| `--reporter` | `tty` | `tty`, `json` or `sarif` |
-| `--fail-on` | `error` | `error`, `warning`, `info` or `none` |
+| Option                     | Default                       | Meaning                              |
+|----------------------------|-------------------------------|--------------------------------------|
+| `-r, --changelog-root DIR` | required                      | changelog directory                  |
+| `-m, --master FILE`        | `DIR/db.changelog-master.xml` | master changelog                     |
+| `-c, --config FILE`        | `.liquibase-linter.yml`       | YAML configuration                   |
+| `--reporter`               | `tty`                         | `tty`, `json` or `sarif`             |
+| `--fail-on`                | `error`                       | `error`, `warning`, `info` or `none` |
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold, and `2` for a usage or runtime error.
@@ -78,6 +78,7 @@ The library is published to GitHub Packages from a `v*` tag (for example
 `v0.12.0`), and each artifact version is immutable:
 
 ```xml
+
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
@@ -90,6 +91,7 @@ Consuming builds must be authenticated to GitHub Packages even for public
 packages. Add the repository to the consuming POM:
 
 ```xml
+
 <repositories>
     <repository>
         <id>github</id>
@@ -102,6 +104,7 @@ And provide credentials in `~/.m2/settings.xml` (a classic personal access
 token with the `read:packages` scope is required):
 
 ```xml
+
 <settings>
     <servers>
         <server>
@@ -127,11 +130,11 @@ an unattached trigger function is skipped, because the analyser needs a trigger
 relation to resolve `NEW`/`OLD`.
 
 ```java
-try (InputStream in = getClass().getClassLoader()
-        .getResourceAsStream("plpgsql-check-whitelist.yml")) {
-    List<PlpgsqlCheck.AllowedFinding> allowed = PlpgsqlCheck.loadWhitelist(in);
-    PlpgsqlCheck.Report report = PlpgsqlCheck.check(connection, List.of("my_schema"), allowed);
-    // report.unexpected() and report.stale() are empty when the check passes
+try(InputStream in = getClass().getClassLoader()
+        .getResourceAsStream("plpgsql-check-whitelist.yml")){
+List<PlpgsqlCheck.AllowedFinding> allowed = PlpgsqlCheck.loadWhitelist(in);
+PlpgsqlCheck.Report report = PlpgsqlCheck.check(connection, List.of("my_schema"), allowed);
+// report.unexpected() and report.stale() are empty when the check passes
 }
 ```
 
@@ -166,10 +169,12 @@ update is rolled back, and a caller's in-flight transaction is preserved (the
 probe uses a savepoint when the connection is not in autocommit mode):
 
 ```java
-AuditColumnsCheck.probeUpdate(connection, "my_schema", "my_table")
-        .ifPresent(probe -> {
-            // probe.passed() is true when updated_at was refreshed and
-            // created_at was preserved
+AuditColumnsCheck.probeUpdate(connection, "my_schema","my_table")
+        .
+
+ifPresent(probe ->{
+        // probe.passed() is true when updated_at was refreshed and
+        // created_at was preserved
         });
 ```
 

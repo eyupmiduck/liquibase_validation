@@ -3,11 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.config;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 /**
  * The linter configuration, loaded from {@code .liquibase-linter.yml}.
