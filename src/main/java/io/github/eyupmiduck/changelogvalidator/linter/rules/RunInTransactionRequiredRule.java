@@ -98,6 +98,7 @@ public final class RunInTransactionRequiredRule implements Rule {
                     unit.tokens(), unit.statements(), pgVersion)) {
                 Token token = firstToken(unit, classification.statement());
                 violations.add(new Violation(
+                        display(classification.family()),
                         display(classification.family())
                                 + " cannot run inside a transaction; set runInTransaction=\"false\" on the changeset",
                         "Set runInTransaction=\"false\" and make this statement the changeset's only statement.",

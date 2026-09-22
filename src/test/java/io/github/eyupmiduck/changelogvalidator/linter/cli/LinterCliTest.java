@@ -183,6 +183,62 @@ class LinterCliTest {
         assertTrue(result.err().startsWith("error:"));
     }
 
+    /**
+     * A whitelisted finding is suppressed and the run passes.
+     */
+    @Test
+    void suppressesWhitelistedFindings() throws IOException {
+        Path root = changelog("bad", FORBIDDEN);
+        Path whitelist = whitelist("""
+                - rule: changeset-run-in-transaction-required
+                  changeset: 001-bad
+                  statement: CREATE INDEX CONCURRENTLY
+                  reason: accepted in this test
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString());
+
+        assertEquals(0, result.code());
+        assertEquals("", result.err());
+    }
+
+    /**
+     * A whitelist entry that matches no finding fails the run (stale entry).
+     */
+    @Test
+    void failsOnStaleWhitelistEntry() throws IOException {
+        Path root = changelog("clean", CLEAN);
+        Path whitelist = whitelist("""
+                - rule: changeset-run-in-transaction-required
+                  changeset: 999-gone
+                  reason: the changeset was removed
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString());
+
+        assertEquals(1, result.code());
+        assertTrue(result.err().contains("stale whitelist entry"));
+    }
+
+    /**
+     * A finding that matches two entries is a runtime error.
+     */
+    @Test
+    void rejectsAmbiguousWhitelistEntries() throws IOException {
+        Path root = changelog("bad", FORBIDDEN);
+        Path whitelist = whitelist("""
+                - rule: changeset-run-in-transaction-required
+                  reason: first
+                - changeset: 001-bad
+                  reason: second
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString());
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("unambiguous"));
+    }
+
     private Path changelog(String name, String changesBody) throws IOException {
         Path root = Files.createDirectories(tempDir.resolve(name));
         Files.writeString(root.resolve("db.changelog-master.xml"), xml(
@@ -193,6 +249,12 @@ class LinterCliTest {
 
     private Path config(String yaml) throws IOException {
         Path file = tempDir.resolve("config-" + Math.abs(yaml.hashCode()) + ".yml");
+        Files.writeString(file, yaml);
+        return file;
+    }
+
+    private Path whitelist(String yaml) throws IOException {
+        Path file = tempDir.resolve("whitelist-" + Math.abs(yaml.hashCode()) + ".yml");
         Files.writeString(file, yaml);
         return file;
     }

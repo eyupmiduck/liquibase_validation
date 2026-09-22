@@ -51,13 +51,16 @@ public interface Rule {
      * A rule violation before the engine adds the rule id, severity and
      * changeset context.
      *
-     * @param message what is wrong
-     * @param help    how to fix it, or null
-     * @param file    the file the violation is in
-     * @param line    the one-based line of the violation
-     * @param column  the one-based column of the violation
+     * @param statement the offending statement as a stable label (for example
+     *                  {@code CREATE INDEX CONCURRENTLY}), or null when the rule
+     *                  does not identify one; whitelist entries match on it
+     * @param message   what is wrong
+     * @param help      how to fix it, or null
+     * @param file      the file the violation is in
+     * @param line      the one-based line of the violation
+     * @param column    the one-based column of the violation
      */
-    record Violation(String message, String help, Path file, int line, int column) {
+    record Violation(String statement, String message, String help, Path file, int line, int column) {
 
         /**
          * Validates the violation's required components.
@@ -65,6 +68,19 @@ public interface Rule {
         public Violation {
             Objects.requireNonNull(message, "message");
             Objects.requireNonNull(file, "file");
+        }
+
+        /**
+         * Creates a violation that does not name the offending statement.
+         *
+         * @param message what is wrong
+         * @param help    how to fix it, or null
+         * @param file    the file the violation is in
+         * @param line    the one-based line of the violation
+         * @param column  the one-based column of the violation
+         */
+        public Violation(String message, String help, Path file, int line, int column) {
+            this(null, message, help, file, line, column);
         }
     }
 }

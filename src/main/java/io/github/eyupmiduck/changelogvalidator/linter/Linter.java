@@ -80,7 +80,7 @@ public final class Linter {
                 for (Rule.Violation violation : rule.check(context)) {
                     findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
                             violation.file(), violation.line(), violation.column(),
-                            violation.message(), violation.help()));
+                            violation.statement(), violation.message(), violation.help()));
                 }
             }
         }
