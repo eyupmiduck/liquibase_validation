@@ -30,26 +30,15 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 - `io.github.eyupmiduck.changelogvalidator.linter` — a changelog linter: a
   hand-written PostgreSQL tokenizer, Liquibase-compatible statement splitting, a
   changeset model, a rule engine with tty/JSON/SARIF reporters, and rules that
-  combine SQL tokens with Liquibase changeset semantics.
+  combine SQL tokens with Liquibase changeset semantics. See the
+  [rule reference](#rule-reference), [configuration](#configuration) and
+  [tokenizer](#tokenizer) sections.
 
 ## Changelog linter
 
 The linter reads a changelog graph and reports rules that need both the SQL and
-the changeset attributes. Built-in rules:
-
-| Rule | Severity | Default | Detects |
-| --- | --- | --- | --- |
-| `changeset-run-in-transaction-required` | error | on | a transaction-forbidden statement in a changeset without `runInTransaction="false"` |
-| `changeset-single-statement` | error | on | a transaction-forbidden statement that is not the only statement in a `runInTransaction="false"` changeset |
-| `changeset-prefer-single-statement` | warning | opt-in | several statements in a `runInTransaction="false"` changeset |
-| `require-concurrent-index-creation` | warning | opt-in | a `CREATE INDEX` (Squawk) on a table not created in the same changeset |
-| `require-concurrent-index-deletion` | warning | opt-in | a `DROP INDEX` (Squawk) |
-| `changeset-rollback-required` | warning | opt-in | a changeset with no `<rollback>` |
-| `changeset-rollback-parity` | warning | opt-in | a rollback with far fewer statements than the forward SQL |
-| `routine-dynamic-sql` | info | opt-in | a routine body that uses `EXECUTE`, hiding statements from the static rules |
-
-An opt-in rule runs when its id is listed under `include` in the configuration.
-Suppress a finding with a whitelist entry (see below).
+the changeset attributes. Rules are versioned with the artifact, run in a fixed
+order, and are configured per module in `.liquibase-linter.yml`.
 
 Before a rule runs, the SQL is normalised the way Liquibase would execute it:
 `${property}` placeholders are substituted, the changeset's `<modifySql>`
@@ -78,19 +67,174 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold (or a whitelist entry is stale), and `2` for a usage or runtime error.
 
-The configuration is a per-module `.liquibase-linter.yml`:
+### Rule reference
+
+An **error/warning/info** is the rule's default severity; **on** means it runs by
+default, **opt-in** means it runs only when listed under `include`. The table
+lists the built-in rules in registration (reporting) order.
+
+| Rule | Severity | Default | What it detects |
+| --- | --- | --- | --- |
+| [`changeset-run-in-transaction-required`](#changeset-run-in-transaction-required) | error | on | a transaction-forbidden statement in a changeset without `runInTransaction="false"` |
+| [`changeset-single-statement`](#changeset-single-statement) | error | on | a transaction-forbidden statement that is not the only statement in a `runInTransaction="false"` changeset |
+| [`changeset-prefer-single-statement`](#changeset-prefer-single-statement) | warning | opt-in | several statements in a `runInTransaction="false"` changeset |
+| [`require-concurrent-index-creation`](#require-concurrent-index-creation) | warning | opt-in | a `CREATE [UNIQUE] INDEX` on a table not created in the same changeset |
+| [`require-concurrent-index-deletion`](#require-concurrent-index-deletion) | warning | opt-in | a `DROP INDEX` |
+| [`changeset-rollback-required`](#changeset-rollback-required) | warning | opt-in | a changeset with no `<rollback>` |
+| [`changeset-rollback-parity`](#changeset-rollback-parity) | warning | opt-in | a rollback with far fewer statements than the forward SQL |
+| [`routine-dynamic-sql`](#routine-dynamic-sql) | info | opt-in | a routine body that uses `EXECUTE` |
+
+Every rule is suppressed the same way: an `exclude` entry turns it off for the
+module, a `rules` severity override downgrades it (for example to `info`, which
+`--fail-on error` ignores), and a whitelist entry accepts one specific finding.
+The per-rule sections give an example of each.
+
+#### changeset-run-in-transaction-required
+
+PostgreSQL rejects several statements inside a transaction block; running one in
+a changeset Liquibase wraps in a transaction fails at deploy time. This rule
+reports a transaction-forbidden statement (`CREATE [UNIQUE] INDEX CONCURRENTLY`,
+`DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `ALTER TABLE ... DETACH
+PARTITION ... CONCURRENTLY`, `VACUUM`, `CREATE`/`DROP DATABASE`, `ALTER SYSTEM`,
+and, before PostgreSQL 12, `ALTER TYPE ... ADD VALUE`) unless the changeset sets
+`runInTransaction="false"`. It checks forward and rollback SQL.
+
+```xml
+<!-- Reported: CREATE INDEX CONCURRENTLY cannot run inside a transaction. -->
+<changeSet id="010-index" author="me">
+    <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
+</changeSet>
+```
+
+```xml
+<!-- Accepted. -->
+<changeSet id="010-index" author="me" runInTransaction="false">
+    <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
+</changeSet>
+```
+
+#### changeset-single-statement
+
+A `runInTransaction="false"` changeset cannot be rolled back atomically, so a
+partial failure with several statements leaves `DATABASECHANGELOG` inconsistent.
+This rule reports a `runInTransaction="false"` changeset that contains a
+transaction-forbidden statement plus any other statement. Move each statement
+into its own changeset. Forward and rollback are evaluated separately.
+
+```xml
+<!-- Reported: two statements in one non-transactional changeset. -->
+<changeSet id="011" author="me" runInTransaction="false">
+    <sql>CREATE INDEX CONCURRENTLY idx ON t (c); DROP INDEX idx2;</sql>
+</changeSet>
+```
+
+#### changeset-prefer-single-statement
+
+The advisory counterpart of the rule above: a `runInTransaction="false"`
+changeset with several statements shares the partial-failure exposure even when
+none is transaction-forbidden. It stays quiet when a transaction-forbidden
+statement is present (that is the error rule's job), and it fires on forward or
+rollback SQL. It is a warning and opt-in because a multi-statement
+non-transactional changeset is sometimes intentional.
+
+```yaml
+include:
+  - changeset-prefer-single-statement
+```
+
+#### require-concurrent-index-creation
+
+Adapted from Squawk. A plain `CREATE INDEX` holds a lock that blocks writes for
+the whole build; `CONCURRENTLY` avoids it. The rule reports a `CREATE [UNIQUE]
+INDEX` whose table is not created in the same changeset (a fresh schema may build
+its indexes non-concurrently). It is a token-level heuristic: qualified and
+unqualified table references are not reconciled. It is a warning and opt-in.
+
+```xml
+<!-- Reported: account already exists, so this blocks writes while it builds. -->
+<changeSet id="020" author="me">
+    <createIndex indexName="account_email_idx" tableName="account">
+        <column name="email"/>
+    </createIndex>
+</changeSet>
+```
+
+#### require-concurrent-index-deletion
+
+Adapted from Squawk. A plain `DROP INDEX` takes an exclusive lock on the index,
+blocking queries that use it; `CONCURRENTLY` avoids it. The rule reports a
+`DROP INDEX`. It is a warning and opt-in.
+
+#### changeset-rollback-required
+
+A changeset with no rollback cannot be reverted cleanly. The rule reports a
+changeset that declares no `<rollback>`. It is accepted when a `<rollback>` block
+is present (including an empty one, or `<rollback changeSetId="..."/>` that
+references another changeset) and when the changeset is `runOnChange` with a
+stored-routine body (re-running the body replaces it). It is a warning and
+opt-in.
+
+```xml
+<!-- Reported: no rollback. -->
+<changeSet id="030" author="me">
+    <sqlFile path="sql_changes/030-add-column.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### changeset-rollback-parity
+
+A shallow heuristic (it cannot prove `DROP TABLE t` inverts `CREATE TABLE t`)
+that a rollback should have about as many statements as the forward SQL. It
+reports a rollback with statements that covers less than half the forward
+statement count — for example a multi-statement changeset whose rollback only
+reverses the last change. A reference-only rollback and routine bodies are
+ignored, and a missing rollback is `changeset-rollback-required`'s concern. It is
+a warning and opt-in.
+
+#### routine-dynamic-sql
+
+A PL/pgSQL body that uses `EXECUTE` assembles SQL at runtime, so the token rules
+cannot see the statements it runs. This rule reports such a routine body so the
+linter does not imply the changeset is clean; it complements `plpgsql_check`
+(which analyses the static body, not the dynamic string). It only fires on
+routine bodies, is informational and opt-in.
+
+```xml
+<!-- Reported (info): the body's dynamic SQL is invisible to the token rules. -->
+<changeSet id="function-app.foo" author="me" runOnChange="true">
+    <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+### Configuration
+
+The configuration is a per-module `.liquibase-linter.yml`, passed with
+`--config` (the default is the working directory's file, so a Maven module pins
+its own path):
 
 ```yaml
 pgVersion: '17'
 failOn: error
 exclude:
-  - prefer-bigint-over-int
+  - changeset-prefer-single-statement
 include:
   - require-concurrent-index-creation
+  - routine-dynamic-sql
 rules:
   changeset-single-statement:
     severity: warning
 ```
+
+| Key | Meaning |
+| --- | --- |
+| `pgVersion` | PostgreSQL major version for version-gated rules (`ALTER TYPE ... ADD VALUE`); omit when unknown |
+| `failOn` | least severity that fails the run: `error` (default), `warning`, `info` or `none` (the CLI `--fail-on` overrides it) |
+| `exclude` | rule ids to turn off |
+| `include` | opt-in rule ids to turn on |
+| `rules` | per-rule `severity` override and free-form `options` |
+
+Unknown keys, an unknown rule id, and a malformed value fail fast, so a typo
+cannot silently disable a rule.
 
 A finding can be accepted with a per-module `.liquibase-linter-whitelist.yml`
 (the CLI's `--whitelist`; a missing file accepts nothing):
@@ -110,6 +254,30 @@ or the offending statement's label) is optional and matches any value when
 omitted, but an entry must set at least one. Matching is fail-closed: a finding
 no entry accepts is reported, an entry that matches no finding is stale and
 fails the run, and a finding that matches more than one entry is rejected.
+
+### Tokenizer
+
+The rules match a lossless token stream, not a parse tree: every byte of the
+input maps to a token, so a finding can point at an exact line and column. The
+lexer understands the PostgreSQL lexical forms the changelog files use:
+
+- whitespace; `--` line comments; nested `/* ... */` block comments;
+- standard string literals (`'...'` with doubled quotes) and the `B'...'`,
+  `X'...'` and `E'...'` (backslash-escape) forms;
+- dollar-quoted strings (`$$...$$` and `$tag$...$tag$`), which is how routine
+  bodies appear — a whole body is one token;
+- quoted identifiers (`"..."` with doubled double quotes);
+- numeric literals (including the `L`, `_` and hex forms);
+- operators and punctuation, and bare words (keywords are matched by rules with
+  `Token.matchesKeyword`, so identifier/keyword classification is not baked in);
+- Liquibase formatted-SQL directives (`--liquibase`, `--changeset`,
+  `--rollback`, `--preconditions`, `--property`, `--comment`) as trivia.
+
+Input the lexer cannot classify — for example an unterminated string — becomes an
+`ERROR` token rather than being skipped, so a rule (or a future rule) can report
+it. Unicode-escape strings (`U&'...'`) are not yet a distinct form. There is no
+parser and no identifier/type resolution; a rule that needs those is out of scope
+for this tokenizer (see [docs/adr/0001-sql-lexer-approach.md](docs/adr/0001-sql-lexer-approach.md)).
 
 ### Code scanning
 
