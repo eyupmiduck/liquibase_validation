@@ -192,6 +192,26 @@ public final class ChangelogValidator {
     }
 
     /**
+     * Finds the changelog XML files reachable from {@code masterChangelog} by
+     * following nested {@code <include>} elements, starting with the master and
+     * guarding against cycles.
+     *
+     * <p>Callers that need the changelog graph itself (for example the linter's
+     * changelog model) can use this instead of walking the includes again. The
+     * traversal order is not execution order.
+     *
+     * @param changelogRoot   the changelog root, used to resolve includes that
+     *                        are not relative to the changelog file
+     * @param masterChangelog the master changelog file to traverse
+     * @return the reachable changelog files, absolute and normalized
+     * @throws IOException if a changelog file cannot be read
+     */
+    public static List<Path> findReachableChangelogFiles(Path changelogRoot, Path masterChangelog)
+            throws IOException {
+        return reachableChangelogFiles(changelogRoot.toAbsolutePath().normalize(), masterChangelog);
+    }
+
+    /**
      * Collects the changelog files reachable from {@code masterChangelog} by
      * following nested {@code <include>} elements, guarding against cycles.
      */
