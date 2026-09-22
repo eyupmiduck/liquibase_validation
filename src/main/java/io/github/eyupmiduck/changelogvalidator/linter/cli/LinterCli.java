@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Linter;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfigLoader;
+import io.github.eyupmiduck.changelogvalidator.linter.config.Whitelist;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogModel;
 import io.github.eyupmiduck.changelogvalidator.linter.report.JsonReporter;
@@ -32,14 +33,15 @@ public final class LinterCli {
 
     private static final String USAGE = """
             Usage: liquibase-linter --changelog-root DIR [options]
-            
+
               -r, --changelog-root DIR   changelog directory (required)
               -m, --master FILE          master changelog (default DIR/db.changelog-master.xml)
               -c, --config FILE          config file (default .liquibase-linter.yml)
+              -w, --whitelist FILE       accepted findings (default .liquibase-linter-whitelist.yml)
                   --reporter FORMAT      tty (default), json or sarif
                   --fail-on SEVERITY     error (default), warning, info or none
               -h, --help                 print this help
-            
+
             """;
 
     private LinterCli() {
@@ -83,8 +85,15 @@ public final class LinterCli {
             List<ChangeSet> changeSets = ChangelogModel.changesets(options.changelogRoot(), options.master());
             Linter linter = new Linter(Rules.all(majorVersion(config.pgVersion())), config);
             List<Finding> findings = linter.lint(changeSets);
-            options.reporter().report(findings, out);
-            return options.ignoreFailures() || !linter.fails(findings) ? 0 : 1;
+            Whitelist.Report report = Whitelist.load(options.whitelist()).apply(findings);
+            options.reporter().report(report.unmatched(), out);
+            if (!report.stale().isEmpty()) {
+                for (Whitelist.AllowedFinding entry : report.stale()) {
+                    err.println("stale whitelist entry: " + entry.describe());
+                }
+                return 1;
+            }
+            return options.ignoreFailures() || !linter.fails(report.unmatched()) ? 0 : 1;
         } catch (IOException | RuntimeException e) {
             err.println("error: " + e.getMessage());
             return 2;
@@ -105,13 +114,14 @@ public final class LinterCli {
     /**
      * The parsed command-line options.
      */
-    private record Options(Path changelogRoot, Path master, Path config, Reporter reporter, Severity failOn,
-                           boolean ignoreFailures, boolean help) {
+    private record Options(Path changelogRoot, Path master, Path config, Path whitelist, Reporter reporter,
+                           Severity failOn, boolean ignoreFailures, boolean help) {
 
         private static Options parse(String[] args) {
             Path changelogRoot = null;
             Path master = null;
             Path config = Path.of(".liquibase-linter.yml");
+            Path whitelist = Path.of(".liquibase-linter-whitelist.yml");
             Reporter reporter = new TtyReporter();
             Severity failOn = null;
             boolean ignoreFailures = false;
@@ -122,6 +132,7 @@ public final class LinterCli {
                     case "-r", "--changelog-root" -> changelogRoot = Path.of(value(args, ++i, argument));
                     case "-m", "--master" -> master = Path.of(value(args, ++i, argument));
                     case "-c", "--config" -> config = Path.of(value(args, ++i, argument));
+                    case "-w", "--whitelist" -> whitelist = Path.of(value(args, ++i, argument));
                     case "--reporter" -> reporter = reporter(value(args, ++i, argument));
                     case "--fail-on" -> {
                         String severity = value(args, ++i, argument);
@@ -141,7 +152,7 @@ public final class LinterCli {
             Path masterFile = master != null
                     ? master
                     : changelogRoot == null ? null : changelogRoot.resolve("db.changelog-master.xml");
-            return new Options(changelogRoot, masterFile, config, reporter, failOn, ignoreFailures, help);
+            return new Options(changelogRoot, masterFile, config, whitelist, reporter, failOn, ignoreFailures, help);
         }
 
         private static String value(String[] args, int index, String option) {

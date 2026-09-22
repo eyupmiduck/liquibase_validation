@@ -52,11 +52,12 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `-r, --changelog-root DIR` | required                      | changelog directory                  |
 | `-m, --master FILE`        | `DIR/db.changelog-master.xml` | master changelog                     |
 | `-c, --config FILE`        | `.liquibase-linter.yml`       | YAML configuration                   |
+| `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                |
 | `--reporter`               | `tty`                         | `tty`, `json` or `sarif`             |
 | `--fail-on`                | `error`                       | `error`, `warning`, `info` or `none` |
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
-threshold, and `2` for a usage or runtime error.
+threshold (or a whitelist entry is stale), and `2` for a usage or runtime error.
 
 The configuration is a per-module `.liquibase-linter.yml`:
 
@@ -71,6 +72,25 @@ rules:
   changeset-single-statement:
     severity: warning
 ```
+
+A finding can be accepted with a per-module `.liquibase-linter-whitelist.yml`
+(the CLI's `--whitelist`; a missing file accepts nothing):
+
+```yaml
+- rule: changeset-single-statement
+  file: changes/sql_changes/007-some-index.sql
+  changeset: 007-some-index
+  statement: CREATE INDEX CONCURRENTLY
+  reason: >-
+    Intentional: the statement is followed by a precondition comment; the
+    statement list is single after Liquibase splitting. See PR #123.
+```
+
+Each selector (a rule id, a path suffix of the finding's file, a changeset id,
+or the offending statement's label) is optional and matches any value when
+omitted, but an entry must set at least one. Matching is fail-closed: a finding
+no entry accepts is reported, an entry that matches no finding is stale and
+fails the run, and a finding that matches more than one entry is rejected.
 
 ## Using the library
 

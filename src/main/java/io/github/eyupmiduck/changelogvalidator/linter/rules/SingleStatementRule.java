@@ -109,6 +109,7 @@ public final class SingleStatementRule implements Rule {
                 Classification classification = classifications.get(0);
                 Token token = firstToken(unit, classification.statement());
                 violations.add(new Violation(
+                        display(classification.family()),
                         display(classification.family())
                                 + " must be the only statement in a runInTransaction=\"false\" changeset (found "
                                 + statementCount + " statements)",
