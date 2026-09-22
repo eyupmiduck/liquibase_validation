@@ -84,6 +84,7 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-rollback-parity`](#changeset-rollback-parity) | warning | opt-in | a rollback with far fewer statements than the forward SQL |
 | [`routine-dynamic-sql`](#routine-dynamic-sql) | info | opt-in | a routine body that uses `EXECUTE` |
 | [`block-raw-alter-table`](#block-raw-alter-table) | error | on | a raw `ALTER TABLE` in changelog SQL |
+| [`require-dbms-postgresql`](#require-dbms-postgresql) | error | on | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate |
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -236,6 +237,35 @@ entry.
 <!-- Accepted: the lock-aware wrapper. -->
 <changeSet id="041" author="me">
     <sql>SELECT ddl_utils.add_column('ddl_utils', 'example', 'note', 'text');</sql>
+</changeSet>
+```
+
+#### require-dbms-postgresql
+
+PostgreSQL-only SQL in a changeset that does not declare `dbms="postgresql"` is
+a portability trap: a changelog reused on another target fails at deploy rather
+than at review. This rule reports several constructs with no portable
+equivalent — `CONCURRENTLY` (index and partition operations), `CREATE DOMAIN`,
+`CREATE EXTENSION`, `LANGUAGE plpgsql`, `USING gin`/`gist`/`brin`/`spgist`, and
+the casts and operators common in `<sql>` bodies (`::`, `->`, `->>`, `@>`, ...).
+
+The gate can be on the changeset or, as Liquibase applies it too, on an
+individual SQL source (`dbms` is case-insensitive and may be a comma-separated
+list). Structured change types are exempt, and a mention in a string or comment
+does not count. It is a token-level heuristic — an unlisted PostgreSQL-only
+construct is a false negative — and an error on by default.
+
+```xml
+<!-- Reported: CREATE INDEX CONCURRENTLY is PostgreSQL-only. -->
+<changeSet id="050-index" author="me">
+    <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
+</changeSet>
+```
+
+```xml
+<!-- Accepted. -->
+<changeSet id="050-index" author="me" dbms="postgresql">
+    <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
 </changeSet>
 ```
 

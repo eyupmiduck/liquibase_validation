@@ -30,6 +30,7 @@ public final class Rules {
                 new RequireRollbackRule(),
                 new RequireRollbackParityRule(),
                 new DynamicSqlRule(),
-                new BlockRawAlterTableRule());
+                new BlockRawAlterTableRule(),
+                new RequireDbmsPostgresqlRule());
     }
 }
