@@ -26,6 +26,8 @@ public final class Rules {
                 new SingleStatementRule(pgVersion),
                 new PreferSingleStatementRule(pgVersion),
                 new RequireConcurrentIndexCreationRule(),
-                new RequireConcurrentIndexDeletionRule());
+                new RequireConcurrentIndexDeletionRule(),
+                new RequireRollbackRule(),
+                new RequireRollbackParityRule());
     }
 }

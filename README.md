@@ -35,9 +35,20 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 ## Changelog linter
 
 The linter reads a changelog graph and reports rules that need both the SQL and
-the changeset attributes. The first rules require a statement PostgreSQL forbids
-inside a transaction (for example `CREATE INDEX CONCURRENTLY`) to live in a
-`runInTransaction="false"` changeset and to be that changeset's only statement.
+the changeset attributes. Built-in rules:
+
+| Rule | Severity | Default | Detects |
+| --- | --- | --- | --- |
+| `changeset-run-in-transaction-required` | error | on | a transaction-forbidden statement in a changeset without `runInTransaction="false"` |
+| `changeset-single-statement` | error | on | a transaction-forbidden statement that is not the only statement in a `runInTransaction="false"` changeset |
+| `changeset-prefer-single-statement` | warning | opt-in | several statements in a `runInTransaction="false"` changeset |
+| `require-concurrent-index-creation` | warning | opt-in | a `CREATE INDEX` (Squawk) on a table not created in the same changeset |
+| `require-concurrent-index-deletion` | warning | opt-in | a `DROP INDEX` (Squawk) |
+| `changeset-rollback-required` | warning | opt-in | a changeset with no `<rollback>` |
+| `changeset-rollback-parity` | warning | opt-in | a rollback with far fewer statements than the forward SQL |
+
+An opt-in rule runs when its id is listed under `include` in the configuration.
+Suppress a finding with a whitelist entry (see below).
 
 Before a rule runs, the SQL is normalised the way Liquibase would execute it:
 `${property}` placeholders are substituted, the changeset's `<modifySql>`
