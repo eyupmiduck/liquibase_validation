@@ -14,6 +14,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -22,19 +23,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies {@link RequireConcurrentIndexCreationRule}: a plain
- * {@code CREATE [UNIQUE] INDEX} is reported, {@code CONCURRENTLY} and an index on
- * a table created in the same changeset are accepted, and the rule is opt-in.
+ * {@code CREATE [UNIQUE] INDEX} is reported (forward or rollback),
+ * {@code CONCURRENTLY} and an index on a table created in the same changeset are
+ * accepted, and the rule is opt-in.
  */
 class RequireConcurrentIndexCreationRuleTest {
 
     private static final Path FILE = Path.of("/db/changes.sql");
 
-    private static RuleContext context(String forwardSql) {
-        SqlUnit unit = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, forwardSql, true, ";", true, null),
-                FILE, forwardSql, SqlLexer.tokenize(forwardSql), SqlStatementSplitter.split(forwardSql));
+    private static RuleContext context(String forwardSql, String... rollbackSql) {
+        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
+        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(RequireConcurrentIndexCreationRuleTest::unit).toList();
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
                 null, null, null, List.of(), false, List.of());
-        return new RuleContext(changeSet, List.of(unit), List.of());
+        return new RuleContext(changeSet, forward, rollback);
+    }
+
+    private static SqlUnit unit(String sql) {
+        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
     }
 
     /**
@@ -113,6 +120,17 @@ class RequireConcurrentIndexCreationRuleTest {
 
         assertEquals(1, new RequireConcurrentIndexCreationRule()
                 .check(context("CREATE TABLE T (c int); CREATE INDEX idx ON \"T\" (c);")).size());
+    }
+
+    /**
+     * A plain {@code CREATE INDEX} in rollback SQL is reported too.
+     */
+    @Test
+    void checksRollback() {
+        List<Rule.Violation> violations = new RequireConcurrentIndexCreationRule()
+                .check(context(null, "CREATE INDEX idx ON t (c);"));
+
+        assertEquals(1, violations.size());
     }
 
     /**

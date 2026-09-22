@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +23,8 @@ import java.util.Set;
  * schema-qualified reference must match the {@code CREATE TABLE} reference
  * (unqualified and qualified forms are not reconciled), and the structured
  * {@code <createIndex>} change type is not seen by the linter yet (bead
- * ddl-w8y.6), so only {@code CREATE INDEX} SQL is checked.
+ * ddl-w8y.6), so only {@code CREATE INDEX} SQL is checked, in forward and
+ * rollback SQL alike.
  */
 public final class RequireConcurrentIndexCreationRule implements Rule {
 
@@ -46,13 +48,15 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        List<ConcurrentIndexes.Candidate> candidates = ConcurrentIndexes.find(context.forward());
-        if (candidates.isEmpty()) {
-            return List.of();
-        }
-        Set<String> created = ConcurrentIndexes.tablesCreatedIn(context.forward());
         List<Violation> violations = new ArrayList<>();
-        for (ConcurrentIndexes.Candidate candidate : candidates) {
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
+    }
+
+    private void collect(List<SqlUnit> units, List<Violation> violations) {
+        Set<String> created = ConcurrentIndexes.tablesCreatedIn(units);
+        for (ConcurrentIndexes.Candidate candidate : ConcurrentIndexes.find(units)) {
             if (candidate.kind() != ConcurrentIndexes.Kind.CREATE || created.contains(candidate.table())) {
                 continue;
             }
@@ -63,6 +67,5 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
                     "Build the index with CREATE INDEX CONCURRENTLY in a runInTransaction=\"false\" changeset.",
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }
-        return List.copyOf(violations);
     }
 }

@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,8 @@ import java.util.List;
  *
  * <p>The rule is opt-in and advisory. Like the creation rule, it is a token-level
  * heuristic and the structured {@code <dropIndex>} change type is not seen by the
- * linter yet (bead ddl-w8y.6), so only {@code DROP INDEX} SQL is checked.
+ * linter yet (bead ddl-w8y.6), so only {@code DROP INDEX} SQL is checked, in
+ * forward and rollback SQL alike.
  */
 public final class RequireConcurrentIndexDeletionRule implements Rule {
 
@@ -41,7 +43,13 @@ public final class RequireConcurrentIndexDeletionRule implements Rule {
     @Override
     public List<Violation> check(RuleContext context) {
         List<Violation> violations = new ArrayList<>();
-        for (ConcurrentIndexes.Candidate candidate : ConcurrentIndexes.find(context.forward())) {
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
+    }
+
+    private void collect(List<SqlUnit> units, List<Violation> violations) {
+        for (ConcurrentIndexes.Candidate candidate : ConcurrentIndexes.find(units)) {
             if (candidate.kind() != ConcurrentIndexes.Kind.DROP) {
                 continue;
             }
@@ -51,6 +59,5 @@ public final class RequireConcurrentIndexDeletionRule implements Rule {
                     "Drop the index with DROP INDEX CONCURRENTLY in a runInTransaction=\"false\" changeset.",
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }
-        return List.copyOf(violations);
     }
 }

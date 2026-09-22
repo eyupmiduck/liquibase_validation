@@ -14,6 +14,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -22,19 +23,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies {@link RequireConcurrentIndexDeletionRule}: a plain {@code DROP INDEX}
- * is reported (including {@code IF EXISTS}), {@code CONCURRENTLY} and other
- * commands are accepted, and the rule is opt-in.
+ * is reported (including {@code IF EXISTS}, forward or rollback),
+ * {@code CONCURRENTLY} and other commands are accepted, and the rule is opt-in.
  */
 class RequireConcurrentIndexDeletionRuleTest {
 
     private static final Path FILE = Path.of("/db/changes.sql");
 
-    private static RuleContext context(String forwardSql) {
-        SqlUnit unit = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, forwardSql, true, ";", true, null),
-                FILE, forwardSql, SqlLexer.tokenize(forwardSql), SqlStatementSplitter.split(forwardSql));
+    private static RuleContext context(String forwardSql, String... rollbackSql) {
+        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
+        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(RequireConcurrentIndexDeletionRuleTest::unit).toList();
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
                 null, null, null, List.of(), false, List.of());
-        return new RuleContext(changeSet, List.of(unit), List.of());
+        return new RuleContext(changeSet, forward, rollback);
+    }
+
+    private static SqlUnit unit(String sql) {
+        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
     }
 
     /**
@@ -70,6 +76,15 @@ class RequireConcurrentIndexDeletionRuleTest {
                 .check(context("DROP TABLE t;")).isEmpty());
         assertTrue(new RequireConcurrentIndexDeletionRule()
                 .check(context("CREATE INDEX idx ON t (c);")).isEmpty());
+    }
+
+    /**
+     * A plain {@code DROP INDEX} in rollback SQL is reported too.
+     */
+    @Test
+    void checksRollback() {
+        assertEquals(1, new RequireConcurrentIndexDeletionRule()
+                .check(context(null, "DROP INDEX idx;")).size());
     }
 
     /**
