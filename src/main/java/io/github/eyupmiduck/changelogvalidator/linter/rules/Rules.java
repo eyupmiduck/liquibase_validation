@@ -24,6 +24,8 @@ public final class Rules {
         return List.of(
                 new RunInTransactionRequiredRule(pgVersion),
                 new SingleStatementRule(pgVersion),
-                new PreferSingleStatementRule(pgVersion));
+                new PreferSingleStatementRule(pgVersion),
+                new RequireConcurrentIndexCreationRule(),
+                new RequireConcurrentIndexDeletionRule());
     }
 }
