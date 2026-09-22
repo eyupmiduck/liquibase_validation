@@ -23,6 +23,7 @@ public final class Rules {
     public static List<Rule> all(Integer pgVersion) {
         return List.of(
                 new RunInTransactionRequiredRule(pgVersion),
-                new SingleStatementRule(pgVersion));
+                new SingleStatementRule(pgVersion),
+                new PreferSingleStatementRule(pgVersion));
     }
 }
