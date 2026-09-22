@@ -26,7 +26,7 @@ class LinterCliTest {
             </changeSet>
             """;
     private static final String FORBIDDEN = """
-            <changeSet id="001-bad" author="a">
+            <changeSet id="001-bad" author="a" dbms="postgresql">
                 <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
             </changeSet>
             """;
