@@ -73,6 +73,16 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
     }
 
     /**
+     * Returns a copy of this configuration with a different failure threshold.
+     *
+     * @param severity the new {@code failOn} severity
+     * @return the copy
+     */
+    public LinterConfig withFailOn(Severity severity) {
+        return new LinterConfig(pgVersion, severity, exclude, include, rules);
+    }
+
+    /**
      * Returns every rule id referenced by this configuration, so the engine can
      * reject typos.
      *

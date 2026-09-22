@@ -27,6 +27,50 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   an enabled `BEFORE UPDATE ... FOR EACH ROW` trigger. A behavioral probe can
   verify on a real row that an `UPDATE` refreshes `updated_at` and preserves
   `created_at`, rolling the change back.
+- `io.github.eyupmiduck.changelogvalidator.linter` — a changelog linter: a
+  hand-written PostgreSQL tokenizer, Liquibase-compatible statement splitting, a
+  changeset model, a rule engine with tty/JSON/SARIF reporters, and rules that
+  combine SQL tokens with Liquibase changeset semantics.
+
+## Changelog linter
+
+The linter reads a changelog graph and reports rules that need both the SQL and
+the changeset attributes. The first rules require a statement PostgreSQL forbids
+inside a transaction (for example `CREATE INDEX CONCURRENTLY`) to live in a
+`runInTransaction="false"` changeset and to be that changeset's only statement.
+
+Run it with the executable jar (published as the `cli` classifier and, from
+0.15.0, attached to the release), or from the library API:
+
+```sh
+liquibase-linter --changelog-root src/main/resources/db/changelog
+liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sarif --fail-on warning
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `-r, --changelog-root DIR` | required | changelog directory |
+| `-m, --master FILE` | `DIR/db.changelog-master.xml` | master changelog |
+| `-c, --config FILE` | `.liquibase-linter.yml` | YAML configuration |
+| `--reporter` | `tty` | `tty`, `json` or `sarif` |
+| `--fail-on` | `error` | `error`, `warning`, `info` or `none` |
+
+The exit code is `0` when the run passes, `1` when findings reach the `failOn`
+threshold, and `2` for a usage or runtime error.
+
+The configuration is a per-module `.liquibase-linter.yml`:
+
+```yaml
+pgVersion: '17'
+failOn: error
+exclude:
+  - prefer-bigint-over-int
+include:
+  - require-concurrent-index-creation
+rules:
+  changeset-single-statement:
+    severity: warning
+```
 
 ## Using the library
 
