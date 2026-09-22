@@ -10,6 +10,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -312,6 +313,15 @@ class SqlLexerTest {
         assertEquals(5, tokens.size());
         assertEquals(TokenType.ERROR, tokens.get(2).type());
         assertEquals("{", tokens.get(2).text());
+    }
+
+    /**
+     * A token requires a type and text.
+     */
+    @Test
+    void rejectsNullComponents() {
+        assertThrows(NullPointerException.class, () -> new Token(null, "x", 0, 1, 1, 1));
+        assertThrows(NullPointerException.class, () -> new Token(TokenType.WORD, null, 0, 1, 1, 1));
     }
 
     /**
