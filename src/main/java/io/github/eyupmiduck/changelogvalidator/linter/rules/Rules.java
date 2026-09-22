@@ -29,6 +29,7 @@ public final class Rules {
                 new RequireConcurrentIndexDeletionRule(),
                 new RequireRollbackRule(),
                 new RequireRollbackParityRule(),
-                new DynamicSqlRule());
+                new DynamicSqlRule(),
+                new BlockRawAlterTableRule());
     }
 }
