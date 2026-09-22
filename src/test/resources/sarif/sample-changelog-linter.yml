@@ -1,0 +1,6 @@
+# Config for the sample changelog in the SARIF code-scanning workflow. Only the
+# opt-in index-creation rule is enabled so the sample produces exactly one
+# finding. See docs/adr/0002 for the config and whitelist format.
+pgVersion: '17'
+include:
+  - require-concurrent-index-creation
