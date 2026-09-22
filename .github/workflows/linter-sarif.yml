@@ -1,10 +1,12 @@
 name: Linter SARIF
 
 # Demonstrates the changelog linter's SARIF output reaching GitHub code
-# scanning: it lints a sample changelog, always uploads the SARIF document, and
-# then fails on a finding. Code scanning shows the finding inline on the pull
-# request; the failing step surfaces it in the checks list. See the README's
-# "Code scanning" section.
+# scanning: it lints a sample changelog and uploads the SARIF document, so the
+# finding shows inline on the pull request. The sample deliberately contains a
+# finding, so the failing step is expected and advisory
+# (`continue-on-error`); the upload is the point of this workflow, the real
+# gate is `./mvnw verify` in the Build workflow. See the README's "Code
+# scanning" section.
 
 on:
   pull_request:
@@ -41,9 +43,8 @@ jobs:
         run: ./mvnw --batch-mode --no-transfer-progress -DskipTests package
 
       - name: Lint the sample changelog (SARIF)
-        # The findings are reported by the upload below, so a non-zero exit here
-        # is expected; the final step is what fails the job. `|| true` keeps the
-        # SARIF file for the upload.
+        # The findings are reported by the upload; `--fail-on none` keeps the
+        # SARIF file for it and a clean exit.
         run: |
           java -jar target/liquibase-validation-*-cli.jar \
             --changelog-root src/test/resources/sarif \
@@ -51,14 +52,17 @@ jobs:
             --config src/test/resources/sarif/sample-changelog-linter.yml \
             --reporter sarif \
             --fail-on none \
-            > linter.sarif || true
+            > linter.sarif
 
       - name: Upload SARIF to code scanning
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4
         with:
           sarif_file: linter.sarif
 
+      # Shows how a finding fails a run without turning this demonstration into
+      # a blocking check on every pull request.
       - name: Fail on linter findings
+        continue-on-error: true
         run: |
           java -jar target/liquibase-validation-*-cli.jar \
             --changelog-root src/test/resources/sarif \

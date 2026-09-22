@@ -109,13 +109,15 @@ the document against the SARIF 2.1.0 schema under
 GitHub code scanning consumes.
 
 Upload it on a pull request with `github/codeql-action/upload-sarif`, and keep
-the CLI's exit code as a separate gate. The
+the CLI's exit code as the gate. The
 [`.github/workflows/linter-sarif.yml`](.github/workflows/linter-sarif.yml)
 workflow does exactly this against the sample changelog in
 `src/test/resources/sarif`: it lints with `--fail-on none` so the SARIF file is
-produced, uploads it (findings appear inline, next to CodeQL), then runs again
-with `--fail-on warning` so a finding fails the job. For the upload to work the
-job needs `security-events: write`.
+produced and uploaded (findings appear inline, next to CodeQL), then runs again
+with `--fail-on warning` to show the failing exit code. The sample deliberately
+contains a finding, so that step is advisory (`continue-on-error`); a real
+consumer wires the failing run into its gate as in `ddl_utils`. For the upload
+the job needs `security-events: write`.
 
 ## Using the library
 
