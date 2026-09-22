@@ -46,6 +46,7 @@ the changeset attributes. Built-in rules:
 | `require-concurrent-index-deletion` | warning | opt-in | a `DROP INDEX` (Squawk) |
 | `changeset-rollback-required` | warning | opt-in | a changeset with no `<rollback>` |
 | `changeset-rollback-parity` | warning | opt-in | a rollback with far fewer statements than the forward SQL |
+| `routine-dynamic-sql` | info | opt-in | a routine body that uses `EXECUTE`, hiding statements from the static rules |
 
 An opt-in rule runs when its id is listed under `include` in the configuration.
 Suppress a finding with a whitelist entry (see below).
