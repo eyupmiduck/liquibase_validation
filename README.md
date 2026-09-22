@@ -83,6 +83,7 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-rollback-required`](#changeset-rollback-required) | warning | opt-in | a changeset with no `<rollback>` |
 | [`changeset-rollback-parity`](#changeset-rollback-parity) | warning | opt-in | a rollback with far fewer statements than the forward SQL |
 | [`routine-dynamic-sql`](#routine-dynamic-sql) | info | opt-in | a routine body that uses `EXECUTE` |
+| [`block-raw-alter-table`](#block-raw-alter-table) | error | on | a raw `ALTER TABLE` in changelog SQL |
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -203,6 +204,38 @@ routine bodies, is informational and opt-in.
 <!-- Reported (info): the body's dynamic SQL is invisible to the token rules. -->
 <changeSet id="function-app.foo" author="me" runOnChange="true">
     <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### block-raw-alter-table
+
+A hand-written `ALTER TABLE` takes `ACCESS EXCLUSIVE` (or `SHARE ROW EXCLUSIVE`
+for a foreign key) without the bounded `lock_timeout` and the lock settings a
+project resolves through its own wrappers. Where a project exposes lock-aware DDL
+helpers (for example the `ddl_utils` schema, whose wrappers read
+`get_lock_settings`), this rule reports a literal `ALTER TABLE` in changelog SQL
+and points the developer at the matching helper, naming the table and the
+operation.
+
+Forward and rollback SQL are both checked, because a raw rollback `ALTER TABLE`
+takes the same lock. A structured change type (`<addColumn>`,
+`<modifyDataType>`, ...) generates SQL elsewhere and is out of scope, and a
+stored-routine body is the helper's own implementation rather than a caller's raw
+statement, so both are exempt. The rule is an error and on by default. A project
+whose changelog genuinely needs a raw `ALTER TABLE` accepts it with a whitelist
+entry.
+
+```xml
+<!-- Reported: call ddl_utils.add_column instead. -->
+<changeSet id="040" author="me">
+    <sql>ALTER TABLE ddl_utils.example ADD COLUMN note text;</sql>
+</changeSet>
+```
+
+```xml
+<!-- Accepted: the lock-aware wrapper. -->
+<changeSet id="041" author="me">
+    <sql>SELECT ddl_utils.add_column('ddl_utils', 'example', 'note', 'text');</sql>
 </changeSet>
 ```
 
