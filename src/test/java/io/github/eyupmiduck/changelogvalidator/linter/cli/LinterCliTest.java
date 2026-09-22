@@ -39,6 +39,26 @@ class LinterCliTest {
     @TempDir
     Path tempDir;
 
+    private static String xml(String body) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
+                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+                %s
+                </databaseChangeLog>
+                """.formatted(body);
+    }
+
+    private static Result run(String... args) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int code = LinterCli.run(args, new PrintStream(out, true, StandardCharsets.UTF_8),
+                new PrintStream(err, true, StandardCharsets.UTF_8));
+        return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+    }
+
     /**
      * {@code --help} prints the usage and succeeds.
      */
@@ -175,26 +195,6 @@ class LinterCliTest {
         Path file = tempDir.resolve("config-" + Math.abs(yaml.hashCode()) + ".yml");
         Files.writeString(file, yaml);
         return file;
-    }
-
-    private static String xml(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
-    }
-
-    private static Result run(String... args) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ByteArrayOutputStream err = new ByteArrayOutputStream();
-        int code = LinterCli.run(args, new PrintStream(out, true, StandardCharsets.UTF_8),
-                new PrintStream(err, true, StandardCharsets.UTF_8));
-        return new Result(code, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
     }
 
     private record Result(int code, String out, String err) {

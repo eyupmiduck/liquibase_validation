@@ -67,6 +67,35 @@ public final class SqlLexer {
         return new SqlLexer(sql).scan();
     }
 
+    private static boolean isWhitespace(char character) {
+        return character == ' ' || character == '\t' || character == '\n'
+                || character == '\r' || character == '\f' || character == '\u000B';
+    }
+
+    private static boolean isDigit(char character) {
+        return character >= '0' && character <= '9';
+    }
+
+    private static boolean isWordStart(char character) {
+        return Character.isLetter(character) || character == '_';
+    }
+
+    private static boolean isWordPart(char character) {
+        return Character.isLetterOrDigit(character) || character == '_' || character == '$';
+    }
+
+    private static boolean isDollarTagPart(char character) {
+        return Character.isLetterOrDigit(character) || character == '_';
+    }
+
+    private static boolean isOperatorCharacter(char character) {
+        return OPERATOR_CHARACTERS.indexOf(character) >= 0;
+    }
+
+    private static boolean isPunctuation(char character) {
+        return PUNCTUATION_CHARACTERS.indexOf(character) >= 0;
+    }
+
     private List<Token> scan() {
         List<Token> tokens = new ArrayList<>();
         while (position < length) {
@@ -343,34 +372,5 @@ public final class SqlLexer {
     private char peekFrom(int index, int ahead) {
         int target = index + ahead;
         return target < length ? sql.charAt(target) : '\0';
-    }
-
-    private static boolean isWhitespace(char character) {
-        return character == ' ' || character == '\t' || character == '\n'
-                || character == '\r' || character == '\f' || character == '\u000B';
-    }
-
-    private static boolean isDigit(char character) {
-        return character >= '0' && character <= '9';
-    }
-
-    private static boolean isWordStart(char character) {
-        return Character.isLetter(character) || character == '_';
-    }
-
-    private static boolean isWordPart(char character) {
-        return Character.isLetterOrDigit(character) || character == '_' || character == '$';
-    }
-
-    private static boolean isDollarTagPart(char character) {
-        return Character.isLetterOrDigit(character) || character == '_';
-    }
-
-    private static boolean isOperatorCharacter(char character) {
-        return OPERATOR_CHARACTERS.indexOf(character) >= 0;
-    }
-
-    private static boolean isPunctuation(char character) {
-        return PUNCTUATION_CHARACTERS.indexOf(character) >= 0;
     }
 }

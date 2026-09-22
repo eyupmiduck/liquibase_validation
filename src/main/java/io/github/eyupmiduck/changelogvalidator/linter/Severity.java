@@ -7,13 +7,19 @@ import java.util.Locale;
  */
 public enum Severity {
 
-    /** Informational; never fails the run. */
+    /**
+     * Informational; never fails the run.
+     */
     INFO,
 
-    /** A likely problem; fails only when the fault threshold is warning. */
+    /**
+     * A likely problem; fails only when the fault threshold is warning.
+     */
     WARNING,
 
-    /** A definite problem; fails by default. */
+    /**
+     * A definite problem; fails by default.
+     */
     ERROR;
 
     /**

@@ -47,13 +47,19 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
      */
     public enum Kind {
 
-        /** Inline SQL from a {@code <sql>} element. */
+        /**
+         * Inline SQL from a {@code <sql>} element.
+         */
         INLINE_SQL,
 
-        /** SQL loaded from a file referenced by {@code <sqlFile>}. */
+        /**
+         * SQL loaded from a file referenced by {@code <sqlFile>}.
+         */
         SQL_FILE,
 
-        /** A routine body referenced by {@code <createProcedure>} or {@code <createFunction>}. */
+        /**
+         * A routine body referenced by {@code <createProcedure>} or {@code <createFunction>}.
+         */
         ROUTINE_BODY
     }
 }

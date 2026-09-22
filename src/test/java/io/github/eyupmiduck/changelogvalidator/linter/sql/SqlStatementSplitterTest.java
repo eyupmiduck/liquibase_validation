@@ -8,10 +8,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link SqlStatementSplitter}: it splits on the delimiter only at the
@@ -20,6 +17,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * comments, and reports offsets.
  */
 class SqlStatementSplitterTest {
+
+    private static Stream<Arguments> opaqueDelimiterInputs() {
+        return Stream.of(
+                Arguments.of("SELECT 'a;b'"),
+                Arguments.of("SELECT $$x;y$$"),
+                Arguments.of("SELECT $tag$x;y$tag$"),
+                Arguments.of("SELECT \"a;b\""),
+                Arguments.of("SELECT /* a;b */ 1"),
+                Arguments.of("-- a;b\nSELECT 1"));
+    }
 
     /**
      * Statements separated by {@code ;} are returned without the delimiter.
@@ -43,16 +50,6 @@ class SqlStatementSplitterTest {
     @MethodSource("opaqueDelimiterInputs")
     void doesNotSplitInsideOpaqueRegions(String sql) {
         assertEquals(1, SqlStatementSplitter.split(sql).size());
-    }
-
-    private static Stream<Arguments> opaqueDelimiterInputs() {
-        return Stream.of(
-                Arguments.of("SELECT 'a;b'"),
-                Arguments.of("SELECT $$x;y$$"),
-                Arguments.of("SELECT $tag$x;y$tag$"),
-                Arguments.of("SELECT \"a;b\""),
-                Arguments.of("SELECT /* a;b */ 1"),
-                Arguments.of("-- a;b\nSELECT 1"));
     }
 
     /**

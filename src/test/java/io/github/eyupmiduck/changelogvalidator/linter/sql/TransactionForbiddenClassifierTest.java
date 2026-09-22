@@ -22,18 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TransactionForbiddenClassifierTest {
 
-    /**
-     * Each forbidden statement is classified as its family.
-     *
-     * @param sql      the statement
-     * @param expected the expected family
-     */
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("forbiddenStatements")
-    void classifiesForbiddenStatements(String sql, Family expected) {
-        assertEquals(List.of(expected), families(sql, 17));
-    }
-
     private static Stream<Arguments> forbiddenStatements() {
         return Stream.of(
                 Arguments.of("CREATE INDEX CONCURRENTLY idx ON t (c);", Family.CREATE_INDEX_CONCURRENTLY),
@@ -52,17 +40,6 @@ class TransactionForbiddenClassifierTest {
                 Arguments.of("VACUUM FULL t;", Family.VACUUM));
     }
 
-    /**
-     * Statements that a transaction permits are not classified.
-     *
-     * @param sql the statement
-     */
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("allowedStatements")
-    void ignoresAllowedStatements(String sql) {
-        assertTrue(families(sql, 17).isEmpty());
-    }
-
     private static Stream<Arguments> allowedStatements() {
         return Stream.of(
                 Arguments.of("CREATE INDEX idx ON t (c);"),
@@ -76,6 +53,37 @@ class TransactionForbiddenClassifierTest {
                 Arguments.of("SELECT 1;"),
                 Arguments.of("SELECT 'CREATE INDEX CONCURRENTLY';"),
                 Arguments.of("SELECT 'DROP DATABASE d';"));
+    }
+
+    private static List<Family> families(String sql, Integer pgVersion) {
+        return TransactionForbiddenClassifier.classify(
+                        SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql), pgVersion)
+                .stream()
+                .map(Classification::family)
+                .toList();
+    }
+
+    /**
+     * Each forbidden statement is classified as its family.
+     *
+     * @param sql      the statement
+     * @param expected the expected family
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("forbiddenStatements")
+    void classifiesForbiddenStatements(String sql, Family expected) {
+        assertEquals(List.of(expected), families(sql, 17));
+    }
+
+    /**
+     * Statements that a transaction permits are not classified.
+     *
+     * @param sql the statement
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("allowedStatements")
+    void ignoresAllowedStatements(String sql) {
+        assertTrue(families(sql, 17).isEmpty());
     }
 
     /**
@@ -113,13 +121,5 @@ class TransactionForbiddenClassifierTest {
     void handlesEmptyInput() {
         assertTrue(families("", 17).isEmpty());
         assertTrue(families("-- CREATE INDEX CONCURRENTLY idx ON t (c);", 17).isEmpty());
-    }
-
-    private static List<Family> families(String sql, Integer pgVersion) {
-        return TransactionForbiddenClassifier.classify(
-                        SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql), pgVersion)
-                .stream()
-                .map(Classification::family)
-                .toList();
     }
 }

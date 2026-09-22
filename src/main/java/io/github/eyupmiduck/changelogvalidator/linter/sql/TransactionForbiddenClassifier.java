@@ -27,48 +27,6 @@ public final class TransactionForbiddenClassifier {
     }
 
     /**
-     * A statement family that cannot run inside a transaction block.
-     */
-    public enum Family {
-
-        /** {@code CREATE [UNIQUE] INDEX CONCURRENTLY}. */
-        CREATE_INDEX_CONCURRENTLY,
-
-        /** {@code DROP INDEX CONCURRENTLY}. */
-        DROP_INDEX_CONCURRENTLY,
-
-        /** {@code REINDEX ... CONCURRENTLY}. */
-        REINDEX_CONCURRENTLY,
-
-        /** {@code ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY}. */
-        DETACH_PARTITION_CONCURRENTLY,
-
-        /** {@code CREATE DATABASE}. */
-        CREATE_DATABASE,
-
-        /** {@code DROP DATABASE}. */
-        DROP_DATABASE,
-
-        /** {@code ALTER SYSTEM}. */
-        ALTER_SYSTEM,
-
-        /** {@code VACUUM}. */
-        VACUUM,
-
-        /** {@code ALTER TYPE ... ADD VALUE}, forbidden before PostgreSQL 12. */
-        ALTER_TYPE_ADD_VALUE
-    }
-
-    /**
-     * A classified statement.
-     *
-     * @param family    the transaction-forbidden family
-     * @param statement the statement, with its source span
-     */
-    public record Classification(Family family, SqlStatement statement) {
-    }
-
-    /**
      * Classifies every statement in {@code statements} by its tokens.
      *
      * @param tokens     the tokens of the SQL the statements come from
@@ -172,5 +130,65 @@ public final class TransactionForbiddenClassifier {
                 .filter(token -> token.startOffset() >= statement.startOffset()
                         && token.endOffset() <= statement.endOffset())
                 .toList();
+    }
+
+    /**
+     * A statement family that cannot run inside a transaction block.
+     */
+    public enum Family {
+
+        /**
+         * {@code CREATE [UNIQUE] INDEX CONCURRENTLY}.
+         */
+        CREATE_INDEX_CONCURRENTLY,
+
+        /**
+         * {@code DROP INDEX CONCURRENTLY}.
+         */
+        DROP_INDEX_CONCURRENTLY,
+
+        /**
+         * {@code REINDEX ... CONCURRENTLY}.
+         */
+        REINDEX_CONCURRENTLY,
+
+        /**
+         * {@code ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY}.
+         */
+        DETACH_PARTITION_CONCURRENTLY,
+
+        /**
+         * {@code CREATE DATABASE}.
+         */
+        CREATE_DATABASE,
+
+        /**
+         * {@code DROP DATABASE}.
+         */
+        DROP_DATABASE,
+
+        /**
+         * {@code ALTER SYSTEM}.
+         */
+        ALTER_SYSTEM,
+
+        /**
+         * {@code VACUUM}.
+         */
+        VACUUM,
+
+        /**
+         * {@code ALTER TYPE ... ADD VALUE}, forbidden before PostgreSQL 12.
+         */
+        ALTER_TYPE_ADD_VALUE
+    }
+
+    /**
+     * A classified statement.
+     *
+     * @param family    the transaction-forbidden family
+     * @param statement the statement, with its source span
+     */
+    public record Classification(Family family, SqlStatement statement) {
     }
 }

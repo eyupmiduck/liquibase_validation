@@ -28,7 +28,9 @@ import java.util.List;
  */
 public final class SingleStatementRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "changeset-single-statement";
 
     private final Integer pgVersion;
@@ -49,6 +51,29 @@ public final class SingleStatementRule implements Rule {
      */
     public SingleStatementRule(Integer pgVersion) {
         this.pgVersion = pgVersion;
+    }
+
+    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() >= statement.startOffset()) {
+                return token;
+            }
+        }
+        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
+    }
+
+    private static String display(Family family) {
+        return switch (family) {
+            case CREATE_INDEX_CONCURRENTLY -> "CREATE INDEX CONCURRENTLY";
+            case DROP_INDEX_CONCURRENTLY -> "DROP INDEX CONCURRENTLY";
+            case REINDEX_CONCURRENTLY -> "REINDEX CONCURRENTLY";
+            case DETACH_PARTITION_CONCURRENTLY -> "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";
+            case CREATE_DATABASE -> "CREATE DATABASE";
+            case DROP_DATABASE -> "DROP DATABASE";
+            case ALTER_SYSTEM -> "ALTER SYSTEM";
+            case VACUUM -> "VACUUM";
+            case ALTER_TYPE_ADD_VALUE -> "ALTER TYPE ... ADD VALUE";
+        };
     }
 
     @Override
@@ -92,28 +117,5 @@ public final class SingleStatementRule implements Rule {
                 return;
             }
         }
-    }
-
-    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() >= statement.startOffset()) {
-                return token;
-            }
-        }
-        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
-    }
-
-    private static String display(Family family) {
-        return switch (family) {
-            case CREATE_INDEX_CONCURRENTLY -> "CREATE INDEX CONCURRENTLY";
-            case DROP_INDEX_CONCURRENTLY -> "DROP INDEX CONCURRENTLY";
-            case REINDEX_CONCURRENTLY -> "REINDEX CONCURRENTLY";
-            case DETACH_PARTITION_CONCURRENTLY -> "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";
-            case CREATE_DATABASE -> "CREATE DATABASE";
-            case DROP_DATABASE -> "DROP DATABASE";
-            case ALTER_SYSTEM -> "ALTER SYSTEM";
-            case VACUUM -> "VACUUM";
-            case ALTER_TYPE_ADD_VALUE -> "ALTER TYPE ... ADD VALUE";
-        };
     }
 }

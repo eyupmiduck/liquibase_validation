@@ -23,19 +23,18 @@ distributed, how `ddl_utils` runs the linter, and how rules are versioned.
    linter under `io.github.eyupmiduck.changelogvalidator.linter` (subpackages
    `.lexer`, `.rules`, `.config`, `.cli`). Reuse `ChangelogValidator` for the
    changelog graph and the existing `snakeyaml` for YAML. Add **no new runtime
-   dependencies**; hand-roll argument parsing for the small flag set
-   (`--config`, `--whitelist`, `--fail-on`, `--reporter`).
+   dependencies**; hand-roll argument parsing for the small flag set (`--config`, `--whitelist`, `--fail-on`,
+   `--reporter`).
 
 2. **CLI in the same artifact, distributed as a release asset.** Provide a
-   `LinterCli` main class. The release workflow builds a shaded, executable jar
-   (`maven-shade-plugin`, classifier `cli`, `Main-Class` set) and attaches it to
+   `LinterCli` main class. The release workflow builds a shaded, executable jar (`maven-shade-plugin`, classifier `cli`,
+   `Main-Class` set) and attaches it to
    the GitHub Release, so external users can download it without GitHub Packages
    authentication. The library API remains the primary interface.
 
 3. **`ddl_utils` runs the linter as a `verify` gate via the CLI.** Bind
    `exec-maven-plugin` (`exec:java`, `LinterCli` on the classpath) in `verify`
-   with configuration and whitelist defaulting to the module base dir
-   (`ddl_utils/.liquibase-linter.yml`,
+   with configuration and whitelist defaulting to the module base dir (`ddl_utils/.liquibase-linter.yml`,
    `ddl_utils/.liquibase-linter-whitelist.yml`), `--fail-on error`, and the tty
    reporter; CI adds the SARIF reporter and uploads to code scanning. The
    existing JUnit checks (`ChangelogNamingTest`, `ChangelogSqlFilesTest`,

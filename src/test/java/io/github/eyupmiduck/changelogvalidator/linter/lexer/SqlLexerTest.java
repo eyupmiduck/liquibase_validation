@@ -8,10 +8,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link SqlLexer}: it classifies each supported lexical form, keeps
@@ -20,19 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@link TokenType#ERROR} instead of skipping it.
  */
 class SqlLexerTest {
-
-    /**
-     * Each supported lexical form is produced as a single token of the expected
-     * type.
-     */
-    @ParameterizedTest(name = "{0} -> {1}")
-    @MethodSource("singleTokenForms")
-    void classifiesSingleTokenForms(String sql, TokenType expected) {
-        List<Token> tokens = SqlLexer.tokenize(sql);
-
-        assertEquals(1, tokens.size());
-        assertEquals(expected, tokens.get(0).type());
-    }
 
     private static Stream<Arguments> singleTokenForms() {
         return Stream.of(
@@ -72,6 +56,40 @@ class SqlLexerTest {
                 Arguments.of(",", TokenType.PUNCTUATION),
                 Arguments.of(".", TokenType.PUNCTUATION),
                 Arguments.of(";", TokenType.PUNCTUATION));
+    }
+
+    private static Stream<Arguments> directiveLines() {
+        return Stream.of(
+                Arguments.of("--liquibase formatted sql", TokenType.DIRECTIVE),
+                Arguments.of("--changeset me:1", TokenType.DIRECTIVE),
+                Arguments.of("--rollback DROP TABLE t", TokenType.DIRECTIVE),
+                Arguments.of("--preconditions onFail:HALT", TokenType.DIRECTIVE),
+                Arguments.of("--property name:value", TokenType.DIRECTIVE),
+                Arguments.of("--comment note", TokenType.DIRECTIVE),
+                Arguments.of("-- spaced", TokenType.LINE_COMMENT));
+    }
+
+    private static Stream<Arguments> unterminatedInputs() {
+        return Stream.of(
+                Arguments.of("'abc"),
+                Arguments.of("E'abc\\'"),
+                Arguments.of("$$abc"),
+                Arguments.of("$tag$abc"),
+                Arguments.of("/* abc"),
+                Arguments.of("\"abc"));
+    }
+
+    /**
+     * Each supported lexical form is produced as a single token of the expected
+     * type.
+     */
+    @ParameterizedTest(name = "{0} -> {1}")
+    @MethodSource("singleTokenForms")
+    void classifiesSingleTokenForms(String sql, TokenType expected) {
+        List<Token> tokens = SqlLexer.tokenize(sql);
+
+        assertEquals(1, tokens.size());
+        assertEquals(expected, tokens.get(0).type());
     }
 
     /**
@@ -141,17 +159,6 @@ class SqlLexerTest {
 
         assertEquals(1, tokens.size());
         assertEquals(expected, tokens.get(0).type());
-    }
-
-    private static Stream<Arguments> directiveLines() {
-        return Stream.of(
-                Arguments.of("--liquibase formatted sql", TokenType.DIRECTIVE),
-                Arguments.of("--changeset me:1", TokenType.DIRECTIVE),
-                Arguments.of("--rollback DROP TABLE t", TokenType.DIRECTIVE),
-                Arguments.of("--preconditions onFail:HALT", TokenType.DIRECTIVE),
-                Arguments.of("--property name:value", TokenType.DIRECTIVE),
-                Arguments.of("--comment note", TokenType.DIRECTIVE),
-                Arguments.of("-- spaced", TokenType.LINE_COMMENT));
     }
 
     /**
@@ -291,16 +298,6 @@ class SqlLexerTest {
         assertEquals(TokenType.ERROR, tokens.get(0).type());
         assertEquals(0, tokens.get(0).startOffset());
         assertEquals(sql.length(), tokens.get(0).endOffset());
-    }
-
-    private static Stream<Arguments> unterminatedInputs() {
-        return Stream.of(
-                Arguments.of("'abc"),
-                Arguments.of("E'abc\\'"),
-                Arguments.of("$$abc"),
-                Arguments.of("$tag$abc"),
-                Arguments.of("/* abc"),
-                Arguments.of("\"abc"));
     }
 
     /**
