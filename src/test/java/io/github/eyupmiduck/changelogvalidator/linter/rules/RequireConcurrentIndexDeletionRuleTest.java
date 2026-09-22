@@ -1,11 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
-import io.github.eyupmiduck.changelogvalidator.linter.Finding;
-import io.github.eyupmiduck.changelogvalidator.linter.Linter;
-import io.github.eyupmiduck.changelogvalidator.linter.Rule;
-import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
-import io.github.eyupmiduck.changelogvalidator.linter.Severity;
-import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
+import io.github.eyupmiduck.changelogvalidator.linter.*;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
@@ -41,6 +36,12 @@ class RequireConcurrentIndexDeletionRuleTest {
     private static SqlUnit unit(String sql) {
         return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
                 FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
+    }
+
+    private static ChangeSet changeSet(String sql) {
+        return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
+                List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null)),
+                false, List.of());
     }
 
     /**
@@ -105,11 +106,5 @@ class RequireConcurrentIndexDeletionRuleTest {
         assertEquals(1, findings.size());
         assertEquals(RequireConcurrentIndexDeletionRule.ID, findings.get(0).ruleId());
         assertEquals(Severity.WARNING, findings.get(0).severity());
-    }
-
-    private static ChangeSet changeSet(String sql) {
-        return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
-                List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null)),
-                false, List.of());
     }
 }

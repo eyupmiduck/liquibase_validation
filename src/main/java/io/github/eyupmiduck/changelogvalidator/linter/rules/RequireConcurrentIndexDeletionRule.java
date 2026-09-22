@@ -22,7 +22,9 @@ import java.util.List;
  */
 public final class RequireConcurrentIndexDeletionRule implements Rule {
 
-    /** The rule id (Squawk's). */
+    /**
+     * The rule id (Squawk's).
+     */
     public static final String ID = "require-concurrent-index-deletion";
 
     @Override

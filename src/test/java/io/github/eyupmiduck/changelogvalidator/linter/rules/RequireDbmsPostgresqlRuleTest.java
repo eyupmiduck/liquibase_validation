@@ -1,11 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
-import io.github.eyupmiduck.changelogvalidator.linter.Finding;
-import io.github.eyupmiduck.changelogvalidator.linter.Linter;
-import io.github.eyupmiduck.changelogvalidator.linter.Rule;
-import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
-import io.github.eyupmiduck.changelogvalidator.linter.Severity;
-import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
+import io.github.eyupmiduck.changelogvalidator.linter.*;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;

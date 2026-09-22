@@ -7,7 +7,6 @@ import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
-import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
@@ -39,7 +38,9 @@ import java.util.regex.Pattern;
  */
 public final class RequireDbmsPostgresqlRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "require-dbms-postgresql";
 
     // Operators and punctuation that only PostgreSQL (among common targets)
@@ -47,47 +48,8 @@ public final class RequireDbmsPostgresqlRule implements Rule {
     // a string or comment cannot trigger it.
     private static final Pattern POSTGRES_OPERATORS = Pattern.compile("::|->>|->|#>|#>>|@>|<@|\\?\\||\\?&");
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.ERROR;
-    }
-
-    @Override
-    public List<Violation> check(RuleContext context) {
-        if (gatedOnPostgres(context.changeSet())) {
-            return List.of();
-        }
-        List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
-        return List.copyOf(violations);
-    }
-
     private static boolean gatedOnPostgres(ChangeSet changeSet) {
         return listsPostgres(changeSet.dbms());
-    }
-
-    private void collect(List<SqlUnit> units, List<Violation> violations) {
-        for (SqlUnit unit : units) {
-            if (listsPostgres(unit.source().dbms())) {
-                continue;
-            }
-            String construct = firstPostgresConstruct(unit);
-            if (construct == null) {
-                continue;
-            }
-            violations.add(new Violation(
-                    construct,
-                    "changeset uses PostgreSQL-only syntax (" + construct
-                            + ") without dbms=\"postgresql\"; on another database it fails at deploy",
-                    "Add dbms=\"postgresql\" to the changeset, or make the SQL portable.",
-                    unit.file(), 1, 1));
-        }
     }
 
     private static boolean listsPostgres(String dbms) {
@@ -179,5 +141,44 @@ public final class RequireDbmsPostgresqlRule implements Rule {
             }
         }
         return false;
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.ERROR;
+    }
+
+    @Override
+    public List<Violation> check(RuleContext context) {
+        if (gatedOnPostgres(context.changeSet())) {
+            return List.of();
+        }
+        List<Violation> violations = new ArrayList<>();
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
+    }
+
+    private void collect(List<SqlUnit> units, List<Violation> violations) {
+        for (SqlUnit unit : units) {
+            if (listsPostgres(unit.source().dbms())) {
+                continue;
+            }
+            String construct = firstPostgresConstruct(unit);
+            if (construct == null) {
+                continue;
+            }
+            violations.add(new Violation(
+                    construct,
+                    "changeset uses PostgreSQL-only syntax (" + construct
+                            + ") without dbms=\"postgresql\"; on another database it fails at deploy",
+                    "Add dbms=\"postgresql\" to the changeset, or make the SQL portable.",
+                    unit.file(), 1, 1));
+        }
     }
 }

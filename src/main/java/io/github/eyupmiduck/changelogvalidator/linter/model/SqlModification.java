@@ -70,19 +70,29 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
      */
     public enum Kind {
 
-        /** {@code <append value="..."/>}. */
+        /**
+         * {@code <append value="..."/>}.
+         */
         APPEND,
 
-        /** {@code <prepend value="..."/>}. */
+        /**
+         * {@code <prepend value="..."/>}.
+         */
         PREPEND,
 
-        /** {@code <replace replace="..." with="..."/>}. */
+        /**
+         * {@code <replace replace="..." with="..."/>}.
+         */
         REPLACE,
 
-        /** {@code <regExpReplace replace="..." with="..."/>}. */
+        /**
+         * {@code <regExpReplace replace="..." with="..."/>}.
+         */
         REGEXP_REPLACE,
 
-        /** {@code <appendSqlIfNotPresent value="..."/>}. */
+        /**
+         * {@code <appendSqlIfNotPresent value="..."/>}.
+         */
         APPEND_IF_NOT_PRESENT;
 
         /**

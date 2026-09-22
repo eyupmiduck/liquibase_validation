@@ -35,49 +35,10 @@ import java.util.Locale;
  */
 public final class BlockRawAlterTableRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "block-raw-alter-table";
-
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.ERROR;
-    }
-
-    @Override
-    public List<Violation> check(RuleContext context) {
-        List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
-        return List.copyOf(violations);
-    }
-
-    private void collect(List<SqlUnit> units, List<Violation> violations) {
-        for (SqlUnit unit : units) {
-            if (unit.source().kind() == SqlSource.Kind.ROUTINE_BODY) {
-                continue;
-            }
-            for (SqlStatement statement : unit.statements()) {
-                List<Token> tokens = nonTriviaWithin(unit.tokens(), statement);
-                if (!isAlterTable(tokens)) {
-                    continue;
-                }
-                Token token = firstToken(unit, statement);
-                String table = qualifiedName(tokens, 2);
-                String hint = wrapperHint(tokens);
-                violations.add(new Violation(
-                        "ALTER TABLE",
-                        "raw ALTER TABLE" + (table == null ? "" : " on " + table)
-                                + " bypasses the ddl_utils lock-aware wrappers; " + hint,
-                        "Call the matching ddl_utils function/procedure instead of a hand-written ALTER TABLE.",
-                        unit.file(), token.line(), token.column()));
-            }
-        }
-    }
 
     private static boolean isAlterTable(List<Token> tokens) {
         return tokens.size() >= 2
@@ -183,5 +144,46 @@ public final class BlockRawAlterTableRule implements Rule {
                 .filter(token -> token.startOffset() >= statement.startOffset()
                         && token.endOffset() <= statement.endOffset())
                 .toList();
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.ERROR;
+    }
+
+    @Override
+    public List<Violation> check(RuleContext context) {
+        List<Violation> violations = new ArrayList<>();
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
+    }
+
+    private void collect(List<SqlUnit> units, List<Violation> violations) {
+        for (SqlUnit unit : units) {
+            if (unit.source().kind() == SqlSource.Kind.ROUTINE_BODY) {
+                continue;
+            }
+            for (SqlStatement statement : unit.statements()) {
+                List<Token> tokens = nonTriviaWithin(unit.tokens(), statement);
+                if (!isAlterTable(tokens)) {
+                    continue;
+                }
+                Token token = firstToken(unit, statement);
+                String table = qualifiedName(tokens, 2);
+                String hint = wrapperHint(tokens);
+                violations.add(new Violation(
+                        "ALTER TABLE",
+                        "raw ALTER TABLE" + (table == null ? "" : " on " + table)
+                                + " bypasses the ddl_utils lock-aware wrappers; " + hint,
+                        "Call the matching ddl_utils function/procedure instead of a hand-written ALTER TABLE.",
+                        unit.file(), token.line(), token.column()));
+            }
+        }
     }
 }
