@@ -99,6 +99,26 @@ omitted, but an entry must set at least one. Matching is fail-closed: a finding
 no entry accepts is reported, an entry that matches no finding is stale and
 fails the run, and a finding that matches more than one entry is rejected.
 
+### Code scanning
+
+`--reporter sarif` writes a SARIF v2.1.0 document (tool name `liquibase-linter`,
+one rule per finding rule id with its default level, and a result with the
+mapped level, message/markdown and file/line/column location). A test validates
+the document against the SARIF 2.1.0 schema under
+`src/test/resources/sarif/sarif-2.1.0.json`, so it cannot drift from the format
+GitHub code scanning consumes.
+
+Upload it on a pull request with `github/codeql-action/upload-sarif`, and keep
+the CLI's exit code as the gate. The
+[`.github/workflows/linter-sarif.yml`](.github/workflows/linter-sarif.yml)
+workflow does exactly this against the sample changelog in
+`src/test/resources/sarif`: it lints with `--fail-on none` so the SARIF file is
+produced and uploaded (findings appear inline, next to CodeQL), then runs again
+with `--fail-on warning` to show the failing exit code. The sample deliberately
+contains a finding, so that step is advisory (`continue-on-error`); a real
+consumer wires the failing run into its gate as in `ddl_utils`. For the upload
+the job needs `security-events: write`.
+
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example

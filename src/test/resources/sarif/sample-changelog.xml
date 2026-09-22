@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A small changelog used by the SARIF code-scanning workflow
+     (.github/workflows/linter-sarif.yml) to demonstrate uploading linter
+     findings as SARIF. It contains one deliberate violation: an index built
+     without CONCURRENTLY on a table created in an earlier changeset. -->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-create-account" author="ci">
+        <createTable tableName="account">
+            <column name="id" type="bigint"/>
+            <column name="email" type="text"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="002-index-email" author="ci">
+        <createIndex indexName="account_email_idx" tableName="account">
+            <column name="email"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
