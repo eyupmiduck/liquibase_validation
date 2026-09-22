@@ -55,14 +55,14 @@ liquibase-linter --changelog-root src/main/resources/db/changelog
 liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sarif --fail-on warning
 ```
 
-| Option                     | Default                       | Meaning                              |
-|----------------------------|-------------------------------|--------------------------------------|
-| `-r, --changelog-root DIR` | required                      | changelog directory                  |
-| `-m, --master FILE`        | `DIR/db.changelog-master.xml` | master changelog                     |
-| `-c, --config FILE`        | `.liquibase-linter.yml`       | YAML configuration                   |
-| `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                |
-| `--reporter`               | `tty`                         | `tty`, `json` or `sarif`             |
-| `--fail-on`                | `error`                       | `error`, `warning`, `info` or `none` |
+| Option                     | Default                           | Meaning                              |
+|----------------------------|-----------------------------------|--------------------------------------|
+| `-r, --changelog-root DIR` | required                          | changelog directory                  |
+| `-m, --master FILE`        | `DIR/db.changelog-master.xml`     | master changelog                     |
+| `-c, --config FILE`        | `.liquibase-linter.yml`           | YAML configuration                   |
+| `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                    |
+| `--reporter`               | `tty`                             | `tty`, `json` or `sarif`             |
+| `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold (or a whitelist entry is stale), and `2` for a usage or runtime error.
@@ -73,18 +73,18 @@ An **error/warning/info** is the rule's default severity; **on** means it runs b
 default, **opt-in** means it runs only when listed under `include`. The table
 lists the built-in rules in registration (reporting) order.
 
-| Rule | Severity | Default | What it detects |
-| --- | --- | --- | --- |
-| [`changeset-run-in-transaction-required`](#changeset-run-in-transaction-required) | error | on | a transaction-forbidden statement in a changeset without `runInTransaction="false"` |
-| [`changeset-single-statement`](#changeset-single-statement) | error | on | a transaction-forbidden statement that is not the only statement in a `runInTransaction="false"` changeset |
-| [`changeset-prefer-single-statement`](#changeset-prefer-single-statement) | warning | opt-in | several statements in a `runInTransaction="false"` changeset |
-| [`require-concurrent-index-creation`](#require-concurrent-index-creation) | warning | opt-in | a `CREATE [UNIQUE] INDEX` on a table not created in the same changeset |
-| [`require-concurrent-index-deletion`](#require-concurrent-index-deletion) | warning | opt-in | a `DROP INDEX` |
-| [`changeset-rollback-required`](#changeset-rollback-required) | warning | opt-in | a changeset with no `<rollback>` |
-| [`changeset-rollback-parity`](#changeset-rollback-parity) | warning | opt-in | a rollback with far fewer statements than the forward SQL |
-| [`routine-dynamic-sql`](#routine-dynamic-sql) | info | opt-in | a routine body that uses `EXECUTE` |
-| [`block-raw-alter-table`](#block-raw-alter-table) | error | on | a raw `ALTER TABLE` in changelog SQL |
-| [`require-dbms-postgresql`](#require-dbms-postgresql) | error | on | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate |
+| Rule                                                                              | Severity | Default | What it detects                                                                                            |
+|-----------------------------------------------------------------------------------|----------|---------|------------------------------------------------------------------------------------------------------------|
+| [`changeset-run-in-transaction-required`](#changeset-run-in-transaction-required) | error    | on      | a transaction-forbidden statement in a changeset without `runInTransaction="false"`                        |
+| [`changeset-single-statement`](#changeset-single-statement)                       | error    | on      | a transaction-forbidden statement that is not the only statement in a `runInTransaction="false"` changeset |
+| [`changeset-prefer-single-statement`](#changeset-prefer-single-statement)         | warning  | opt-in  | several statements in a `runInTransaction="false"` changeset                                               |
+| [`require-concurrent-index-creation`](#require-concurrent-index-creation)         | warning  | opt-in  | a `CREATE [UNIQUE] INDEX` on a table not created in the same changeset                                     |
+| [`require-concurrent-index-deletion`](#require-concurrent-index-deletion)         | warning  | opt-in  | a `DROP INDEX`                                                                                             |
+| [`changeset-rollback-required`](#changeset-rollback-required)                     | warning  | opt-in  | a changeset with no `<rollback>`                                                                           |
+| [`changeset-rollback-parity`](#changeset-rollback-parity)                         | warning  | opt-in  | a rollback with far fewer statements than the forward SQL                                                  |
+| [`routine-dynamic-sql`](#routine-dynamic-sql)                                     | info     | opt-in  | a routine body that uses `EXECUTE`                                                                         |
+| [`block-raw-alter-table`](#block-raw-alter-table)                                 | error    | on      | a raw `ALTER TABLE` in changelog SQL                                                                       |
+| [`require-dbms-postgresql`](#require-dbms-postgresql)                             | error    | on      | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate                                      |
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -288,13 +288,13 @@ rules:
     severity: warning
 ```
 
-| Key | Meaning |
-| --- | --- |
-| `pgVersion` | PostgreSQL major version for version-gated rules (`ALTER TYPE ... ADD VALUE`); omit when unknown |
-| `failOn` | least severity that fails the run: `error` (default), `warning`, `info` or `none` (the CLI `--fail-on` overrides it) |
-| `exclude` | rule ids to turn off |
-| `include` | opt-in rule ids to turn on |
-| `rules` | per-rule `severity` override and free-form `options` |
+| Key         | Meaning                                                                                                              |
+|-------------|----------------------------------------------------------------------------------------------------------------------|
+| `pgVersion` | PostgreSQL major version for version-gated rules (`ALTER TYPE ... ADD VALUE`); omit when unknown                     |
+| `failOn`    | least severity that fails the run: `error` (default), `warning`, `info` or `none` (the CLI `--fail-on` overrides it) |
+| `exclude`   | rule ids to turn off                                                                                                 |
+| `include`   | opt-in rule ids to turn on                                                                                           |
+| `rules`     | per-rule `severity` override and free-form `options`                                                                 |
 
 Unknown keys, an unknown rule id, and a malformed value fail fast, so a typo
 cannot silently disable a rule.

@@ -177,6 +177,10 @@ public final class Whitelist {
             return expected == null || expected.equals(actual);
         }
 
+        private static String orAny(String value) {
+            return value == null ? "*" : value;
+        }
+
         /**
          * Returns whether this entry accepts the given finding.
          *
@@ -207,10 +211,6 @@ public final class Whitelist {
         public String describe() {
             return "rule=" + orAny(rule) + " file=" + orAny(file) + " changeset=" + orAny(changeset)
                     + " statement=" + orAny(statement) + ": " + reason;
-        }
-
-        private static String orAny(String value) {
-            return value == null ? "*" : value;
         }
     }
 

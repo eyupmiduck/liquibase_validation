@@ -178,7 +178,10 @@
           "description": "Key/value pairs that provide additional information about the change."
         }
       },
-      "required": ["artifactLocation", "replacements"]
+      "required": [
+        "artifactLocation",
+        "replacements"
+      ]
     },
     "artifactContent": {
       "description": "Represents the contents of an artifact.",
@@ -271,7 +274,9 @@
           "description": "Key/value pairs that provide additional information about the attachment."
         }
       },
-      "required": ["artifactLocation"]
+      "required": [
+        "artifactLocation"
+      ]
     },
     "codeFlow": {
       "description": "A set of threadFlows which together describe a pattern of code execution relevant to detecting a result.",
@@ -296,7 +301,9 @@
           "description": "Key/value pairs that provide additional information about the code flow."
         }
       },
-      "required": ["threadFlows"]
+      "required": [
+        "threadFlows"
+      ]
     },
     "configurationOverride": {
       "description": "Information about how a specific rule or notification was reconfigured at runtime.",
@@ -316,7 +323,10 @@
           "description": "Key/value pairs that provide additional information about the configuration override."
         }
       },
-      "required": ["configuration", "descriptor"]
+      "required": [
+        "configuration",
+        "descriptor"
+      ]
     },
     "conversion": {
       "description": "Describes how a converter transformed the output of a static analysis tool from the analysis tool's native output format into the SARIF format.",
@@ -346,7 +356,9 @@
           "description": "Key/value pairs that provide additional information about the conversion."
         }
       },
-      "required": ["tool"]
+      "required": [
+        "tool"
+      ]
     },
     "edge": {
       "description": "Represents a directed edge in a graph.",
@@ -374,7 +386,11 @@
           "description": "Key/value pairs that provide additional information about the edge."
         }
       },
-      "required": ["id", "sourceNodeId", "targetNodeId"]
+      "required": [
+        "id",
+        "sourceNodeId",
+        "targetNodeId"
+      ]
     },
     "edgeTraversal": {
       "description": "Represents the traversal of a single edge during a graph traversal.",
@@ -406,7 +422,9 @@
           "description": "Key/value pairs that provide additional information about the edge traversal."
         }
       },
-      "required": ["edgeId"]
+      "required": [
+        "edgeId"
+      ]
     },
     "exception": {
       "description": "Describes a runtime exception encountered during the execution of an analysis tool.",
@@ -642,13 +660,17 @@
           "properties": {
             "location": true
           },
-          "required": ["location"]
+          "required": [
+            "location"
+          ]
         },
         {
           "properties": {
             "guid": true
           },
-          "required": ["guid"]
+          "required": [
+            "guid"
+          ]
         }
       ]
     },
@@ -828,7 +850,9 @@
           "description": "Key/value pairs that provide additional information about the fix."
         }
       },
-      "required": ["artifactChanges"]
+      "required": [
+        "artifactChanges"
+      ]
     },
     "graph": {
       "description": "A network of nodes and directed edges that describes some aspect of the structure of the code (for example, a call graph).",
@@ -920,13 +944,17 @@
           "properties": {
             "runGraphIndex": true
           },
-          "required": ["runGraphIndex"]
+          "required": [
+            "runGraphIndex"
+          ]
         },
         {
           "properties": {
             "resultGraphIndex": true
           },
-          "required": ["resultGraphIndex"]
+          "required": [
+            "resultGraphIndex"
+          ]
         }
       ]
     },
@@ -1079,7 +1107,9 @@
           "description": "Key/value pairs that provide additional information about the invocation."
         }
       },
-      "required": ["executionSuccessful"]
+      "required": [
+        "executionSuccessful"
+      ]
     },
     "location": {
       "description": "A location within a programming artifact.",
@@ -1149,7 +1179,9 @@
         "kinds": {
           "description": "A set of distinct strings that categorize the relationship. Well-known kinds include 'includes', 'isIncludedBy' and 'relevant'.",
           "type": "array",
-          "default": ["relevant"],
+          "default": [
+            "relevant"
+          ],
           "uniqueItems": true,
           "items": {
             "type": "string"
@@ -1164,7 +1196,9 @@
           "description": "Key/value pairs that provide additional information about the location relationship."
         }
       },
-      "required": ["target"]
+      "required": [
+        "target"
+      ]
     },
     "logicalLocation": {
       "description": "A logical location of a construct that produced a result.",
@@ -1242,13 +1276,17 @@
           "properties": {
             "text": true
           },
-          "required": ["text"]
+          "required": [
+            "text"
+          ]
         },
         {
           "properties": {
             "id": true
           },
-          "required": ["id"]
+          "required": [
+            "id"
+          ]
         }
       ]
     },
@@ -1270,7 +1308,9 @@
           "description": "Key/value pairs that provide additional information about the message."
         }
       },
-      "required": ["text"]
+      "required": [
+        "text"
+      ]
     },
     "node": {
       "description": "Represents a node in a graph.",
@@ -1304,7 +1344,9 @@
           "description": "Key/value pairs that provide additional information about the node."
         }
       },
-      "required": ["id"]
+      "required": [
+        "id"
+      ]
     },
     "notification": {
       "description": "Describes a condition relevant to the tool itself, as opposed to being relevant to a target being analyzed by the tool.",
@@ -1328,7 +1370,12 @@
         "level": {
           "description": "A value specifying the severity level of the notification.",
           "default": "warning",
-          "enum": ["none", "note", "warning", "error"]
+          "enum": [
+            "none",
+            "note",
+            "warning",
+            "error"
+          ]
         },
         "threadId": {
           "description": "The thread identifier of the code that generated the notification.",
@@ -1356,7 +1403,9 @@
           "description": "Key/value pairs that provide additional information about the notification."
         }
       },
-      "required": ["message"]
+      "required": [
+        "message"
+      ]
     },
     "physicalLocation": {
       "description": "A physical location relevant to a result. Specifies a reference to a programming artifact together with a range of bytes or characters within that artifact.",
@@ -1389,13 +1438,17 @@
           "properties": {
             "address": true
           },
-          "required": ["address"]
+          "required": [
+            "address"
+          ]
         },
         {
           "properties": {
             "artifactLocation": true
           },
-          "required": ["artifactLocation"]
+          "required": [
+            "artifactLocation"
+          ]
         }
       ]
     },
@@ -1530,7 +1583,9 @@
           "description": "Key/value pairs that provide additional information about the replacement."
         }
       },
-      "required": ["deletedRegion"]
+      "required": [
+        "deletedRegion"
+      ]
     },
     "reportingDescriptor": {
       "description": "Metadata that describes a specific report produced by the tool, as part of the analysis it provides or its runtime reporting.",
@@ -1621,7 +1676,9 @@
           "description": "Key/value pairs that provide additional information about the report."
         }
       },
-      "required": ["id"]
+      "required": [
+        "id"
+      ]
     },
     "reportingConfiguration": {
       "description": "Information about a rule or notification that can be configured at runtime.",
@@ -1636,7 +1693,12 @@
         "level": {
           "description": "Specifies the failure level for the report.",
           "default": "warning",
-          "enum": ["none", "note", "warning", "error"]
+          "enum": [
+            "none",
+            "note",
+            "warning",
+            "error"
+          ]
         },
         "rank": {
           "description": "Specifies the relative priority of the report. Used for analysis output only.",
@@ -1689,19 +1751,25 @@
           "properties": {
             "index": true
           },
-          "required": ["index"]
+          "required": [
+            "index"
+          ]
         },
         {
           "properties": {
             "guid": true
           },
-          "required": ["guid"]
+          "required": [
+            "guid"
+          ]
         },
         {
           "properties": {
             "id": true
           },
-          "required": ["id"]
+          "required": [
+            "id"
+          ]
         }
       ]
     },
@@ -1717,7 +1785,9 @@
         "kinds": {
           "description": "A set of distinct strings that categorize the relationship. Well-known kinds include 'canPrecede', 'canFollow', 'willPrecede', 'willFollow', 'superset', 'subset', 'equal', 'disjoint', 'relevant', and 'incomparable'.",
           "type": "array",
-          "default": ["relevant"],
+          "default": [
+            "relevant"
+          ],
           "uniqueItems": true,
           "items": {
             "type": "string"
@@ -1732,7 +1802,9 @@
           "description": "Key/value pairs that provide additional information about the reporting descriptor reference."
         }
       },
-      "required": ["target"]
+      "required": [
+        "target"
+      ]
     },
     "result": {
       "description": "A result produced by an analysis tool.",
@@ -1768,7 +1840,12 @@
         "level": {
           "description": "A value specifying the severity level of the result.",
           "default": "warning",
-          "enum": ["none", "note", "warning", "error"]
+          "enum": [
+            "none",
+            "note",
+            "warning",
+            "error"
+          ]
         },
         "message": {
           "$ref": "#/definitions/message",
@@ -1878,7 +1955,12 @@
         },
         "baselineState": {
           "description": "The state of a result relative to a baseline of a previous run.",
-          "enum": ["new", "unchanged", "updated", "absent"]
+          "enum": [
+            "new",
+            "unchanged",
+            "updated",
+            "absent"
+          ]
         },
         "rank": {
           "description": "A number representing the priority or importance of the result.",
@@ -1949,7 +2031,9 @@
           "description": "Key/value pairs that provide additional information about the result."
         }
       },
-      "required": ["message"]
+      "required": [
+        "message"
+      ]
     },
     "resultProvenance": {
       "description": "Contains information about how and when a result was detected.",
@@ -2124,14 +2208,20 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "default": ["\r\n", "\n"],
+          "default": [
+            "\r\n",
+            "\n"
+          ],
           "items": {
             "type": "string"
           }
         },
         "columnKind": {
           "description": "Specifies the unit in which the tool measures columns.",
-          "enum": ["utf16CodeUnits", "unicodeCodePoints"]
+          "enum": [
+            "utf16CodeUnits",
+            "unicodeCodePoints"
+          ]
         },
         "externalPropertyFileReferences": {
           "$ref": "#/definitions/externalPropertyFileReferences",
@@ -2216,7 +2306,9 @@
           "description": "Key/value pairs that provide additional information about the run."
         }
       },
-      "required": ["tool"]
+      "required": [
+        "tool"
+      ]
     },
     "runAutomationDetails": {
       "description": "Information that describes a run's identity and role within an engineering system process.",
@@ -2285,7 +2377,9 @@
           "description": "Key/value pairs that provide additional information about the stack."
         }
       },
-      "required": ["frames"]
+      "required": [
+        "frames"
+      ]
     },
     "stackFrame": {
       "description": "A function call within a stack trace.",
@@ -2333,11 +2427,18 @@
         },
         "kind": {
           "description": "A string that indicates where the suppression is persisted.",
-          "enum": ["inSource", "external"]
+          "enum": [
+            "inSource",
+            "external"
+          ]
         },
         "status": {
           "description": "A string that indicates the review status of the suppression.",
-          "enum": ["accepted", "underReview", "rejected"]
+          "enum": [
+            "accepted",
+            "underReview",
+            "rejected"
+          ]
         },
         "justification": {
           "description": "A string representing the justification for the suppression.",
@@ -2352,7 +2453,9 @@
           "description": "Key/value pairs that provide additional information about the suppression."
         }
       },
-      "required": ["kind"]
+      "required": [
+        "kind"
+      ]
     },
     "threadFlow": {
       "description": "Describes a sequence of code locations that specify a path through a single thread of execution such as an operating system or fiber.",
@@ -2395,7 +2498,9 @@
           "description": "Key/value pairs that provide additional information about the thread flow."
         }
       },
-      "required": ["locations"]
+      "required": [
+        "locations"
+      ]
     },
     "threadFlowLocation": {
       "description": "A location visited by an analysis tool while simulating or monitoring the execution of a program.",
@@ -2465,7 +2570,11 @@
         },
         "importance": {
           "description": "Specifies the importance of this location in understanding the code flow in which it occurs. The order from most to least important is \"essential\", \"important\", \"unimportant\". Default: \"important\".",
-          "enum": ["important", "essential", "unimportant"],
+          "enum": [
+            "important",
+            "essential",
+            "unimportant"
+          ],
           "default": "important"
         },
         "webRequest": {
@@ -2506,7 +2615,9 @@
           "description": "Key/value pairs that provide additional information about the tool."
         }
       },
-      "required": ["driver"]
+      "required": [
+        "driver"
+      ]
     },
     "toolComponent": {
       "description": "A component, such as a plug-in or the driver, of the analysis tool that was run.",
@@ -2629,9 +2740,15 @@
           "description": "The kinds of data contained in this object.",
           "type": "array",
           "uniqueItems": true,
-          "default": ["localizedData", "nonLocalizedData"],
+          "default": [
+            "localizedData",
+            "nonLocalizedData"
+          ],
           "items": {
-            "enum": ["localizedData", "nonLocalizedData"]
+            "enum": [
+              "localizedData",
+              "nonLocalizedData"
+            ]
           }
         },
         "isComprehensive": {
@@ -2670,7 +2787,9 @@
           "description": "Key/value pairs that provide additional information about the tool component."
         }
       },
-      "required": ["name"]
+      "required": [
+        "name"
+      ]
     },
     "toolComponentReference": {
       "description": "Identifies a particular toolComponent object, either the driver or an extension.",
@@ -2734,7 +2853,9 @@
           "description": "Key/value pairs that provide additional information about the translation metadata."
         }
       },
-      "required": ["name"]
+      "required": [
+        "name"
+      ]
     },
     "versionControlDetails": {
       "description": "Specifies the information necessary to retrieve a desired revision from a version control system.",
@@ -2772,7 +2893,9 @@
           "description": "Key/value pairs that provide additional information about the version control details."
         }
       },
-      "required": ["repositoryUri"]
+      "required": [
+        "repositoryUri"
+      ]
     },
     "webRequest": {
       "description": "Describes an HTTP request.",
@@ -2909,7 +3032,10 @@
       "description": "Key/value pairs that provide additional information about the log file."
     }
   },
-  "required": ["version", "runs"],
+  "required": [
+    "version",
+    "runs"
+  ],
   "title": "Static Analysis Results Format (SARIF) Version 2.1.0 JSON Schema",
   "type": "object"
 }

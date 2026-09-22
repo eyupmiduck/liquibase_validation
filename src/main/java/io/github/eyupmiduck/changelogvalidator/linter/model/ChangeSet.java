@@ -25,11 +25,11 @@ import java.util.Objects;
  * @param dbms             the changeset dbms restriction, or null
  * @param context          the changeset context restriction, or null
  * @param labels           the changeset label restriction, or null
- * @param sqlSources        the forward SQL sources
- * @param rollbackDefined   whether the changeset declares a rollback
- * @param rollbackSources   the rollback SQL sources
- * @param normalisation     the properties and {@code <modifySql>} transformations
- *                          that turn the raw SQL into what Liquibase runs
+ * @param sqlSources       the forward SQL sources
+ * @param rollbackDefined  whether the changeset declares a rollback
+ * @param rollbackSources  the rollback SQL sources
+ * @param normalisation    the properties and {@code <modifySql>} transformations
+ *                         that turn the raw SQL into what Liquibase runs
  */
 public record ChangeSet(String id, String author, Path changelogFile, boolean runInTransaction, boolean runOnChange,
                         String dbms, String context, String labels, List<SqlSource> sqlSources,

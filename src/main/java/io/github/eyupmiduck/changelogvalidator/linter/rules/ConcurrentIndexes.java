@@ -5,11 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Finds {@code CREATE INDEX} and {@code DROP INDEX} statements that do not use
@@ -24,29 +20,6 @@ import java.util.Set;
 final class ConcurrentIndexes {
 
     private ConcurrentIndexes() {
-    }
-
-    /**
-     * The index command.
-     */
-    enum Kind {
-
-        /** {@code CREATE [UNIQUE] INDEX}. */
-        CREATE,
-
-        /** {@code DROP INDEX}. */
-        DROP
-    }
-
-    /**
-     * A non-concurrent index statement.
-     *
-     * @param kind  the command
-     * @param table the normalised indexed table for {@link Kind#CREATE}, otherwise null
-     * @param unit  the SQL unit the statement is in
-     * @param token the statement's first token, for the location
-     */
-    record Candidate(Kind kind, String table, SqlUnit unit, Token token) {
     }
 
     /**
@@ -191,8 +164,7 @@ final class ConcurrentIndexes {
     private static String identifier(Token token) {
         return switch (token.type()) {
             case WORD -> token.text().toLowerCase(Locale.ROOT);
-            case QUOTED_IDENTIFIER ->
-                    token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
+            case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
             default -> null;
         };
     }
@@ -216,5 +188,32 @@ final class ConcurrentIndexes {
                 .filter(token -> token.startOffset() >= statement.startOffset()
                         && token.endOffset() <= statement.endOffset())
                 .toList();
+    }
+
+    /**
+     * The index command.
+     */
+    enum Kind {
+
+        /**
+         * {@code CREATE [UNIQUE] INDEX}.
+         */
+        CREATE,
+
+        /**
+         * {@code DROP INDEX}.
+         */
+        DROP
+    }
+
+    /**
+     * A non-concurrent index statement.
+     *
+     * @param kind  the command
+     * @param table the normalised indexed table for {@link Kind#CREATE}, otherwise null
+     * @param unit  the SQL unit the statement is in
+     * @param token the statement's first token, for the location
+     */
+    record Candidate(Kind kind, String table, SqlUnit unit, Token token) {
     }
 }

@@ -33,7 +33,7 @@ public final class LinterCli {
 
     private static final String USAGE = """
             Usage: liquibase-linter --changelog-root DIR [options]
-
+            
               -r, --changelog-root DIR   changelog directory (required)
               -m, --master FILE          master changelog (default DIR/db.changelog-master.xml)
               -c, --config FILE          config file (default .liquibase-linter.yml)
@@ -41,7 +41,7 @@ public final class LinterCli {
                   --reporter FORMAT      tty (default), json or sarif
                   --fail-on SEVERITY     error (default), warning, info or none
               -h, --help                 print this help
-
+            
             """;
 
     private LinterCli() {

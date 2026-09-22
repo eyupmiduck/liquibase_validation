@@ -24,8 +24,15 @@ import java.util.List;
  */
 public final class RequireRollbackRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "changeset-rollback-required";
+
+    private static boolean isRoutineBody(RuleContext context) {
+        return !context.forward().isEmpty()
+                && context.forward().stream().allMatch(unit -> unit.source().kind() == SqlSource.Kind.ROUTINE_BODY);
+    }
 
     @Override
     public String id() {
@@ -54,10 +61,5 @@ public final class RequireRollbackRule implements Rule {
                 "changeset has no rollback",
                 "Add a <rollback> block that reverses the change, or an empty <rollback/> when the change needs none.",
                 context.changeSet().changelogFile(), 1, 1));
-    }
-
-    private static boolean isRoutineBody(RuleContext context) {
-        return !context.forward().isEmpty()
-                && context.forward().stream().allMatch(unit -> unit.source().kind() == SqlSource.Kind.ROUTINE_BODY);
     }
 }

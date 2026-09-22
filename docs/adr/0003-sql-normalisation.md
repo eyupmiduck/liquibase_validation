@@ -34,8 +34,8 @@ Normalise each SQL source **inside the linter, before lexing**, using a
    placeholder is left as-is, because the linter cannot see properties supplied
    on the Liquibase command line.
 2. **`<modifySql>`.** Parse a changeset's `<modifySql>` children and apply them
-   in declaration order, mirroring Liquibase's `SqlVisitor`s exactly
-   (`append`/`prepend` concatenate, `replace` is literal, `regExpReplace` uses a
+   in declaration order, mirroring Liquibase's `SqlVisitor`s exactly (`append`/`prepend` concatenate, `replace` is
+   literal, `regExpReplace` uses a
    `java.util.regex.Pattern`, `appendSqlIfNotPresent` appends unless already
    present). Rollback SQL only receives visitors declared
    `applyToRollback="true"`; a visitor whose `dbms` does not include PostgreSQL

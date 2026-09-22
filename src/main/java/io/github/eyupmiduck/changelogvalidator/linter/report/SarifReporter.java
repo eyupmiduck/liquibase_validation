@@ -34,6 +34,14 @@ public final class SarifReporter implements Reporter {
         };
     }
 
+    private static String markdown(Finding finding) {
+        StringBuilder message = new StringBuilder(finding.message());
+        if (finding.help() != null) {
+            message.append("\n\n").append(finding.help());
+        }
+        return message.toString();
+    }
+
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         Map<String, Severity> ruleSeverities = new LinkedHashMap<>();
@@ -72,13 +80,5 @@ public final class SarifReporter implements Reporter {
                     .append("}}}]}");
         }
         out.append("]}]}");
-    }
-
-    private static String markdown(Finding finding) {
-        StringBuilder message = new StringBuilder(finding.message());
-        if (finding.help() != null) {
-            message.append("\n\n").append(finding.help());
-        }
-        return message.toString();
     }
 }

@@ -28,7 +28,9 @@ import java.util.Set;
  */
 public final class RequireConcurrentIndexCreationRule implements Rule {
 
-    /** The rule id (Squawk's). */
+    /**
+     * The rule id (Squawk's).
+     */
     public static final String ID = "require-concurrent-index-creation";
 
     @Override

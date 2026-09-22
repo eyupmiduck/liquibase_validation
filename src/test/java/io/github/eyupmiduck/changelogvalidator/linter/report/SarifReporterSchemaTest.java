@@ -17,9 +17,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies the {@link SarifReporter} output conforms to the SARIF 2.1.0 schema
@@ -39,6 +37,24 @@ class SarifReporterSchemaTest {
     private static final Finding INFO = new Finding("some-info-rule", Severity.INFO,
             "009-note", "me", Path.of("/db/changelog/changes.xml"),
             1, 1, null, "a note", null);
+
+    private static String render(List<Finding> findings) throws IOException {
+        StringBuilder out = new StringBuilder();
+        new SarifReporter().report(findings, out);
+        return out.toString();
+    }
+
+    private static Set<String> validationErrors(String sarif) throws IOException {
+        JsonSchema schema;
+        try (InputStream input = SarifReporterSchemaTest.class.getClassLoader().getResourceAsStream(SCHEMA)) {
+            assertNotNull(input, SCHEMA + " not found on the test classpath");
+            schema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7).getSchema(input);
+        }
+        JsonNode document = new ObjectMapper().readTree(sarif);
+        Set<ValidationMessage> messages = schema.validate(document);
+        assertTrue(sarif.startsWith("{"), "SARIF must be a JSON object");
+        return messages.stream().map(ValidationMessage::getMessage).collect(Collectors.toSet());
+    }
 
     /**
      * A SARIF document with error, warning and info findings is valid.
@@ -81,23 +97,5 @@ class SarifReporterSchemaTest {
         JsonNode rules = sarif.at("/runs/0/tool/driver/rules");
         assertEquals(3, rules.size());
         assertEquals("error", rules.get(0).path("defaultConfiguration").path("level").asText());
-    }
-
-    private static String render(List<Finding> findings) throws IOException {
-        StringBuilder out = new StringBuilder();
-        new SarifReporter().report(findings, out);
-        return out.toString();
-    }
-
-    private static Set<String> validationErrors(String sarif) throws IOException {
-        JsonSchema schema;
-        try (InputStream input = SarifReporterSchemaTest.class.getClassLoader().getResourceAsStream(SCHEMA)) {
-            assertNotNull(input, SCHEMA + " not found on the test classpath");
-            schema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7).getSchema(input);
-        }
-        JsonNode document = new ObjectMapper().readTree(sarif);
-        Set<ValidationMessage> messages = schema.validate(document);
-        assertTrue(sarif.startsWith("{"), "SARIF must be a JSON object");
-        return messages.stream().map(ValidationMessage::getMessage).collect(Collectors.toSet());
     }
 }

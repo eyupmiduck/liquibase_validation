@@ -25,8 +25,17 @@ import java.util.List;
  */
 public final class RequireRollbackParityRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "changeset-rollback-parity";
+
+    private static int statements(List<SqlUnit> units) {
+        return units.stream()
+                .filter(unit -> unit.source().kind() != SqlSource.Kind.ROUTINE_BODY)
+                .mapToInt(unit -> unit.statements().size())
+                .sum();
+    }
 
     @Override
     public String id() {
@@ -62,12 +71,5 @@ public final class RequireRollbackParityRule implements Rule {
                         + " for " + forward + " forward statement" + (forward == 1 ? "" : "s"),
                 "Make the rollback invert the whole forward change, not only part of it.",
                 context.changeSet().changelogFile(), 1, 1));
-    }
-
-    private static int statements(List<SqlUnit> units) {
-        return units.stream()
-                .filter(unit -> unit.source().kind() != SqlSource.Kind.ROUTINE_BODY)
-                .mapToInt(unit -> unit.statements().size())
-                .sum();
     }
 }

@@ -29,7 +29,9 @@ import java.util.List;
  */
 public final class PreferSingleStatementRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "changeset-prefer-single-statement";
 
     private final Integer pgVersion;
@@ -50,6 +52,24 @@ public final class PreferSingleStatementRule implements Rule {
      */
     public PreferSingleStatementRule(Integer pgVersion) {
         this.pgVersion = pgVersion;
+    }
+
+    private static SqlUnit firstUnit(List<SqlUnit> units) {
+        return units.stream().filter(unit -> !unit.statements().isEmpty()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("no statements to report"));
+    }
+
+    private static SqlStatement firstStatement(List<SqlUnit> units) {
+        return firstUnit(units).statements().get(0);
+    }
+
+    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() >= statement.startOffset()) {
+                return token;
+            }
+        }
+        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
     }
 
     @Override
@@ -97,23 +117,5 @@ public final class PreferSingleStatementRule implements Rule {
                         + " statements; a partial failure cannot be rolled back",
                 "Move each statement into its own runInTransaction=\"false\" changeset.",
                 firstUnit(units).file(), token.line(), token.column()));
-    }
-
-    private static SqlUnit firstUnit(List<SqlUnit> units) {
-        return units.stream().filter(unit -> !unit.statements().isEmpty()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("no statements to report"));
-    }
-
-    private static SqlStatement firstStatement(List<SqlUnit> units) {
-        return firstUnit(units).statements().get(0);
-    }
-
-    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() >= statement.startOffset()) {
-                return token;
-            }
-        }
-        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
     }
 }

@@ -20,6 +20,19 @@ class SqlNormalizerTest {
         return new SqlModification(SqlModification.Kind.APPEND, value, null, false, null);
     }
 
+    private static void assertTransform(String sql, SqlModification.Kind kind, String value, String with,
+                                        String expected) {
+        Normalisation normalisation = new Normalisation(Map.of(),
+                List.of(new SqlModification(kind, value, with, false, null)));
+
+        assertEquals(expected, SqlNormalizer.normalise(sql, normalisation, false));
+    }
+
+    private static Normalisation withDbms(String dbms, String append) {
+        return new Normalisation(Map.of(),
+                List.of(new SqlModification(SqlModification.Kind.APPEND, append, null, false, dbms)));
+    }
+
     /**
      * A property value is substituted, a value may reference another property,
      * and an undefined placeholder is left untouched.
@@ -51,14 +64,6 @@ class SqlNormalizerTest {
         assertTransform("SELECT a1;", SqlModification.Kind.REGEXP_REPLACE, "a(\\d)", "b$1", "SELECT b1;");
         assertTransform("SELECT 1; --x", SqlModification.Kind.APPEND_IF_NOT_PRESENT, " --x", null, "SELECT 1; --x");
         assertTransform("SELECT 1;", SqlModification.Kind.APPEND_IF_NOT_PRESENT, " --x", null, "SELECT 1; --x");
-    }
-
-    private static void assertTransform(String sql, SqlModification.Kind kind, String value, String with,
-                                        String expected) {
-        Normalisation normalisation = new Normalisation(Map.of(),
-                List.of(new SqlModification(kind, value, with, false, null)));
-
-        assertEquals(expected, SqlNormalizer.normalise(sql, normalisation, false));
     }
 
     /**
@@ -100,11 +105,6 @@ class SqlNormalizerTest {
                 withDbms("oracle", " --ora"), false));
         assertEquals("SELECT 1; --pg", SqlNormalizer.normalise("SELECT 1;",
                 withDbms("oracle, postgresql", " --pg"), false));
-    }
-
-    private static Normalisation withDbms(String dbms, String append) {
-        return new Normalisation(Map.of(),
-                List.of(new SqlModification(SqlModification.Kind.APPEND, append, null, false, dbms)));
     }
 
     /**

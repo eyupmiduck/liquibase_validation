@@ -34,7 +34,9 @@ import java.util.regex.Pattern;
  */
 public final class DynamicSqlRule implements Rule {
 
-    /** The rule id. */
+    /**
+     * The rule id.
+     */
     public static final String ID = "routine-dynamic-sql";
 
     // EXECUTE as a whole word. It is deliberately not quote-aware: a mention of
