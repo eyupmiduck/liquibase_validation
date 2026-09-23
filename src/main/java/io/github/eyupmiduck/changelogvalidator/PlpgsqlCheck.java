@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Runs the {@code plpgsql_check} static analyser over the PL/pgSQL routines in
@@ -42,7 +43,7 @@ public final class PlpgsqlCheck {
      * @throws SQLException if the check cannot be run
      */
     public static List<Finding> findFindings(Connection connection, Collection<String> schemas) throws SQLException {
-        String[] names = schemas.toArray(String[]::new);
+        String[] names = schemaNames(schemas);
         List<Finding> findings = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT DISTINCT n.nspname, p.proname, (issue).lineno, (issue).level,
@@ -67,8 +68,6 @@ public final class PlpgsqlCheck {
                 WHERE n.nspname = ANY (?)
                     AND p.prokind IN ('f', 'p')
                     AND l.lanname = 'plpgsql'
-                    AND (p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
-                         OR EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS tg WHERE tg.tgfoid = p.oid))
                 ORDER BY 1, 2, 3
                 """)) {
             statement.setArray(1, connection.createArrayOf("text", names));
@@ -101,6 +100,7 @@ public final class PlpgsqlCheck {
      */
     public static Report check(Connection connection, Collection<String> schemas, List<AllowedFinding> allowed)
             throws SQLException {
+        Objects.requireNonNull(allowed, "allowed");
         List<Finding> findings = findFindings(connection, schemas);
 
         List<Finding> unexpected = new ArrayList<>();
@@ -150,24 +150,30 @@ public final class PlpgsqlCheck {
             if (!(item instanceof Map<?, ?> entry)) {
                 throw new IOException("plpgsql_check whitelist entries must be mappings");
             }
-            AllowedFinding finding = new AllowedFinding(
-                    asString(entry.get("schema")),
-                    asString(entry.get("function")),
-                    asString(entry.get("level")),
-                    asString(entry.get("statement")),
-                    asString(entry.get("message")));
-            if (finding.schema() == null && finding.function() == null && finding.level() == null
-                    && finding.statement() == null && finding.message() == null) {
+            String schema = asString(entry.get("schema"));
+            String function = asString(entry.get("function"));
+            String level = asString(entry.get("level"));
+            String statement = asString(entry.get("statement"));
+            String message = asString(entry.get("message"));
+            if (schema == null && function == null && level == null && statement == null && message == null) {
                 throw new IOException("plpgsql_check whitelist entries must set at least one of "
                         + "schema, function, level, statement or message");
             }
-            allowed.add(finding);
+            allowed.add(new AllowedFinding(schema, function, level, statement, message));
         }
         return allowed;
     }
 
     private static String asString(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    private static String[] schemaNames(Collection<String> schemas) {
+        Objects.requireNonNull(schemas, "schemas");
+        if (schemas.isEmpty()) {
+            throw new IllegalArgumentException("at least one schema is required");
+        }
+        return schemas.toArray(String[]::new);
     }
 
     /**
@@ -206,6 +212,17 @@ public final class PlpgsqlCheck {
      */
     public record AllowedFinding(String schema, String function, String level,
                                  String statement, String message) {
+
+        /**
+         * Rejects an entry that sets none of the fields: it would match every
+         * finding and silently pass the check.
+         */
+        public AllowedFinding {
+            if (schema == null && function == null && level == null && statement == null && message == null) {
+                throw new IllegalArgumentException("an allowed finding must set at least one of "
+                        + "schema, function, level, statement or message");
+            }
+        }
 
         private static boolean matches(String expected, String actual) {
             return expected == null || expected.equals(actual);

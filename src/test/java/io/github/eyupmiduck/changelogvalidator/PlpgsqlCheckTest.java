@@ -283,12 +283,28 @@ class PlpgsqlCheckTest {
     void matchesFindingsFieldByField() {
         PlpgsqlCheck.Finding finding = new PlpgsqlCheck.Finding("s", "f", 7, "warning", "DECLARE", "msg");
 
-        assertTrue(new PlpgsqlCheck.AllowedFinding(null, null, null, null, null).matches(finding));
+        // An all-null entry would match every finding; it is rejected.
+        assertThrows(IllegalArgumentException.class,
+                () -> new PlpgsqlCheck.AllowedFinding(null, null, null, null, null));
+
+        assertTrue(new PlpgsqlCheck.AllowedFinding("s", null, null, null, null).matches(finding));
         assertTrue(new PlpgsqlCheck.AllowedFinding("s", "f", "warning", "DECLARE", "msg").matches(finding));
         assertFalse(new PlpgsqlCheck.AllowedFinding("other", null, null, null, null).matches(finding));
         assertFalse(new PlpgsqlCheck.AllowedFinding(null, null, "security", null, null).matches(finding));
 
         assertEquals("s.f:7: warning: msg", finding.describe());
         assertEquals("s.f warning: msg", new PlpgsqlCheck.AllowedFinding("s", "f", "warning", null, "msg").describe());
+    }
+
+    /**
+     * A null or empty schema collection is rejected up front, and a null
+     * allow-list is rejected, rather than NPE-ing inside the query or reporting a
+     * confusing stale-whitelist failure.
+     */
+    @Test
+    void rejectsMissingSchemasAndAllowList() {
+        assertThrows(IllegalArgumentException.class, () -> PlpgsqlCheck.findFindings(null, List.of()));
+        assertThrows(NullPointerException.class, () -> PlpgsqlCheck.findFindings(null, null));
+        assertThrows(NullPointerException.class, () -> PlpgsqlCheck.check(null, List.of("public"), null));
     }
 }
