@@ -54,24 +54,6 @@ public final class PreferSingleStatementRule implements Rule {
         this.pgVersion = pgVersion;
     }
 
-    private static SqlUnit firstUnit(List<SqlUnit> units) {
-        return units.stream().filter(unit -> !unit.statements().isEmpty()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("no statements to report"));
-    }
-
-    private static SqlStatement firstStatement(List<SqlUnit> units) {
-        return firstUnit(units).statements().get(0);
-    }
-
-    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() >= statement.startOffset()) {
-                return token;
-            }
-        }
-        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
-    }
-
     @Override
     public String id() {
         return ID;
@@ -93,12 +75,12 @@ public final class PreferSingleStatementRule implements Rule {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
+        collect(context.forward(), "forward", violations);
+        collect(context.rollback(), "rollback", violations);
         return List.copyOf(violations);
     }
 
-    private void collect(List<SqlUnit> units, List<Violation> violations) {
+    private void collect(List<SqlUnit> units, String direction, List<Violation> violations) {
         int statementCount = units.stream().mapToInt(unit -> unit.statements().size()).sum();
         if (statementCount <= 1) {
             return;
@@ -110,12 +92,13 @@ public final class PreferSingleStatementRule implements Rule {
                 return;
             }
         }
-        SqlStatement first = firstStatement(units);
-        Token token = firstToken(firstUnit(units), first);
+        SqlUnit firstUnit = RuleSupport.firstUnit(units);
+        SqlStatement first = firstUnit.statements().get(0);
+        Token token = RuleSupport.firstToken(firstUnit, first);
         violations.add(new Violation(
-                "runInTransaction=\"false\" changeset has " + statementCount
+                "runInTransaction=\"false\" " + direction + " SQL has " + statementCount
                         + " statements; a partial failure cannot be rolled back",
                 "Move each statement into its own runInTransaction=\"false\" changeset.",
-                firstUnit(units).file(), token.line(), token.column()));
+                firstUnit.file(), token.line(), token.column()));
     }
 }

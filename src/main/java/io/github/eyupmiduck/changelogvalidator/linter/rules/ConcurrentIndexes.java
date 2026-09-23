@@ -16,6 +16,11 @@ import java.util.*;
  * names are normalised (unquoted identifiers fold to lower case, quoted
  * identifiers keep their case) so an index and the table it is created with can
  * be compared.
+ *
+ * <p>Each phrase is searched for anywhere in a statement's tokens, not only at
+ * position zero: a unit whose SQL was not split into individual statements (for
+ * example {@code splitStatements=false}) is one statement whose first token is
+ * the first command, and a trailing {@code CREATE INDEX} must still be seen.
  */
 final class ConcurrentIndexes {
 
@@ -33,10 +38,7 @@ final class ConcurrentIndexes {
         List<Candidate> candidates = new ArrayList<>();
         for (SqlUnit unit : units) {
             for (SqlStatement statement : unit.statements()) {
-                Candidate candidate = candidate(nonTriviaWithin(unit.tokens(), statement), unit);
-                if (candidate != null) {
-                    candidates.add(candidate);
-                }
+                candidates.addAll(candidates(RuleSupport.nonTriviaWithin(unit.tokens(), statement), unit));
             }
         }
         return List.copyOf(candidates);
@@ -53,30 +55,40 @@ final class ConcurrentIndexes {
         Set<String> tables = new HashSet<>();
         for (SqlUnit unit : units) {
             for (SqlStatement statement : unit.statements()) {
-                String table = createdTable(nonTriviaWithin(unit.tokens(), statement));
-                if (table != null) {
-                    tables.add(table);
+                List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
+                for (int i = 0; i < tokens.size(); i++) {
+                    if (tokens.get(i).matchesKeyword("CREATE")) {
+                        String table = createdTableAt(tokens, i);
+                        if (table != null) {
+                            tables.add(table);
+                        }
+                    }
                 }
             }
         }
         return tables;
     }
 
-    private static Candidate candidate(List<Token> tokens, SqlUnit unit) {
-        if (tokens.isEmpty()) {
-            return null;
+    private static List<Candidate> candidates(List<Token> tokens, SqlUnit unit) {
+        List<Candidate> result = new ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("CREATE")) {
+                Candidate candidate = createIndex(tokens, i, unit);
+                if (candidate != null) {
+                    result.add(candidate);
+                }
+            } else if (tokens.get(i).matchesKeyword("DROP")) {
+                Candidate candidate = dropIndex(tokens, i, unit);
+                if (candidate != null) {
+                    result.add(candidate);
+                }
+            }
         }
-        if (tokens.get(0).matchesKeyword("CREATE")) {
-            return createIndex(tokens, unit);
-        }
-        if (tokens.get(0).matchesKeyword("DROP")) {
-            return dropIndex(tokens, unit);
-        }
-        return null;
+        return result;
     }
 
-    private static Candidate createIndex(List<Token> tokens, SqlUnit unit) {
-        int index = 1;
+    private static Candidate createIndex(List<Token> tokens, int start, SqlUnit unit) {
+        int index = start + 1;
         if (index < tokens.size() && tokens.get(index).matchesKeyword("UNIQUE")) {
             index++;
         }
@@ -99,24 +111,21 @@ final class ConcurrentIndexes {
         if (table == null) {
             return null;
         }
-        return new Candidate(Kind.CREATE, table, unit, tokens.get(0));
+        return new Candidate(Kind.CREATE, table, unit, tokens.get(start));
     }
 
-    private static Candidate dropIndex(List<Token> tokens, SqlUnit unit) {
-        if (tokens.size() < 2 || !tokens.get(1).matchesKeyword("INDEX")) {
+    private static Candidate dropIndex(List<Token> tokens, int start, SqlUnit unit) {
+        if (start + 1 >= tokens.size() || !tokens.get(start + 1).matchesKeyword("INDEX")) {
             return null;
         }
-        if (tokens.size() > 2 && tokens.get(2).matchesKeyword("CONCURRENTLY")) {
+        if (start + 2 < tokens.size() && tokens.get(start + 2).matchesKeyword("CONCURRENTLY")) {
             return null;
         }
-        return new Candidate(Kind.DROP, null, unit, tokens.get(0));
+        return new Candidate(Kind.DROP, null, unit, tokens.get(start));
     }
 
-    private static String createdTable(List<Token> tokens) {
-        if (tokens.isEmpty() || !tokens.get(0).matchesKeyword("CREATE")) {
-            return null;
-        }
-        int table = 1;
+    private static String createdTableAt(List<Token> tokens, int start) {
+        int table = start + 1;
         while (table < tokens.size() && isCreateModifier(tokens.get(table))) {
             table++;
         }
@@ -182,14 +191,6 @@ final class ConcurrentIndexes {
         return -1;
     }
 
-    private static List<Token> nonTriviaWithin(List<Token> tokens, SqlStatement statement) {
-        return tokens.stream()
-                .filter(token -> !token.isTrivia())
-                .filter(token -> token.startOffset() >= statement.startOffset()
-                        && token.endOffset() <= statement.endOffset())
-                .toList();
-    }
-
     /**
      * The index command.
      */
@@ -212,7 +213,7 @@ final class ConcurrentIndexes {
      * @param kind  the command
      * @param table the normalised indexed table for {@link Kind#CREATE}, otherwise null
      * @param unit  the SQL unit the statement is in
-     * @param token the statement's first token, for the location
+     * @param token the phrase's first token, for the location
      */
     record Candidate(Kind kind, String table, SqlUnit unit, Token token) {
     }

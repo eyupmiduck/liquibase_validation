@@ -78,8 +78,8 @@ public final class TransactionForbiddenClassifier {
         if (startsWith(words, "REINDEX") && contains(words, "CONCURRENTLY")) {
             return Optional.of(Family.REINDEX_CONCURRENTLY);
         }
-        if (startsWith(words, "ALTER", "TABLE") && contains(words, "DETACH")
-                && contains(words, "PARTITION") && contains(words, "CONCURRENTLY")) {
+        if (startsWith(words, "ALTER", "TABLE") && adjacent(words, "DETACH", "PARTITION")
+                && contains(words, "CONCURRENTLY")) {
             return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
         }
         if (isAlterTypeAddValue(words) && pgVersion != null && pgVersion < ALTER_TYPE_ADD_VALUE_ALLOWED_FROM) {
@@ -92,12 +92,29 @@ public final class TransactionForbiddenClassifier {
         if (!startsWith(words, command)) {
             return false;
         }
-        int index = indexOf(words, "INDEX", 1);
-        return index >= 0 && indexOf(words, "CONCURRENTLY", index + 1) >= 0;
+        // CREATE [UNIQUE] INDEX CONCURRENTLY / DROP INDEX CONCURRENTLY: CONCURRENTLY
+        // must immediately follow INDEX, so an identifier of the same name
+        // elsewhere in the statement does not match.
+        int index = 1;
+        if ("CREATE".equalsIgnoreCase(command) && index < words.size() && words.get(index).matchesKeyword("UNIQUE")) {
+            index++;
+        }
+        return index + 1 < words.size()
+                && words.get(index).matchesKeyword("INDEX")
+                && words.get(index + 1).matchesKeyword("CONCURRENTLY");
     }
 
     private static boolean isAlterTypeAddValue(List<Token> words) {
-        return startsWith(words, "ALTER", "TYPE") && contains(words, "ADD") && contains(words, "VALUE");
+        return startsWith(words, "ALTER", "TYPE") && adjacent(words, "ADD", "VALUE");
+    }
+
+    private static boolean adjacent(List<Token> words, String first, String second) {
+        for (int i = 0; i + 1 < words.size(); i++) {
+            if (words.get(i).matchesKeyword(first) && words.get(i + 1).matchesKeyword(second)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean startsWith(List<Token> words, String... keywords) {

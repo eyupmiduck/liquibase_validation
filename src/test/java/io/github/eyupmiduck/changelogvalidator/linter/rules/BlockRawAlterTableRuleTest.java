@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -70,8 +71,26 @@ class BlockRawAlterTableRuleTest {
         assertTrue(check("ALTER TABLE t DROP COLUMN c;").get(0).message().contains("ddl_utils.drop_column"));
         assertTrue(check("ALTER TABLE t DROP CONSTRAINT ck;").get(0).message().contains("ddl_utils.drop_constraint"));
         assertTrue(check("ALTER TABLE t RENAME COLUMN a TO b;").get(0).message().contains("ddl_utils.rename_column"));
+        assertTrue(check("ALTER TABLE t RENAME CONSTRAINT a TO b;")
+                .get(0).message().contains("ddl_utils.rename_constraint"));
         assertTrue(check("ALTER TABLE t RENAME TO t2;").get(0).message().contains("ddl_utils.rename_table"));
+        assertTrue(check("ALTER TABLE t ADD CONSTRAINT pk PRIMARY KEY (c);")
+                .get(0).message().contains("ddl_utils.add_primary_key_using_index"));
+        assertTrue(check("ALTER TABLE t ADD CONSTRAINT uq UNIQUE (c);")
+                .get(0).message().contains("ddl_utils.add_unique_constraint_using_index"));
         assertTrue(check("ALTER TABLE t SET (fillfactor = 70);").get(0).message().contains("matching ddl_utils"));
+    }
+
+    /**
+     * The table name ends at the table identifier, so following keywords are not
+     * appended to it.
+     */
+    @Test
+    void reportsOnlyTheTableName() {
+        String message = check("ALTER TABLE t ADD COLUMN c int;").get(0).message();
+
+        assertTrue(message.contains("on t "), message);
+        assertFalse(message.contains("taddcolumn"), message);
     }
 
     /**

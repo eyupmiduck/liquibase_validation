@@ -110,6 +110,20 @@ class RequireDbmsPostgresqlRuleTest {
     }
 
     /**
+     * An ordinary identifier named {@code concurrently} is not PostgreSQL-only
+     * syntax, while a real concurrent index build and the lone {@code ?} and
+     * {@code #>>} operators are recognised.
+     */
+    @Test
+    void requiresPostgresContextForConcurrently() {
+        assertTrue(check(null, "SELECT concurrently FROM t;").isEmpty());
+        assertTrue(check(null, "CREATE INDEX idx ON t (concurrently);").isEmpty());
+
+        assertEquals(1, check(null, "SELECT data ? 'k' FROM t;").size());
+        assertTrue(check(null, "SELECT data #>> '{a}' FROM t;").get(0).message().contains("#>>"));
+    }
+
+    /**
      * The rule is an error by default and reports through the engine.
      */
     @Test

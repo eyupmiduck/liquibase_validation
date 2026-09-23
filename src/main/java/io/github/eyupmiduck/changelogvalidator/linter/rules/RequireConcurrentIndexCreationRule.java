@@ -6,6 +6,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -50,14 +51,17 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        // The same changeset may create a table in one direction and index it in
+        // the other, so the exemption is computed over forward and rollback.
+        Set<String> created = new HashSet<>(ConcurrentIndexes.tablesCreatedIn(context.forward()));
+        created.addAll(ConcurrentIndexes.tablesCreatedIn(context.rollback()));
         List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
+        collect(context.forward(), created, violations);
+        collect(context.rollback(), created, violations);
         return List.copyOf(violations);
     }
 
-    private void collect(List<SqlUnit> units, List<Violation> violations) {
-        Set<String> created = ConcurrentIndexes.tablesCreatedIn(units);
+    private void collect(List<SqlUnit> units, Set<String> created, List<Violation> violations) {
         for (ConcurrentIndexes.Candidate candidate : ConcurrentIndexes.find(units)) {
             if (candidate.kind() != ConcurrentIndexes.Kind.CREATE || created.contains(candidate.table())) {
                 continue;

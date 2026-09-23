@@ -46,7 +46,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
     // Operators and punctuation that only PostgreSQL (among common targets)
     // accepts in these positions. Matching is token-based, so a keyword inside
     // a string or comment cannot trigger it.
-    private static final Pattern POSTGRES_OPERATORS = Pattern.compile("::|->>|->|#>|#>>|@>|<@|\\?\\||\\?&");
+    private static final Pattern POSTGRES_OPERATORS = Pattern.compile("::|->>|->|#>>|#>|@>|<@|\\?\\||\\?&|\\?");
 
     private static boolean gatedOnPostgres(ChangeSet changeSet) {
         return listsPostgres(changeSet.dbms());
@@ -65,40 +65,52 @@ public final class RequireDbmsPostgresqlRule implements Rule {
     }
 
     private static String firstPostgresConstruct(SqlUnit unit) {
-        for (Token token : unit.tokens()) {
-            if (token.isTrivia()) {
-                continue;
-            }
-            if (token.type() == TokenType.WORD && token.matchesKeyword("CONCURRENTLY")) {
-                return "CONCURRENTLY";
-            }
-        }
+        // Filter the unit's tokens once, then walk the ordered, non-overlapping
+        // statements with a two-pointer scan instead of re-streaming per
+        // statement.
+        List<Token> words = unit.tokens().stream()
+                .filter(token -> !token.isTrivia())
+                .toList();
+        int from = 0;
         for (SqlStatement statement : unit.statements()) {
-            String construct = statementConstruct(unit, statement);
+            while (from < words.size() && words.get(from).endOffset() <= statement.startOffset()) {
+                from++;
+            }
+            int to = from;
+            while (to < words.size() && words.get(to).endOffset() <= statement.endOffset()) {
+                to++;
+            }
+            String construct = statementConstruct(words.subList(from, to));
             if (construct != null) {
                 return construct;
             }
         }
-        for (Token token : unit.tokens()) {
-            if (!token.isTrivia() && token.type() == TokenType.OPERATOR
-                    && POSTGRES_OPERATORS.matcher(token.text()).find()) {
+        for (Token token : words) {
+            if (token.type() == TokenType.OPERATOR
+                    && POSTGRES_OPERATORS.matcher(token.text()).matches()) {
                 return "the " + token.text() + " operator";
             }
         }
         return null;
     }
 
-    private static String statementConstruct(SqlUnit unit, SqlStatement statement) {
-        List<Token> words = unit.tokens().stream()
-                .filter(token -> !token.isTrivia())
-                .filter(token -> token.startOffset() >= statement.startOffset()
-                        && token.endOffset() <= statement.endOffset())
-                .toList();
+    private static String statementConstruct(List<Token> words) {
         if (startsWith(words, "CREATE", "DOMAIN")) {
             return "CREATE DOMAIN";
         }
         if (startsWith(words, "CREATE", "EXTENSION")) {
             return "CREATE EXTENSION";
+        }
+        // CONCURRENTLY only counts in a PostgreSQL-only position, so an ordinary
+        // identifier named "concurrently" does not trigger the rule.
+        if (startsWith(words, "CREATE") && contains(words, "INDEX") && nextWordIs(words, "INDEX", "CONCURRENTLY")) {
+            return "CONCURRENTLY";
+        }
+        if (startsWith(words, "DROP", "INDEX") && nextWordIs(words, "INDEX", "CONCURRENTLY")) {
+            return "CONCURRENTLY";
+        }
+        if (startsWith(words, "REINDEX") && contains(words, "CONCURRENTLY")) {
+            return "CONCURRENTLY";
         }
         if (contains(words, "LANGUAGE") && nextWordIs(words, "LANGUAGE", "PLPGSQL")) {
             return "LANGUAGE plpgsql";

@@ -4,10 +4,12 @@ import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -22,10 +24,11 @@ import java.util.regex.Pattern;
  * complements {@code plpgsql_check} (which analyses the static body but not the
  * runtime string).
  *
- * <p>The routine body is dollar-quoted, so the lexer exposes it as one string
- * token, not as statements. The rule therefore scans the body text for the
- * {@code EXECUTE} keyword with a regular expression, which also skips an
- * {@code EXECUTE} that only appears in a nested string or comment.
+ * <p>A routine body may be dollar-quoted, so the lexer can expose it as one
+ * string token rather than as statements. The rule therefore scans the body text
+ * for the {@code EXECUTE} keyword with a regular expression. The scan is
+ * deliberately not quote- or comment-aware: a mention of the word inside a
+ * literal also triggers it, which is acceptable for an informational reminder.
  *
  * <p>The rule is opt-in (informational): dynamic SQL in a routine is normal, so
  * a project enables the rule when it wants the reminder. It only fires on
@@ -72,14 +75,41 @@ public final class DynamicSqlRule implements Rule {
             if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY) {
                 continue;
             }
-            if (!EXECUTE.matcher(unit.sql()).find()) {
+            Matcher matcher = EXECUTE.matcher(unit.sql());
+            if (!matcher.find()) {
                 continue;
             }
+            int[] position = position(unit, matcher.start());
             violations.add(new Violation(
                     "EXECUTE",
                     "routine body builds SQL dynamically; static rules cannot see the statements it runs",
                     "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
-                    unit.file(), 1, 1));
+                    unit.file(), position[0], position[1]));
         }
+    }
+
+    /**
+     * Returns the one-based line and column of {@code offset} in the unit's SQL,
+     * relative to the body token that contains it, so the finding points at the
+     * {@code EXECUTE} rather than the top of the file.
+     */
+    private static int[] position(SqlUnit unit, int offset) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() <= offset && offset < token.endOffset()) {
+                String before = unit.sql().substring(token.startOffset(), offset);
+                int newlines = 0;
+                int lastBreak = -1;
+                for (int i = 0; i < before.length(); i++) {
+                    if (before.charAt(i) == '\n') {
+                        newlines++;
+                        lastBreak = i;
+                    }
+                }
+                int line = token.line() + newlines;
+                int column = newlines == 0 ? token.column() + before.length() : before.length() - lastBreak;
+                return new int[]{line, column};
+            }
+        }
+        return new int[]{1, 1};
     }
 }
