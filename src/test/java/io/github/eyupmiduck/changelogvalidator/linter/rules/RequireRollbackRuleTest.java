@@ -2,10 +2,8 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.*;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
-import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;

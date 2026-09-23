@@ -41,7 +41,7 @@ class DynamicSqlRuleTest {
      */
     @Test
     void reportsDynamicSql() {
-        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, 
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
                 "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN EXECUTE format('DROP TABLE %I', 't'); END; $$ LANGUAGE plpgsql;")));
 
         assertEquals(1, violations.size());
@@ -57,7 +57,7 @@ class DynamicSqlRuleTest {
      */
     @Test
     void ignoresBodiesWithoutDynamicSql() {
-        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, 
+        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
                 "CREATE FUNCTION foo() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
 
         SqlUnit inline = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, "SELECT 'EXECUTE';", true, ";", false, null),

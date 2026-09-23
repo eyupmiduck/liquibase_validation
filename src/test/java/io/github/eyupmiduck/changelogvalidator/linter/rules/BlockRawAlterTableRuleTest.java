@@ -1,18 +1,14 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.*;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
-import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link BlockRawAlterTableRule}: a raw {@code ALTER TABLE} is reported

@@ -2,9 +2,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.model;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link SqlModification}: Liquibase's dbms filter semantics and the

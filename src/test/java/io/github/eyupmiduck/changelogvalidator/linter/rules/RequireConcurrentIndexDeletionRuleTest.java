@@ -1,15 +1,15 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
-import io.github.eyupmiduck.changelogvalidator.linter.*;
+import io.github.eyupmiduck.changelogvalidator.linter.Finding;
+import io.github.eyupmiduck.changelogvalidator.linter.Linter;
+import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
-import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RequireConcurrentIndexDeletionRuleTest {
 
     private static final Path FILE = RuleTestSupport.FILE;
-
 
 
     private static ChangeSet changeSet(String sql) {

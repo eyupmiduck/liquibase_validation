@@ -47,6 +47,31 @@ public final class DynamicSqlRule implements Rule {
     // informational "look at the dynamic SQL" reminder.
     private static final Pattern EXECUTE = Pattern.compile("(?i)(?<![\\w])execute(?![\\w])");
 
+    /**
+     * Returns the one-based line and column of {@code offset} in the unit's SQL,
+     * relative to the body token that contains it, so the finding points at the
+     * {@code EXECUTE} rather than the top of the file.
+     */
+    private static int[] position(SqlUnit unit, int offset) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() <= offset && offset < token.endOffset()) {
+                String before = unit.sql().substring(token.startOffset(), offset);
+                int newlines = 0;
+                int lastBreak = -1;
+                for (int i = 0; i < before.length(); i++) {
+                    if (before.charAt(i) == '\n') {
+                        newlines++;
+                        lastBreak = i;
+                    }
+                }
+                int line = token.line() + newlines;
+                int column = newlines == 0 ? token.column() + before.length() : before.length() - lastBreak;
+                return new int[]{line, column};
+            }
+        }
+        return new int[]{1, 1};
+    }
+
     @Override
     public String id() {
         return ID;
@@ -86,30 +111,5 @@ public final class DynamicSqlRule implements Rule {
                     "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
                     unit.file(), position[0], position[1]));
         }
-    }
-
-    /**
-     * Returns the one-based line and column of {@code offset} in the unit's SQL,
-     * relative to the body token that contains it, so the finding points at the
-     * {@code EXECUTE} rather than the top of the file.
-     */
-    private static int[] position(SqlUnit unit, int offset) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() <= offset && offset < token.endOffset()) {
-                String before = unit.sql().substring(token.startOffset(), offset);
-                int newlines = 0;
-                int lastBreak = -1;
-                for (int i = 0; i < before.length(); i++) {
-                    if (before.charAt(i) == '\n') {
-                        newlines++;
-                        lastBreak = i;
-                    }
-                }
-                int line = token.line() + newlines;
-                int column = newlines == 0 ? token.column() + before.length() : before.length() - lastBreak;
-                return new int[]{line, column};
-            }
-        }
-        return new int[]{1, 1};
     }
 }

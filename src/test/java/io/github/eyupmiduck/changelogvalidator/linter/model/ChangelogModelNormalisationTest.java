@@ -34,7 +34,6 @@ class ChangelogModelNormalisationTest {
     private Path master;
 
 
-
     @BeforeEach
     void createChangelog() throws IOException {
         write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
