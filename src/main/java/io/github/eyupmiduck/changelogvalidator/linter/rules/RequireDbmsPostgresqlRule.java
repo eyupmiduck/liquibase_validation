@@ -6,6 +6,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
@@ -95,64 +96,33 @@ public final class RequireDbmsPostgresqlRule implements Rule {
     }
 
     private static String statementConstruct(List<Token> words) {
-        if (startsWith(words, "CREATE", "DOMAIN")) {
+        if (TokenWords.startsWith(words, "CREATE", "DOMAIN")) {
             return "CREATE DOMAIN";
         }
-        if (startsWith(words, "CREATE", "EXTENSION")) {
+        if (TokenWords.startsWith(words, "CREATE", "EXTENSION")) {
             return "CREATE EXTENSION";
         }
         // CONCURRENTLY only counts in a PostgreSQL-only position, so an ordinary
         // identifier named "concurrently" does not trigger the rule.
-        if (startsWith(words, "CREATE") && contains(words, "INDEX") && nextWordIs(words, "INDEX", "CONCURRENTLY")) {
+        if (TokenWords.startsWith(words, "CREATE") && TokenWords.contains(words, "INDEX")
+                && TokenWords.adjacent(words, "INDEX", "CONCURRENTLY")) {
             return "CONCURRENTLY";
         }
-        if (startsWith(words, "DROP", "INDEX") && nextWordIs(words, "INDEX", "CONCURRENTLY")) {
+        if (TokenWords.startsWith(words, "DROP", "INDEX")
+                && TokenWords.adjacent(words, "INDEX", "CONCURRENTLY")) {
             return "CONCURRENTLY";
         }
-        if (startsWith(words, "REINDEX") && contains(words, "CONCURRENTLY")) {
+        if (TokenWords.startsWith(words, "REINDEX") && TokenWords.contains(words, "CONCURRENTLY")) {
             return "CONCURRENTLY";
         }
-        if (contains(words, "LANGUAGE") && nextWordIs(words, "LANGUAGE", "PLPGSQL")) {
+        if (TokenWords.contains(words, "LANGUAGE") && TokenWords.adjacent(words, "LANGUAGE", "PLPGSQL")) {
             return "LANGUAGE plpgsql";
         }
-        if (contains(words, "USING") && containsAny(words, "GIN", "GIST", "BRIN", "SPGIST")) {
+        if (TokenWords.contains(words, "USING")
+                && TokenWords.containsAny(words, "GIN", "GIST", "BRIN", "SPGIST")) {
             return "a PostgreSQL index method";
         }
         return null;
-    }
-
-    private static boolean startsWith(List<Token> words, String... keywords) {
-        if (words.size() < keywords.length) {
-            return false;
-        }
-        for (int i = 0; i < keywords.length; i++) {
-            if (!words.get(i).matchesKeyword(keywords[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean contains(List<Token> words, String keyword) {
-        return words.stream().anyMatch(token -> token.matchesKeyword(keyword));
-    }
-
-    private static boolean containsAny(List<Token> words, String... keywords) {
-        for (String keyword : keywords) {
-            if (contains(words, keyword)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean nextWordIs(List<Token> words, String keyword, String next) {
-        for (int i = 0; i + 1 < words.size(); i++) {
-            if (words.get(i).matchesKeyword(keyword) && words.get(i + 1).matchesKeyword(next)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override

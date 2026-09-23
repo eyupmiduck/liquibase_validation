@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.*;
@@ -99,7 +100,7 @@ final class ConcurrentIndexes {
         if (index + 1 < tokens.size() && tokens.get(index + 1).matchesKeyword("CONCURRENTLY")) {
             return null;
         }
-        int on = indexOf(tokens, "ON", index + 1);
+        int on = TokenWords.indexOf(tokens, "ON", index + 1);
         if (on < 0) {
             return null;
         }
@@ -182,14 +183,6 @@ final class ConcurrentIndexes {
         return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
     }
 
-    private static int indexOf(List<Token> tokens, String keyword, int from) {
-        for (int i = from; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
 
     /**
      * The index command.
