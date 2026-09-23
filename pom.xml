@@ -28,7 +28,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <json-schema-validator.version>1.5.1</json-schema-validator.version>
-        <jackson.version>2.18.9</jackson.version>
+        <jackson.version>2.22.2</jackson.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <slf4j.version>1.7.36</slf4j.version>
         <postgresql.version>42.7.13</postgresql.version>
@@ -168,7 +168,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
-                    <version>3.6.0</version>
+                    <version>3.6.2</version>
                 </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>
