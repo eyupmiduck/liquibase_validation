@@ -11,6 +11,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,17 +56,22 @@ public final class ChangelogModel {
     public static List<ChangeSet> changesets(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         List<Path> changelogFiles = ChangelogValidator.findReachableChangelogFiles(root, masterChangelog);
-        Map<String, String> properties = properties(changelogFiles);
-        List<ChangeSet> changesets = new ArrayList<>();
+        // Parse each file once and reuse the DOM for both the property scan and
+        // the changeSet scan.
+        Map<Path, Document> documents = new LinkedHashMap<>();
         for (Path changelogFile : changelogFiles) {
-            changesets.addAll(changesetsIn(root, changelogFile, properties));
+            documents.put(changelogFile, parse(changelogFile));
+        }
+        Map<String, String> properties = properties(documents.values());
+        List<ChangeSet> changesets = new ArrayList<>();
+        for (Map.Entry<Path, Document> entry : documents.entrySet()) {
+            changesets.addAll(changesetsIn(root, entry.getKey(), entry.getValue(), properties));
         }
         return List.copyOf(changesets);
     }
 
-    private static List<ChangeSet> changesetsIn(Path root, Path changelogFile, Map<String, String> properties)
-            throws IOException {
-        Document document = parse(changelogFile);
+    private static List<ChangeSet> changesetsIn(Path root, Path changelogFile, Document document,
+                                                Map<String, String> properties) {
         NodeList nodes = document.getElementsByTagName("changeSet");
         List<ChangeSet> changesets = new ArrayList<>();
         for (int i = 0; i < nodes.getLength(); i++) {
@@ -84,20 +90,11 @@ public final class ChangelogModel {
                 case "rollback" -> {
                     rollbackDefined = true;
                     for (Element rollbackChild : childElements(child)) {
-                        rollbackSources.addAll(sqlSources(root, changelogFile, rollbackChild));
+                        rollbackSources.addAll(sourcesFor(root, changelogFile, rollbackChild));
                     }
                 }
                 case "modifySql" -> modifySql.addAll(modifications(child));
-                default -> {
-                    List<SqlSource> sources = sqlSources(root, changelogFile, child);
-                    if (sources.isEmpty()) {
-                        String structured = structuredSql(child);
-                        if (structured != null) {
-                            sources = List.of(inlineSql(structured));
-                        }
-                    }
-                    sqlSources.addAll(sources);
-                }
+                default -> sqlSources.addAll(sourcesFor(root, changelogFile, child));
             }
         }
         return new ChangeSet(
@@ -115,11 +112,26 @@ public final class ChangelogModel {
                 new Normalisation(properties, modifySql));
     }
 
-    private static Map<String, String> properties(List<Path> changelogFiles) throws IOException {
+    /**
+     * Resolves a changeSet child into SQL sources: an inline or file source, or,
+     * for a structured change type the model renders, a synthetic inline source.
+     * The same resolution is used for forward and rollback children.
+     */
+    private static List<SqlSource> sourcesFor(Path root, Path changelogFile, Element child) {
+        List<SqlSource> sources = sqlSources(root, changelogFile, child);
+        if (sources.isEmpty()) {
+            String structured = structuredSql(child);
+            if (structured != null) {
+                sources = List.of(inlineSql(structured));
+            }
+        }
+        return sources;
+    }
+
+    private static Map<String, String> properties(Collection<Document> documents) {
         // Liquibase's "first set value wins": keep the first value a name gets.
         Map<String, String> properties = new LinkedHashMap<>();
-        for (Path changelogFile : changelogFiles) {
-            Document document = parse(changelogFile);
+        for (Document document : documents) {
             NodeList nodes = document.getElementsByTagName("property");
             for (int i = 0; i < nodes.getLength(); i++) {
                 Element property = (Element) nodes.item(i);
@@ -150,7 +162,7 @@ public final class ChangelogModel {
             } else {
                 value = child.getAttribute("value");
             }
-            if (value.isEmpty() || (with != null && with.isEmpty())) {
+            if (value.isEmpty()) {
                 continue;
             }
             modifications.add(new SqlModification(kind, value, with, applyToRollback, dbms));
@@ -231,10 +243,32 @@ public final class ChangelogModel {
                     booleanAttribute(element, "stripComments", false),
                     optionalAttribute(element, "dbms")));
             case "sqlFile" -> fileSource(SqlSource.Kind.SQL_FILE, root, changelogFile, element);
-            case "createProcedure", "createFunction" ->
-                    fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
+            case "createProcedure", "createFunction" -> routineSource(root, changelogFile, element);
             default -> List.of();
         };
+    }
+
+    /**
+     * Reads a {@code <createProcedure>}/{@code <createFunction>} source: from the
+     * {@code path} attribute when present, otherwise from the element's inline
+     * text (Liquibase also allows the routine body as the element's content).
+     */
+    private static List<SqlSource> routineSource(Path root, Path changelogFile, Element element) {
+        if (!element.getAttribute("path").isBlank()) {
+            return fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
+        }
+        String text = element.getTextContent();
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        return List.of(new SqlSource(
+                SqlSource.Kind.ROUTINE_BODY,
+                null,
+                text,
+                booleanAttribute(element, "splitStatements", true),
+                delimiterAttribute(element),
+                booleanAttribute(element, "stripComments", false),
+                optionalAttribute(element, "dbms")));
     }
 
     private static List<SqlSource> fileSource(SqlSource.Kind kind, Path root, Path changelogFile, Element element) {

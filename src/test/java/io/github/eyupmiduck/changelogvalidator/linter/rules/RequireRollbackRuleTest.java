@@ -34,8 +34,11 @@ class RequireRollbackRuleTest {
     }
 
     private static SqlUnit unit(SqlSource.Kind kind, String sql) {
-        SqlSource source = new SqlSource(kind, kind == SqlSource.Kind.ROUTINE_BODY ? Path.of("/f.sql") : null,
-                kind == SqlSource.Kind.ROUTINE_BODY ? null : sql, true, ";", true, null);
+        SqlSource source = switch (kind) {
+            case ROUTINE_BODY -> new SqlSource(kind, Path.of("/f.sql"), null, true, ";", true, null);
+            case SQL_FILE -> new SqlSource(kind, FILE, null, true, ";", true, null);
+            case INLINE_SQL -> new SqlSource(kind, null, sql, true, ";", true, null);
+        };
         return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
     }
 

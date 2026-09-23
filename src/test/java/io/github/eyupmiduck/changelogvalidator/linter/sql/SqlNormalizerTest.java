@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Verifies {@link SqlNormalizer}: property substitution (repeated and with
@@ -113,5 +114,31 @@ class SqlNormalizerTest {
     @Test
     void identityNormalisationChangesNothing() {
         assertEquals("SELECT ${x};", SqlNormalizer.normalise("SELECT ${x};", Normalisation.none(), false));
+    }
+
+    /**
+     * A circular property reference reaches a fixed point and stops, rather than
+     * looping to the depth limit.
+     */
+    @Test
+    void stopsAtACircularPropertyReference() {
+        Normalisation normalisation = new Normalisation(Map.of("a", "${a}"), List.of());
+
+        assertEquals("${a}", SqlNormalizer.normalise("${a}", normalisation, false));
+    }
+
+    /**
+     * A chain longer than the depth limit fails loudly instead of returning
+     * partially substituted SQL.
+     */
+    @Test
+    void failsWhenPropertySubstitutionExceedsTheDepthLimit() {
+        Map<String, String> properties = new java.util.HashMap<>();
+        for (int i = 0; i < 20; i++) {
+            properties.put("p" + i, "${p" + (i + 1) + "}");
+        }
+
+        assertThrows(IllegalStateException.class,
+                () -> SqlNormalizer.normalise("${p0}", new Normalisation(properties, List.of()), false));
     }
 }
