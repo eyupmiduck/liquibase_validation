@@ -109,13 +109,15 @@ scriptDir="$(dirname "$0")"
 scriptName="$(basename "$0")"
 
 # parse distributionUrl and optional distributionSha256Sum, requires .mvn/wrapper/maven-wrapper.properties
+wrapperProperties="$scriptDir/.mvn/wrapper/maven-wrapper.properties"
+[ -r "$wrapperProperties" ] || die "cannot read Maven wrapper properties: $wrapperProperties"
 while IFS="=" read -r key value; do
   case "${key-}" in
   distributionUrl) distributionUrl=$(trim "${value-}") ;;
   distributionSha256Sum) distributionSha256Sum=$(trim "${value-}") ;;
   esac
-done <"$scriptDir/.mvn/wrapper/maven-wrapper.properties"
-[ -n "${distributionUrl-}" ] || die "cannot read distributionUrl property in $scriptDir/.mvn/wrapper/maven-wrapper.properties"
+done <"$wrapperProperties"
+[ -n "${distributionUrl-}" ] || die "cannot read distributionUrl property in $wrapperProperties"
 
 case "${distributionUrl##*/}" in
 maven-mvnd-*bin.*)
@@ -220,6 +222,8 @@ elif set_java_home; then
   "$(native_path "$JAVACCMD")" "$(native_path "$javaSource")" || die "Failed to compile Downloader.java"
   verbose " - Running Downloader.java ..."
   "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")"
+else
+  die "no wget, curl or usable Java found to download $distributionUrl"
 fi
 
 # If specified, validate the SHA-256 sum of the Maven distribution zip file
@@ -289,7 +293,11 @@ fi
 
 verbose "Found extracted Maven distribution directory: $actualDistributionDir"
 printf %s\\n "$distributionUrl" >"$TMP_DOWNLOAD_DIR/$actualDistributionDir/mvnw.url"
-mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$MAVEN_HOME" || [ -d "$MAVEN_HOME" ] || die "fail to move MAVEN_HOME"
+# Accept an existing MAVEN_HOME only when it is a complete install, so a
+# concurrent or interrupted move cannot be mistaken for a usable distribution.
+mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$MAVEN_HOME" \
+  || [ -x "$MAVEN_HOME/bin/$MVN_CMD" ] \
+  || die "fail to move MAVEN_HOME"
 
 clean || :
 exec_maven "$@"
