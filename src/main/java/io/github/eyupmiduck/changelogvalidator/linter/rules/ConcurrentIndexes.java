@@ -2,7 +2,6 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
@@ -108,7 +107,7 @@ final class ConcurrentIndexes {
         if (nameStart < tokens.size() && tokens.get(nameStart).matchesKeyword("ONLY")) {
             nameStart++;
         }
-        String table = qualifiedName(tokens, nameStart);
+        String table = RuleSupport.qualifiedName(tokens, nameStart);
         if (table == null) {
             return null;
         }
@@ -140,7 +139,7 @@ final class ConcurrentIndexes {
                 && tokens.get(nameStart + 2).matchesKeyword("EXISTS")) {
             nameStart += 3;
         }
-        return qualifiedName(tokens, nameStart);
+        return RuleSupport.qualifiedName(tokens, nameStart);
     }
 
     private static boolean isCreateModifier(Token token) {
@@ -151,37 +150,8 @@ final class ConcurrentIndexes {
                 || token.matchesKeyword("LOCAL");
     }
 
-    private static String qualifiedName(List<Token> tokens, int start) {
-        StringBuilder name = new StringBuilder();
-        int i = start;
-        while (i < tokens.size()) {
-            String part = identifier(tokens.get(i));
-            if (part == null) {
-                return null;
-            }
-            name.append(part);
-            i++;
-            if (i < tokens.size() && isDot(tokens.get(i))) {
-                name.append('.');
-                i++;
-            } else {
-                break;
-            }
-        }
-        return name.isEmpty() ? null : name.toString();
-    }
 
-    private static String identifier(Token token) {
-        return switch (token.type()) {
-            case WORD -> token.text().toLowerCase(Locale.ROOT);
-            case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
-            default -> null;
-        };
-    }
 
-    private static boolean isDot(Token token) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
-    }
 
 
     /**

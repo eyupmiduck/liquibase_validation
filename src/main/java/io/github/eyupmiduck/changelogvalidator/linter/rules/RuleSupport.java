@@ -2,15 +2,17 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
+import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenClassifier.Family;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Shared helpers for the rules: token selection within a statement and the
- * display name of a transaction-forbidden family.
+ * Shared helpers for the rules: token selection within a statement, qualified
+ * identifiers, and the display name of a transaction-forbidden family.
  *
  * <p>The family display string is the public {@code statement} key a whitelist
  * entry matches on, so it is defined once here rather than copied into each rule
@@ -19,6 +21,58 @@ import java.util.List;
 final class RuleSupport {
 
     private RuleSupport() {
+    }
+
+    /**
+     * Returns the normalized text of an identifier token: an unquoted word folds
+     * to lower case, a quoted identifier keeps its case (doubled quotes are
+     * unescaped). Returns {@code null} for a token that is not an identifier.
+     *
+     * @param token the token
+     * @return the normalized identifier, or null
+     */
+    static String identifier(Token token) {
+        return switch (token.type()) {
+            case WORD -> token.text().toLowerCase(Locale.ROOT);
+            case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
+            default -> null;
+        };
+    }
+
+    /**
+     * Returns whether the token is a {@code .} punctuation.
+     *
+     * @param token the token
+     * @return {@code true} for a dot
+     */
+    static boolean isDot(Token token) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
+    }
+
+    /**
+     * Returns the dot-separated qualified name starting at {@code start}, or
+     * {@code null} when that token is not an identifier. Only identifiers joined
+     * by dots are consumed, so following keywords are not appended to the name.
+     *
+     * @param tokens the tokens
+     * @param start  the index of the first identifier
+     * @return the normalized qualified name, or null
+     */
+    static String qualifiedName(List<Token> tokens, int start) {
+        if (start >= tokens.size()) {
+            return null;
+        }
+        String first = identifier(tokens.get(start));
+        if (first == null) {
+            return null;
+        }
+        StringBuilder name = new StringBuilder(first);
+        int i = start + 1;
+        while (i + 1 < tokens.size() && isDot(tokens.get(i)) && identifier(tokens.get(i + 1)) != null) {
+            name.append('.').append(identifier(tokens.get(i + 1)));
+            i += 2;
+        }
+        return name.toString();
     }
 
     /**

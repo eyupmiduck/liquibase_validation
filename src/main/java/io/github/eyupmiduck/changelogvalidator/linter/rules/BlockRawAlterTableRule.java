@@ -5,13 +5,11 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Blocks a raw {@code ALTER TABLE} statement in a changeset and points the
@@ -113,38 +111,8 @@ public final class BlockRawAlterTableRule implements Rule {
         return false;
     }
 
-    private static String qualifiedName(List<Token> tokens, int start) {
-        if (start >= tokens.size()) {
-            return null;
-        }
-        String first = identifier(tokens.get(start));
-        if (first == null) {
-            return null;
-        }
-        // Only consume identifiers that are dot-separated, so following keywords
-        // (ADD, COLUMN, ...) are not appended to the name.
-        StringBuilder name = new StringBuilder(first);
-        int i = start + 1;
-        while (i + 1 < tokens.size() && isDot(tokens.get(i)) && identifier(tokens.get(i + 1)) != null) {
-            name.append('.').append(identifier(tokens.get(i + 1)));
-            i += 2;
-        }
-        return name.toString();
-    }
 
-    private static boolean isDot(Token token) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
-    }
 
-    private static String identifier(Token token) {
-        if (token.type() == TokenType.QUOTED_IDENTIFIER) {
-            return token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
-        }
-        if (token.type() == TokenType.WORD) {
-            return token.text().toLowerCase(Locale.ROOT);
-        }
-        return null;
-    }
 
     @Override
     public String id() {
@@ -175,7 +143,7 @@ public final class BlockRawAlterTableRule implements Rule {
                     continue;
                 }
                 Token token = RuleSupport.firstToken(unit, statement);
-                String table = qualifiedName(tokens, 2);
+                String table = RuleSupport.qualifiedName(tokens, 2);
                 String hint = wrapperHint(tokens);
                 violations.add(new Violation(
                         "ALTER TABLE",
