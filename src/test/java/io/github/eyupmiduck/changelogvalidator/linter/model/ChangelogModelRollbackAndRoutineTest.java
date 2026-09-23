@@ -1,5 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,22 +22,11 @@ class ChangelogModelRollbackAndRoutineTest {
     @TempDir
     Path changelogRoot;
 
-    private static String changelog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
-    }
 
     private ChangeSet load(String changesBody) throws IOException {
-        Files.writeString(changelogRoot.resolve("db.changelog-master.xml"), changelog(
+        Files.writeString(changelogRoot.resolve("db.changelog-master.xml"), ChangelogTestSupport.changelog(
                 "<include file=\"changes.xml\" relativeToChangelogFile=\"true\"/>"));
-        Files.writeString(changelogRoot.resolve("changes.xml"), changelog(changesBody));
+        Files.writeString(changelogRoot.resolve("changes.xml"), ChangelogTestSupport.changelog(changesBody));
         return ChangelogModel.changesets(changelogRoot, changelogRoot.resolve("db.changelog-master.xml")).get(0);
     }
 

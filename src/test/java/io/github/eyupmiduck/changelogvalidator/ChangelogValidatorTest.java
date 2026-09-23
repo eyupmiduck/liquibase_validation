@@ -21,17 +21,6 @@ class ChangelogValidatorTest {
     @TempDir
     Path tempDir;
 
-    private static String databaseChangeLog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
-    }
 
     /**
      * A SQL file whose name does not start with a three-digit, zero-padded
@@ -89,10 +78,10 @@ class ChangelogValidatorTest {
     void flagsChangeSetsWithoutThreeDigitPrefix() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create-example" author="test"/>
                 <changeSet id="create-example" author="test"/>
                 <changeSet author="test"/>
@@ -115,10 +104,10 @@ class ChangelogValidatorTest {
     void acceptsCustomChangeSetIdPattern() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="functions.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("functions.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("functions.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="function-ddl_utils.set_not_null" author="test"/>
                 <changeSet id="function-ddl_utils_lib.set_not_null" author="test"/>
                 <changeSet id="procedure-ddl_utils.ensure_not_null" author="test"/>
@@ -147,10 +136,10 @@ class ChangelogValidatorTest {
         Files.writeString(sqlChanges.resolve("002-rollback.sql"), "");
         Files.writeString(sqlChanges.resolve("003-orphan.sql"), "");
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-referenced.sql" relativeToChangelogFile="true"/>
                     <rollback>
@@ -196,10 +185,10 @@ class ChangelogValidatorTest {
         Files.writeString(sqlChanges.resolve("001-referenced.sql"), "");
         Files.writeString(sqlChanges.resolve("002-orphan.sql"), "");
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-referenced.sql" relativeToChangelogFile="true"/>
                 </changeSet>
@@ -219,12 +208,12 @@ class ChangelogValidatorTest {
         Path root = Files.createDirectories(tempDir.resolve("changelog"));
         Path nested = Files.createDirectories(root.resolve("sub"));
         Path master = root.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="sub/changes.xml" relativeToChangelogFile="false"/>
                 """));
         Path sqlChanges = Files.createDirectories(root.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("001-create.sql"), "");
-        Files.writeString(nested.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(nested.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="false"/>
                 </changeSet>
@@ -245,10 +234,10 @@ class ChangelogValidatorTest {
         Files.writeString(functions.resolve("alter_table.sql"), "");
         Files.writeString(functions.resolve("orphan_function.sql"), "");
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="functions.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("functions.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("functions.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="005-create-functions" author="test">
                     <createProcedure path="functions/alter_table.sql" relativeToChangelogFile="true"/>
                 </changeSet>
@@ -270,10 +259,10 @@ class ChangelogValidatorTest {
         Path functions = Files.createDirectories(root.resolve("functions"));
         Files.writeString(functions.resolve("alter_table.sql"), "");
         Path master = root.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="functions.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(root.resolve("functions.xml"), databaseChangeLog("""
+        Files.writeString(root.resolve("functions.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="005-create-functions" author="test">
                     <createFunction path="functions/alter_table.sql" relativeToChangelogFile="false"/>
                 </changeSet>
@@ -289,10 +278,10 @@ class ChangelogValidatorTest {
     void guardsAgainstIncludeCycles() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("a.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="b.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("b.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("b.xml"), ChangelogTestSupport.changelog("""
                 <include file="a.xml" relativeToChangelogFile="true"/>
                 """));
 
@@ -306,13 +295,13 @@ class ChangelogValidatorTest {
     void ignoresIncludesAndSqlFilesWithoutPath() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 <include/>
                 """));
         Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("001-create.sql"), "");
-        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
                     <sqlFile/>
@@ -332,7 +321,7 @@ class ChangelogValidatorTest {
     void rejectsMalformedChangelogFile() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="broken.xml" relativeToChangelogFile="true"/>
                 """));
         Files.writeString(changes.resolve("broken.xml"), "<databaseChangeLog>");
@@ -348,10 +337,10 @@ class ChangelogValidatorTest {
     void rejectsIncludeEscapingTheChangelogRoot() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="../outside.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(tempDir.resolve("outside.xml"), databaseChangeLog(""));
+        Files.writeString(tempDir.resolve("outside.xml"), ChangelogTestSupport.changelog(""));
 
         assertThrows(IOException.class, () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
     }
@@ -363,7 +352,7 @@ class ChangelogValidatorTest {
     void rejectsAbsoluteIncludePath() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="/etc/hosts" relativeToChangelogFile="true"/>
                 """));
 
@@ -379,10 +368,10 @@ class ChangelogValidatorTest {
     void rejectsSqlReferenceEscapingTheChangelogRoot() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
-        Files.writeString(master, databaseChangeLog("""
+        Files.writeString(master, ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 """));
-        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="../outside.sql" relativeToChangelogFile="true"/>
                 </changeSet>

@@ -1,5 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,32 +26,15 @@ class ChangelogModelTest {
 
     private Path master;
 
-    private static ChangeSet byId(List<ChangeSet> changesets, String id) {
-        return changesets.stream()
-                .filter(changeset -> changeset.id().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("no changeset " + id));
-    }
 
-    private static String changelog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
-    }
 
     @BeforeEach
     void createChangelog() throws IOException {
-        write("db.changelog-master.xml", changelog("""
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 <include file="functions.xml" relativeToChangelogFile="true"/>
                 """));
-        write("changes.xml", changelog("""
+        write("changes.xml", ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="a">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
                     <rollback>
@@ -79,7 +64,7 @@ class ChangelogModelTest {
                     <sqlFile path=""/>
                 </changeSet>
                 """));
-        write("functions.xml", changelog("""
+        write("functions.xml", ChangelogTestSupport.changelog("""
                 <changeSet id="function-ddl_utils.foo" author="a" runOnChange="true">
                     <createProcedure path="functions/ddl_utils/foo.sql" relativeToChangelogFile="true"/>
                     <rollback>
@@ -107,8 +92,8 @@ class ChangelogModelTest {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
 
         assertEquals(9, changesets.size());
-        assertEquals("001-create", byId(changesets, "001-create").id());
-        assertEquals("function-ddl_utils.bar", byId(changesets, "function-ddl_utils.bar").id());
+        assertEquals("001-create", ChangelogTestSupport.byId(changesets, "001-create").id());
+        assertEquals("function-ddl_utils.bar", ChangelogTestSupport.byId(changesets, "function-ddl_utils.bar").id());
     }
 
     /**
@@ -116,7 +101,7 @@ class ChangelogModelTest {
      */
     @Test
     void resolvesSqlFileAndRollback() throws IOException {
-        ChangeSet create = byId(ChangelogModel.changesets(changelogRoot, master), "001-create");
+        ChangeSet create = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "001-create");
 
         assertTrue(create.runInTransaction());
         assertFalse(create.runOnChange());
@@ -137,7 +122,7 @@ class ChangelogModelTest {
      */
     @Test
     void readsInlineSqlAttributesAndReferenceRollback() throws IOException {
-        ChangeSet index = byId(ChangelogModel.changesets(changelogRoot, master), "002-index");
+        ChangeSet index = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "002-index");
 
         assertFalse(index.runInTransaction());
         assertEquals("postgresql", index.dbms());
@@ -160,7 +145,7 @@ class ChangelogModelTest {
      */
     @Test
     void appliesLiquibaseDefaults() throws IOException {
-        ChangeSet defaults = byId(ChangelogModel.changesets(changelogRoot, master), "003-defaults");
+        ChangeSet defaults = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "003-defaults");
 
         SqlSource inline = defaults.sqlSources().get(0);
         assertTrue(inline.splitStatements());
@@ -175,7 +160,7 @@ class ChangelogModelTest {
      */
     @Test
     void handlesStructuredChanges() throws IOException {
-        ChangeSet structured = byId(ChangelogModel.changesets(changelogRoot, master), "004-structured");
+        ChangeSet structured = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "004-structured");
 
         assertTrue(structured.sqlSources().isEmpty());
         assertFalse(structured.rollbackDefined());
@@ -191,9 +176,9 @@ class ChangelogModelTest {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
 
         assertEquals(changelogRoot.resolve("sql_changes/005-root.sql").normalize(),
-                byId(changesets, "005-root-relative").sqlSources().get(0).path());
-        assertEquals("", byId(changesets, "006-empty-delimiter").sqlSources().get(0).endDelimiter());
-        assertTrue(byId(changesets, "007-blank-path").sqlSources().isEmpty());
+                ChangelogTestSupport.byId(changesets, "005-root-relative").sqlSources().get(0).path());
+        assertEquals("", ChangelogTestSupport.byId(changesets, "006-empty-delimiter").sqlSources().get(0).endDelimiter());
+        assertTrue(ChangelogTestSupport.byId(changesets, "007-blank-path").sqlSources().isEmpty());
     }
 
     /**
@@ -204,7 +189,7 @@ class ChangelogModelTest {
     void readsRoutineBodies() throws IOException {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
 
-        ChangeSet procedure = byId(changesets, "function-ddl_utils.foo");
+        ChangeSet procedure = ChangelogTestSupport.byId(changesets, "function-ddl_utils.foo");
         assertTrue(procedure.runOnChange());
         assertEquals(SqlSource.Kind.ROUTINE_BODY, procedure.sqlSources().get(0).kind());
         assertEquals(changelogRoot.resolve("functions/ddl_utils/foo.sql").normalize(),
@@ -214,7 +199,7 @@ class ChangelogModelTest {
                 procedure.rollbackSources().get(0).path());
 
         assertEquals(SqlSource.Kind.ROUTINE_BODY,
-                byId(changesets, "function-ddl_utils.bar").sqlSources().get(0).kind());
+                ChangelogTestSupport.byId(changesets, "function-ddl_utils.bar").sqlSources().get(0).kind());
     }
 
     /**
