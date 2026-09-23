@@ -175,6 +175,28 @@ class SqlStatementSplitterTest {
     }
 
     /**
+     * Stripping a comment must not fuse the tokens on either side.
+     */
+    @Test
+    void strippingCommentsDoesNotFuseTokens() {
+        assertEquals("SELECT 1", SqlStatementSplitter.split("SELECT/*c*/1").get(0).text());
+        assertEquals("SELECT a b", SqlStatementSplitter.split("SELECT a/*c*/b").get(0).text());
+        assertEquals("'a' 'b'", SqlStatementSplitter.split("'a'/*c*/'b'").get(0).text());
+    }
+
+    /**
+     * An operator delimiter is not recognised, so {@code /} does not split a
+     * division expression.
+     */
+    @Test
+    void doesNotSplitOnOperatorDelimiter() {
+        List<SqlStatement> statements = SqlStatementSplitter.split("SELECT a/b", true, "/", true);
+
+        assertEquals(1, statements.size());
+        assertEquals("SELECT a/b", statements.get(0).text());
+    }
+
+    /**
      * A null statement text is rejected.
      */
     @Test
