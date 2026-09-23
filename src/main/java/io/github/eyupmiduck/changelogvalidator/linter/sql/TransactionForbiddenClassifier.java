@@ -2,6 +2,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.sql;
 
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +38,7 @@ public final class TransactionForbiddenClassifier {
     public static List<Classification> classify(List<Token> tokens, List<SqlStatement> statements, Integer pgVersion) {
         List<Classification> classifications = new ArrayList<>();
         for (SqlStatement statement : statements) {
-            familyOf(tokensWithin(tokens, statement), pgVersion)
+            familyOf(TokenWords.within(tokens, statement.startOffset(), statement.endOffset()), pgVersion)
                     .ifPresent(family -> classifications.add(new Classification(family, statement)));
         }
         return List.copyOf(classifications);
@@ -57,16 +58,16 @@ public final class TransactionForbiddenClassifier {
         if (words.isEmpty()) {
             return Optional.empty();
         }
-        if (startsWith(words, "VACUUM")) {
+        if (TokenWords.startsWith(words, "VACUUM")) {
             return Optional.of(Family.VACUUM);
         }
-        if (startsWith(words, "CREATE", "DATABASE")) {
+        if (TokenWords.startsWith(words, "CREATE", "DATABASE")) {
             return Optional.of(Family.CREATE_DATABASE);
         }
-        if (startsWith(words, "DROP", "DATABASE")) {
+        if (TokenWords.startsWith(words, "DROP", "DATABASE")) {
             return Optional.of(Family.DROP_DATABASE);
         }
-        if (startsWith(words, "ALTER", "SYSTEM")) {
+        if (TokenWords.startsWith(words, "ALTER", "SYSTEM")) {
             return Optional.of(Family.ALTER_SYSTEM);
         }
         if (isIndexConcurrently(words, "CREATE")) {
@@ -75,11 +76,11 @@ public final class TransactionForbiddenClassifier {
         if (isIndexConcurrently(words, "DROP")) {
             return Optional.of(Family.DROP_INDEX_CONCURRENTLY);
         }
-        if (startsWith(words, "REINDEX") && contains(words, "CONCURRENTLY")) {
+        if (TokenWords.startsWith(words, "REINDEX") && TokenWords.contains(words, "CONCURRENTLY")) {
             return Optional.of(Family.REINDEX_CONCURRENTLY);
         }
-        if (startsWith(words, "ALTER", "TABLE") && adjacent(words, "DETACH", "PARTITION")
-                && contains(words, "CONCURRENTLY")) {
+        if (TokenWords.startsWith(words, "ALTER", "TABLE") && TokenWords.adjacent(words, "DETACH", "PARTITION")
+                && TokenWords.contains(words, "CONCURRENTLY")) {
             return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
         }
         if (isAlterTypeAddValue(words) && pgVersion != null && pgVersion < ALTER_TYPE_ADD_VALUE_ALLOWED_FROM) {
@@ -89,7 +90,7 @@ public final class TransactionForbiddenClassifier {
     }
 
     private static boolean isIndexConcurrently(List<Token> words, String command) {
-        if (!startsWith(words, command)) {
+        if (!TokenWords.startsWith(words, command)) {
             return false;
         }
         // CREATE [UNIQUE] INDEX CONCURRENTLY / DROP INDEX CONCURRENTLY: CONCURRENTLY
@@ -105,49 +106,13 @@ public final class TransactionForbiddenClassifier {
     }
 
     private static boolean isAlterTypeAddValue(List<Token> words) {
-        return startsWith(words, "ALTER", "TYPE") && adjacent(words, "ADD", "VALUE");
+        return TokenWords.startsWith(words, "ALTER", "TYPE") && TokenWords.adjacent(words, "ADD", "VALUE");
     }
 
-    private static boolean adjacent(List<Token> words, String first, String second) {
-        for (int i = 0; i + 1 < words.size(); i++) {
-            if (words.get(i).matchesKeyword(first) && words.get(i + 1).matchesKeyword(second)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
-    private static boolean startsWith(List<Token> words, String... keywords) {
-        if (words.size() < keywords.length) {
-            return false;
-        }
-        for (int i = 0; i < keywords.length; i++) {
-            if (!words.get(i).matchesKeyword(keywords[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
 
-    private static boolean contains(List<Token> words, String keyword) {
-        return indexOf(words, keyword, 0) >= 0;
-    }
 
-    private static int indexOf(List<Token> words, String keyword, int from) {
-        for (int i = from; i < words.size(); i++) {
-            if (words.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
 
-    private static List<Token> tokensWithin(List<Token> tokens, SqlStatement statement) {
-        return tokens.stream()
-                .filter(token -> token.startOffset() >= statement.startOffset()
-                        && token.endOffset() <= statement.endOffset())
-                .toList();
-    }
 
     /**
      * A statement family that cannot run inside a transaction block.

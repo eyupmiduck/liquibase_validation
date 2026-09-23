@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenClassifier.Family;
 
 import java.util.List;
@@ -28,11 +29,7 @@ final class RuleSupport {
      * @return the non-trivia tokens in the span, in order
      */
     static List<Token> nonTriviaWithin(List<Token> tokens, SqlStatement statement) {
-        return tokens.stream()
-                .filter(token -> !token.isTrivia())
-                .filter(token -> token.startOffset() >= statement.startOffset()
-                        && token.endOffset() <= statement.endOffset())
-                .toList();
+        return TokenWords.within(tokens, statement.startOffset(), statement.endOffset());
     }
 
     /**
