@@ -360,7 +360,9 @@ produced and uploaded (findings appear inline, next to CodeQL), then runs again
 with `--fail-on warning` to show the failing exit code. The sample deliberately
 contains a finding, so that step is advisory (`continue-on-error`); a real
 consumer wires the failing run into its gate as in `ddl_utils`. For the upload
-the job needs `security-events: write`.
+the job needs `security-events: write`. A pull request from a fork gets a
+read-only token, so the upload step is skipped there to avoid a red check;
+same-repo pull requests and manual runs still publish.
 
 ## Using the library
 
