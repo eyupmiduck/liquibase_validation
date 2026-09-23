@@ -13,18 +13,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Runs a set of {@link Rule}s over changesets from a changelog model.
  *
- * <p>Rules are registered explicitly, their order is the order findings are
- * produced, and the configuration decides which rules run and at what severity.
- * A configuration that references a rule id the engine does not know is
- * rejected, so a typo cannot silently disable a rule.
+ * <p>Rules are registered explicitly and run in that order within each changeset,
+ * so the configuration decides which rules run and at what severity. A
+ * configuration that references a rule id the engine does not know is rejected,
+ * so a typo cannot silently disable a rule, and a duplicate rule id is rejected
+ * so a rule cannot report twice.
  */
 public final class Linter {
 
@@ -36,13 +37,18 @@ public final class Linter {
      *
      * @param rules  the rules to run
      * @param config the configuration
-     * @throws IllegalArgumentException if the configuration references an
-     *                                  unknown rule id
+     * @throws IllegalArgumentException if two rules share an id, or the
+     *                                  configuration references an unknown rule id
      */
     public Linter(List<Rule> rules, LinterConfig config) {
         Objects.requireNonNull(rules, "rules");
         Objects.requireNonNull(config, "config");
-        Set<String> known = rules.stream().map(Rule::id).collect(Collectors.toSet());
+        Set<String> known = new HashSet<>();
+        for (Rule rule : rules) {
+            if (!known.add(rule.id())) {
+                throw new IllegalArgumentException("duplicate rule id: " + rule.id());
+            }
+        }
         for (String id : config.referencedRuleIds()) {
             if (!known.contains(id)) {
                 throw new IllegalArgumentException("unknown rule id in configuration: " + id);
@@ -66,7 +72,7 @@ public final class Linter {
      * Runs every enabled rule over {@code changeSets}.
      *
      * @param changeSets the changesets
-     * @return the findings, in rule then changeset order
+     * @return the findings, in changeset then rule order
      * @throws IOException if a SQL file cannot be read
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
