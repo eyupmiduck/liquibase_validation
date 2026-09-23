@@ -27,6 +27,8 @@ public record SqlUnit(SqlSource source, Path file, String sql, List<Token> token
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(sql, "sql");
+        Objects.requireNonNull(tokens, "tokens");
+        Objects.requireNonNull(statements, "statements");
         tokens = List.copyOf(tokens);
         statements = List.copyOf(statements);
     }

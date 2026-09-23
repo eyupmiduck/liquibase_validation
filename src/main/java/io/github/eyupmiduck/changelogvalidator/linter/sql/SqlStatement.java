@@ -15,9 +15,16 @@ import java.util.Objects;
 public record SqlStatement(String text, int startOffset, int endOffset) {
 
     /**
-     * Validates the statement's required components.
+     * Validates the statement's required components and its offset range.
      */
     public SqlStatement {
         Objects.requireNonNull(text, "text");
+        if (startOffset < 0) {
+            throw new IllegalArgumentException("startOffset must be non-negative, was " + startOffset);
+        }
+        if (endOffset < startOffset) {
+            throw new IllegalArgumentException(
+                    "endOffset (" + endOffset + ") must not precede startOffset (" + startOffset + ")");
+        }
     }
 }

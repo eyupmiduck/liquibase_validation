@@ -34,6 +34,12 @@ public record Finding(String ruleId, Severity severity, String changeSetId, Stri
         Objects.requireNonNull(changeSetAuthor, "changeSetAuthor");
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(message, "message");
+        if (line < 1) {
+            throw new IllegalArgumentException("line must be one-based, was " + line);
+        }
+        if (column < 1) {
+            throw new IllegalArgumentException("column must be one-based, was " + column);
+        }
     }
 
     /**

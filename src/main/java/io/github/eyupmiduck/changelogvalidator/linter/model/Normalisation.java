@@ -2,6 +2,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.model;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The changelog-level inputs that turn a changeset's raw SQL into the SQL
@@ -20,6 +21,8 @@ public record Normalisation(Map<String, String> properties, List<SqlModification
      * Validates the normalisation and copies its collections.
      */
     public Normalisation {
+        Objects.requireNonNull(properties, "properties");
+        Objects.requireNonNull(modifySql, "modifySql");
         properties = Map.copyOf(properties);
         modifySql = List.copyOf(modifySql);
     }
