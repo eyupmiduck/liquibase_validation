@@ -21,13 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class BlockRawAlterTableRuleTest {
 
-    private static final Path FILE = Path.of("/db/sql.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
-    private static SqlUnit unit(SqlSource.Kind kind, String sql) {
-        return new SqlUnit(new SqlSource(kind, kind == SqlSource.Kind.ROUTINE_BODY ? FILE : null,
-                kind == SqlSource.Kind.ROUTINE_BODY ? null : sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     private static RuleContext context(SqlUnit unit) {
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
@@ -36,7 +31,7 @@ class BlockRawAlterTableRuleTest {
     }
 
     private static List<Rule.Violation> check(String sql) {
-        return new BlockRawAlterTableRule().check(context(unit(SqlSource.Kind.INLINE_SQL, sql)));
+        return new BlockRawAlterTableRule().check(context(RuleTestSupport.unit(SqlSource.Kind.INLINE_SQL, sql)));
     }
 
     /**
@@ -121,7 +116,7 @@ class BlockRawAlterTableRuleTest {
      */
     @Test
     void ignoresRoutineBodies() {
-        List<Rule.Violation> forward = new BlockRawAlterTableRule().check(context(unit(
+        List<Rule.Violation> forward = new BlockRawAlterTableRule().check(context(RuleTestSupport.unit(
                 SqlSource.Kind.ROUTINE_BODY,
                 "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN ALTER TABLE t ADD COLUMN c int; END; $$ LANGUAGE plpgsql;")));
 
@@ -139,7 +134,7 @@ class BlockRawAlterTableRuleTest {
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
                 null, null, null, List.of(), true, List.of());
         RuleContext context = new RuleContext(changeSet, List.of(),
-                List.of(unit(SqlSource.Kind.INLINE_SQL, "ALTER TABLE t DROP COLUMN c;")));
+                List.of(RuleTestSupport.unit(SqlSource.Kind.INLINE_SQL, "ALTER TABLE t DROP COLUMN c;")));
         assertEquals(1, new BlockRawAlterTableRule().check(context).size());
     }
 

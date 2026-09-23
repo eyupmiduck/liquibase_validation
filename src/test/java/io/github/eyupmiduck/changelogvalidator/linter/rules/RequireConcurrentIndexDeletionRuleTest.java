@@ -23,20 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RequireConcurrentIndexDeletionRuleTest {
 
-    private static final Path FILE = Path.of("/db/changes.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
-    private static RuleContext context(String forwardSql, String... rollbackSql) {
-        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
-        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(RequireConcurrentIndexDeletionRuleTest::unit).toList();
-        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
-                null, null, null, List.of(), false, List.of());
-        return new RuleContext(changeSet, forward, rollback);
-    }
 
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     private static ChangeSet changeSet(String sql) {
         return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
@@ -51,7 +40,7 @@ class RequireConcurrentIndexDeletionRuleTest {
     @Test
     void reportsPlainDropIndex() {
         List<Rule.Violation> violations = new RequireConcurrentIndexDeletionRule()
-                .check(context("DROP INDEX idx;"));
+                .check(RuleTestSupport.context("DROP INDEX idx;"));
 
         assertEquals(1, violations.size());
         Rule.Violation violation = violations.get(0);
@@ -68,15 +57,15 @@ class RequireConcurrentIndexDeletionRuleTest {
     @Test
     void acceptsConcurrentAndIfExistsIsReported() {
         assertEquals(1, new RequireConcurrentIndexDeletionRule()
-                .check(context("DROP INDEX IF EXISTS idx;")).size());
+                .check(RuleTestSupport.context("DROP INDEX IF EXISTS idx;")).size());
         assertTrue(new RequireConcurrentIndexDeletionRule()
-                .check(context("DROP INDEX CONCURRENTLY idx;")).isEmpty());
+                .check(RuleTestSupport.context("DROP INDEX CONCURRENTLY idx;")).isEmpty());
         assertTrue(new RequireConcurrentIndexDeletionRule()
-                .check(context("DROP INDEX CONCURRENTLY IF EXISTS idx;")).isEmpty());
+                .check(RuleTestSupport.context("DROP INDEX CONCURRENTLY IF EXISTS idx;")).isEmpty());
         assertTrue(new RequireConcurrentIndexDeletionRule()
-                .check(context("DROP TABLE t;")).isEmpty());
+                .check(RuleTestSupport.context("DROP TABLE t;")).isEmpty());
         assertTrue(new RequireConcurrentIndexDeletionRule()
-                .check(context("CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE INDEX idx ON t (c);")).isEmpty());
     }
 
     /**
@@ -85,7 +74,7 @@ class RequireConcurrentIndexDeletionRuleTest {
     @Test
     void checksRollback() {
         assertEquals(1, new RequireConcurrentIndexDeletionRule()
-                .check(context(null, "DROP INDEX idx;")).size());
+                .check(RuleTestSupport.context(null, "DROP INDEX idx;")).size());
     }
 
     /**

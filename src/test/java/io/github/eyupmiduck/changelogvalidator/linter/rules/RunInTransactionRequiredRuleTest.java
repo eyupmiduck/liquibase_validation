@@ -22,20 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RunInTransactionRequiredRuleTest {
 
-    private static final Path FILE = Path.of("/db/changes.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
-    private static RuleContext context(boolean runInTransaction, String forwardSql, String... rollbackSql) {
-        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), runInTransaction, false,
-                null, null, null, List.of(), false, List.of());
-        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
-        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(RunInTransactionRequiredRuleTest::unit).toList();
-        return new RuleContext(changeSet, forward, rollback);
-    }
 
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     /**
      * A forbidden statement in a transactional changeset is reported with the
@@ -44,7 +33,7 @@ class RunInTransactionRequiredRuleTest {
     @Test
     void requiresRunInTransaction() {
         List<Rule.Violation> violations = new RunInTransactionRequiredRule()
-                .check(context(true, "CREATE INDEX CONCURRENTLY idx ON t (c);"));
+                .check(RuleTestSupport.context(true, "CREATE INDEX CONCURRENTLY idx ON t (c);"));
 
         assertEquals(1, violations.size());
         Rule.Violation violation = violations.get(0);
@@ -60,7 +49,7 @@ class RunInTransactionRequiredRuleTest {
     @Test
     void acceptsRunInTransactionFalse() {
         assertTrue(new RunInTransactionRequiredRule()
-                .check(context(false, "CREATE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context(false, "CREATE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
     }
 
     /**
@@ -69,7 +58,7 @@ class RunInTransactionRequiredRuleTest {
     @Test
     void ignoresAllowedStatements() {
         assertTrue(new RunInTransactionRequiredRule()
-                .check(context(true, "CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context(true, "CREATE INDEX idx ON t (c);")).isEmpty());
     }
 
     /**
@@ -78,7 +67,7 @@ class RunInTransactionRequiredRuleTest {
     @Test
     void checksRollback() {
         List<Rule.Violation> violations = new RunInTransactionRequiredRule()
-                .check(context(true, null, "DROP INDEX CONCURRENTLY idx;"));
+                .check(RuleTestSupport.context(true, null, "DROP INDEX CONCURRENTLY idx;"));
 
         assertEquals(1, violations.size());
         assertTrue(violations.get(0).message().contains("DROP INDEX CONCURRENTLY"));
@@ -89,7 +78,7 @@ class RunInTransactionRequiredRuleTest {
      */
     @Test
     void versionGatesAlterTypeAddValue() {
-        RuleContext context = context(true, "ALTER TYPE mood ADD VALUE 'happy';");
+        RuleContext context = RuleTestSupport.context(true, "ALTER TYPE mood ADD VALUE 'happy';");
 
         assertEquals(1, new RunInTransactionRequiredRule(11).check(context).size());
         assertTrue(new RunInTransactionRequiredRule(12).check(context).isEmpty());
