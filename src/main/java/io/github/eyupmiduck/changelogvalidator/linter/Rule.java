@@ -68,6 +68,12 @@ public interface Rule {
         public Violation {
             Objects.requireNonNull(message, "message");
             Objects.requireNonNull(file, "file");
+            if (line < 1) {
+                throw new IllegalArgumentException("line must be one-based, was " + line);
+            }
+            if (column < 1) {
+                throw new IllegalArgumentException("column must be one-based, was " + column);
+            }
         }
 
         /**

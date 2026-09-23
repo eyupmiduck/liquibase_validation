@@ -43,6 +43,8 @@ public record ChangeSet(String id, String author, Path changelogFile, boolean ru
         Objects.requireNonNull(author, "author");
         Objects.requireNonNull(changelogFile, "changelogFile");
         Objects.requireNonNull(normalisation, "normalisation");
+        Objects.requireNonNull(sqlSources, "sqlSources");
+        Objects.requireNonNull(rollbackSources, "rollbackSources");
         sqlSources = List.copyOf(sqlSources);
         rollbackSources = List.copyOf(rollbackSources);
     }
