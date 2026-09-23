@@ -27,11 +27,16 @@ public final class AuditColumnsCheck {
 
     /**
      * A default expression that evaluates to the transaction timestamp, after
-     * allowing for a precision specifier, an explicit cast and surrounding
-     * parentheses, all of which {@code pg_get_expr} may render.
+     * allowing for a precision specifier, balanced surrounding parentheses and an
+     * explicit cast to a timestamp type, all of which {@code pg_get_expr} may
+     * render. An unrelated cast (for example {@code now()::date}) is rejected.
      */
+    private static final String NOW_FUNCTION =
+            "(?:now\\(\\)|current_timestamp(?:\\(\\d*\\))?|transaction_timestamp\\(\\))";
+
     private static final Pattern NOW_DEFAULT = Pattern.compile(
-            "\\(?(now\\(\\)|current_timestamp(?:\\(\\d*\\))?|transaction_timestamp\\(\\))\\)?(?:::.*)?",
+            "(?:\\(" + NOW_FUNCTION + "\\)|" + NOW_FUNCTION + ")"
+                    + "(?:::(?:timestamptz|timestamp(?:\\(\\d*\\))?(?:\\s+(?:with|without)\\s+time\\s+zone)?))?",
             Pattern.CASE_INSENSITIVE);
 
     /**
@@ -97,8 +102,9 @@ public final class AuditColumnsCheck {
     public static List<Violation> findViolations(Connection connection, Collection<String> schemas) throws SQLException {
         String[] names = schemas.toArray(String[]::new);
         List<Violation> violations = new ArrayList<>();
+        Array schemaArray = connection.createArrayOf("text", names);
         try (PreparedStatement statement = connection.prepareStatement(VIOLATION_QUERY)) {
-            statement.setArray(1, connection.createArrayOf("text", names));
+            statement.setArray(1, schemaArray);
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     String schema = resultSet.getString("schema_name");
@@ -117,6 +123,8 @@ public final class AuditColumnsCheck {
                     }
                 }
             }
+        } finally {
+            schemaArray.free();
         }
         return violations;
     }
@@ -191,6 +199,9 @@ public final class AuditColumnsCheck {
                 }
             } else if (savepoint != null) {
                 connection.rollback(savepoint);
+                // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release it so a
+                // long-lived caller transaction does not accumulate savepoints.
+                connection.releaseSavepoint(savepoint);
             }
         }
     }

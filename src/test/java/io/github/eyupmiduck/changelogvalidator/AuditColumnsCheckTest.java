@@ -256,12 +256,31 @@ class AuditColumnsCheckTest {
     }
 
     /**
+     * An unrelated cast on a now-family default (for example now()::date) is
+     * reported, so the default must resolve to a timestamp.
+     */
+    @Test
+    void rejectsAnUnrelatedCastOnANowDefault() throws Exception {
+        execute("""
+                CREATE TABLE unaudited.related_cast (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT (now()::date)
+                )
+                """);
+
+        List<String> problems = problems(AuditColumnsCheck.findViolations(connection, List.of("unaudited")));
+
+        assertTrue(problems.stream().anyMatch(p -> p.contains("updated_at must default to now()")),
+                () -> "now()::date must not be accepted; got: " + problems);
+    }
+
+    /**
      * A non-transaction timestamp default (statement_timestamp) is still
      * reported, so the relaxed default matching does not accept everything.
      */
     @Test
-    void rejectsNonTransactionTimestampDefault() throws Exception {
-        execute("""
+    void rejectsNonTransactionTimestampDefault() throws Exception {        execute("""
                 CREATE TABLE unaudited.untracked (
                     id integer PRIMARY KEY,
                     created_at timestamptz NOT NULL DEFAULT statement_timestamp(),

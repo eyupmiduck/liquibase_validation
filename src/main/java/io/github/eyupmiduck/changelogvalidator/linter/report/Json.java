@@ -6,6 +6,8 @@ package io.github.eyupmiduck.changelogvalidator.linter.report;
  */
 final class Json {
 
+    private static final char[] HEX = "0123456789abcdef".toCharArray();
+
     private Json() {
     }
 
@@ -31,8 +33,8 @@ final class Json {
                 case '\b' -> json.append("\\b");
                 case '\f' -> json.append("\\f");
                 default -> {
-                    if (character < 0x20) {
-                        json.append(String.format("\\u%04x", (int) character));
+                    if (character < 0x20 || (Character.isSurrogate(character) && !isPairedSurrogate(value, i))) {
+                        appendUnicode(json, character);
                     } else {
                         json.append(character);
                     }
@@ -40,5 +42,21 @@ final class Json {
             }
         }
         return json.append('"').toString();
+    }
+
+    private static boolean isPairedSurrogate(String value, int index) {
+        char character = value.charAt(index);
+        if (Character.isHighSurrogate(character)) {
+            return index + 1 < value.length() && Character.isLowSurrogate(value.charAt(index + 1));
+        }
+        return index > 0 && Character.isHighSurrogate(value.charAt(index - 1));
+    }
+
+    private static void appendUnicode(StringBuilder json, char character) {
+        json.append("\\u")
+                .append(HEX[(character >> 12) & 0xF])
+                .append(HEX[(character >> 8) & 0xF])
+                .append(HEX[(character >> 4) & 0xF])
+                .append(HEX[character & 0xF]);
     }
 }

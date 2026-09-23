@@ -107,12 +107,50 @@ class ReporterTest {
     }
 
     /**
-     * The JSON quoting escapes control characters and quotes.
+     * The JSON quoting escapes control characters, quotes and lone surrogates but
+     * keeps a valid surrogate pair.
      */
     @Test
     void quotesJsonStrings() {
         assertEquals("null", Json.quote(null));
         assertEquals("\"a\\\"b\\nc\"", Json.quote("a\"b\nc"));
         assertEquals("\"\\u0001\"", Json.quote("\u0001"));
+        assertEquals("\"\\ud800\"", Json.quote("\uD800"));
+        assertEquals("\"\\udc00\"", Json.quote("\uDC00"));
+        assertEquals("\"\uD83D\uDE00\"", Json.quote("\uD83D\uDE00"));
+    }
+
+    /**
+     * The tty reporter collapses newlines in the message and help so a finding
+     * stays on one line, and terminates lines with LF.
+     */
+    @Test
+    void ttyCollapsesNewlinesAndUsesLf() throws IOException {
+        Finding multiline = new Finding("rule-a", Severity.WARNING, "cs-1", "me",
+                Path.of("/db/x.sql"), 1, 1, "line1\nline2", "help1\r\nhelp2");
+        StringBuilder out = new StringBuilder();
+
+        new TtyReporter().report(List.of(multiline), out);
+
+        String text = out.toString();
+        assertTrue(text.contains("line1 line2"));
+        assertTrue(text.contains("  help: help1 help2"));
+        assertFalse(text.contains("\r"));
+        assertTrue(text.endsWith("\n"));
+    }
+
+    /**
+     * The SARIF reporter percent-encodes a file URI, so a path with a space or
+     * {@code #} still attaches in code scanning.
+     */
+    @Test
+    void encodesSarifUri() throws IOException {
+        Finding spaced = new Finding("rule-a", Severity.WARNING, "cs-1", "me",
+                Path.of("/db/a b#c.sql"), 1, 1, "m", null);
+        StringBuilder out = new StringBuilder();
+
+        new SarifReporter().report(List.of(spaced), out);
+
+        assertTrue(out.toString().contains("/db/a%20b%23c.sql"), out.toString());
     }
 }
