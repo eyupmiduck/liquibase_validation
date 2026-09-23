@@ -12,9 +12,11 @@ on:
   schedule:
     - cron: "27 3 * * 1"
 
-# Superseded runs on the same ref are useless once a newer run starts.
+# Superseded runs on the same ref and event are useless once a newer run starts.
+# The event name is part of the group so a push to main cannot cancel the
+# scheduled scan, whose purpose is applying new queries to unchanged code.
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
