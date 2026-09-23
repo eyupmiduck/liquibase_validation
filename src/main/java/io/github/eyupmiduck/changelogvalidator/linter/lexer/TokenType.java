@@ -83,18 +83,42 @@ public enum TokenType {
      * Returns whether this token is trivia: whitespace, a comment or a
      * Liquibase directive.
      *
+     * <p>The switch is exhaustive and has no default, so adding a constant forces
+     * a decision here.
+     *
      * @return {@code true} when the token carries no SQL meaning
      */
     public boolean isTrivia() {
-        return this == WHITESPACE || this == LINE_COMMENT || this == BLOCK_COMMENT || this == DIRECTIVE;
+        return switch (this) {
+            case WHITESPACE, LINE_COMMENT, BLOCK_COMMENT, DIRECTIVE -> true;
+            case STRING, E_STRING, DOLLAR_STRING, QUOTED_IDENTIFIER, PARAMETER, NUMBER, WORD, OPERATOR,
+                    PUNCTUATION, ERROR -> false;
+        };
     }
 
     /**
      * Returns whether this token is a string literal.
      *
+     * <p>The switch is exhaustive and has no default, so adding a constant forces
+     * a decision here.
+     *
      * @return {@code true} for the standard, {@code E} and dollar-quoted forms
      */
     public boolean isStringLiteral() {
-        return this == STRING || this == E_STRING || this == DOLLAR_STRING;
+        return switch (this) {
+            case STRING, E_STRING, DOLLAR_STRING -> true;
+            case WHITESPACE, LINE_COMMENT, BLOCK_COMMENT, DIRECTIVE, QUOTED_IDENTIFIER, PARAMETER, NUMBER,
+                    WORD, OPERATOR, PUNCTUATION, ERROR -> false;
+        };
+    }
+
+    /**
+     * Returns whether this token is unclassifiable input, for example an
+     * unterminated string or an unsupported form.
+     *
+     * @return {@code true} for {@link #ERROR}
+     */
+    public boolean isError() {
+        return this == ERROR;
     }
 }

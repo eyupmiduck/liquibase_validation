@@ -41,4 +41,15 @@ class TokenTypeTest {
 
         assertEquals(expected, type.isStringLiteral());
     }
+
+    /**
+     * Only the ERROR type is an error.
+     *
+     * @param type every token type
+     */
+    @ParameterizedTest
+    @EnumSource(TokenType.class)
+    void isErrorOnlyForError(TokenType type) {
+        assertEquals(type == TokenType.ERROR, type.isError());
+    }
 }

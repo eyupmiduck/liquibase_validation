@@ -24,14 +24,15 @@ import java.util.Set;
  *
  * <p>Keyword classification is deliberately left to rules: a bare word is a
  * {@link TokenType#WORD} and rules match it case-insensitively with
- * {@link Token#matchesKeyword(String)}. Unicode-escape strings ({@code U&...})
- * are not supported and are reported as {@link TokenType#ERROR}.
+ * {@link Token#matchesKeyword(String)}. Unicode-escape strings and identifiers
+ * ({@code U&'...'} / {@code U&"..."}) are not supported and are reported as
+ * {@link TokenType#ERROR}.
  */
 public final class SqlLexer {
 
     /**
-     * Liquibase formatted-SQL directives, recognised when they immediately
-     * follow the {@code --} marker.
+     * Liquibase formatted-SQL directives, recognised when they follow the
+     * {@code --} marker, optionally after horizontal whitespace.
      */
     private static final Set<String> DIRECTIVES = Set.of(
             "liquibase", "changeset", "rollback", "preconditions", "property", "comment");
@@ -76,6 +77,17 @@ public final class SqlLexer {
         return character >= '0' && character <= '9';
     }
 
+    private static boolean isRadixDigit(char character, char radix) {
+        return switch (radix) {
+            case 'x' -> isDigit(character)
+                    || (character >= 'a' && character <= 'f')
+                    || (character >= 'A' && character <= 'F');
+            case 'o' -> character >= '0' && character <= '7';
+            case 'b' -> character == '0' || character == '1';
+            default -> false;
+        };
+    }
+
     private static boolean isWordStart(char character) {
         return Character.isLetter(character) || character == '_';
     }
@@ -116,7 +128,11 @@ public final class SqlLexer {
             type = TokenType.WHITESPACE;
         } else if (current == '-' && peek(1) == '-') {
             end = endOfLine(position);
-            String word = wordAt(start + 2, end);
+            int wordStart = start + 2;
+            while (wordStart < end && (sql.charAt(wordStart) == ' ' || sql.charAt(wordStart) == '\t')) {
+                wordStart++;
+            }
+            String word = wordAt(wordStart, end);
             type = DIRECTIVES.contains(word) ? TokenType.DIRECTIVE : TokenType.LINE_COMMENT;
         } else if (current == '/' && peek(1) == '*') {
             int blockEnd = endOfBlockComment(position);
@@ -134,6 +150,17 @@ public final class SqlLexer {
             int stringEnd = endOfString(position + 1, false);
             type = stringEnd < 0 ? TokenType.ERROR : TokenType.STRING;
             end = stringEnd < 0 ? length : stringEnd;
+        } else if ((current == 'U' || current == 'u') && peek(1) == '&' && (peek(2) == '\'' || peek(2) == '"')) {
+            // Unicode-escape strings/identifiers are not supported; fail closed as
+            // a single ERROR token rather than a WORD, an operator and a string.
+            if (peek(2) == '\'') {
+                int stringEnd = endOfString(position + 2, false);
+                end = stringEnd < 0 ? length : stringEnd;
+            } else {
+                int identifierEnd = endOfQuotedIdentifier(position + 2);
+                end = identifierEnd < 0 ? length : identifierEnd;
+            }
+            type = TokenType.ERROR;
         } else if (current == '"') {
             int identifierEnd = endOfQuotedIdentifier(position);
             type = identifierEnd < 0 ? TokenType.ERROR : TokenType.QUOTED_IDENTIFIER;
@@ -178,8 +205,18 @@ public final class SqlLexer {
             if (consumed == '\n') {
                 line++;
                 column = 1;
+            } else if (consumed == '\r' && (position >= length || sql.charAt(position) != '\n')) {
+                // A bare CR (classic Mac line ending) is a line break; a CRLF is
+                // one break, counted at the '\n'.
+                line++;
+                column = 1;
             } else {
                 column++;
+                // Count a surrogate pair as one column, not two UTF-16 units.
+                if (Character.isHighSurrogate(consumed) && position < target
+                        && Character.isLowSurrogate(sql.charAt(position))) {
+                    position++;
+                }
             }
         }
     }
@@ -315,7 +352,7 @@ public final class SqlLexer {
             char radix = Character.toLowerCase(sql.charAt(index + 1));
             if (radix == 'x' || radix == 'o' || radix == 'b') {
                 end = index + 2;
-                while (end < length && isWordPart(sql.charAt(end))) {
+                while (end < length && isRadixDigit(sql.charAt(end), radix)) {
                     end++;
                 }
                 return end;
