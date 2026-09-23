@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport;
 import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import io.github.eyupmiduck.changelogvalidator.linter.Linter;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
@@ -32,31 +33,14 @@ class ChangelogModelNormalisationTest {
 
     private Path master;
 
-    private static String changelog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog \
-                https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                %s
-                </databaseChangeLog>
-                """.formatted(body);
-    }
 
-    private static ChangeSet byId(List<ChangeSet> changesets, String id) {
-        return changesets.stream()
-                .filter(changeset -> changeset.id().equals(id))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("no changeset " + id));
-    }
 
     @BeforeEach
     void createChangelog() throws IOException {
-        write("db.changelog-master.xml", changelog("""
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
                 <include file="changes.xml" relativeToChangelogFile="true"/>
                 """));
-        write("changes.xml", changelog("""
+        write("changes.xml", ChangelogTestSupport.changelog("""
                 <property name="table_name" value="t"/>
                 <property name="table_name" value="ignored"/>
                 <property name="idx_name" value="idx_t"/>
@@ -93,7 +77,7 @@ class ChangelogModelNormalisationTest {
      */
     @Test
     void readsPropertiesFirstValueWins() throws IOException {
-        ChangeSet modify = byId(ChangelogModel.changesets(changelogRoot, master), "011-modify");
+        ChangeSet modify = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "011-modify");
 
         assertEquals("t", modify.normalisation().properties().get("table_name"));
         assertEquals("idx_t", modify.normalisation().properties().get("idx_name"));
@@ -106,7 +90,7 @@ class ChangelogModelNormalisationTest {
      */
     @Test
     void parsesModifySql() throws IOException {
-        ChangeSet modify = byId(ChangelogModel.changesets(changelogRoot, master), "011-modify");
+        ChangeSet modify = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "011-modify");
 
         List<SqlModification> modifications = modify.normalisation().modifySql();
         assertEquals(2, modifications.size());
@@ -128,15 +112,15 @@ class ChangelogModelNormalisationTest {
     void rendersStructuredChangeTypes() throws IOException {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
 
-        ChangeSet createIndex = byId(changesets, "010-create-index");
+        ChangeSet createIndex = ChangelogTestSupport.byId(changesets, "010-create-index");
         assertEquals(1, createIndex.sqlSources().size());
         assertTrue(createIndex.sqlSources().get(0).isInline());
         assertEquals("CREATE INDEX ${idx_name} ON ${table_name} (c);", createIndex.sqlSources().get(0).text());
 
-        assertEquals(1, byId(changesets, "013-drop-index").sqlSources().size());
-        assertEquals("DROP INDEX idx_t;", byId(changesets, "013-drop-index").sqlSources().get(0).text());
+        assertEquals(1, ChangelogTestSupport.byId(changesets, "013-drop-index").sqlSources().size());
+        assertEquals("DROP INDEX idx_t;", ChangelogTestSupport.byId(changesets, "013-drop-index").sqlSources().get(0).text());
 
-        ChangeSet fresh = byId(changesets, "012-fresh-schema");
+        ChangeSet fresh = ChangelogTestSupport.byId(changesets, "012-fresh-schema");
         assertEquals(2, fresh.sqlSources().size());
         assertEquals("CREATE TABLE fresh (c int);", fresh.sqlSources().get(0).text());
         assertEquals("CREATE INDEX idx_fresh ON fresh (c);", fresh.sqlSources().get(1).text());
