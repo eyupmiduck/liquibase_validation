@@ -65,7 +65,8 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
-threshold (or a whitelist entry is stale), and `2` for a usage or runtime error.
+threshold or a whitelist entry is stale (`0` under `--fail-on none`), and `2`
+for a usage or runtime error.
 
 ### Rule reference
 

@@ -4,6 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -73,7 +75,15 @@ public final class Whitelist {
      * @throws IOException if the document is malformed
      */
     public static Whitelist load(InputStream input) throws IOException {
-        Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(input);
+        Object loaded;
+        try {
+            loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(input);
+        } catch (YAMLException e) {
+            // SnakeYAML reports malformed YAML as an unchecked YAMLException; the
+            // documented contract here is IOException, so a caller that handles it
+            // still sees malformed input.
+            throw new IOException("linter whitelist is not valid YAML", e);
+        }
         if (loaded == null) {
             return empty();
         }
@@ -96,15 +106,15 @@ public final class Whitelist {
                 throw new IOException("linter whitelist entry " + index + " has an unknown key: " + key);
             }
         }
-        String reason = asString(map.get("reason"));
+        String reason = asString(index, "reason", map.get("reason"));
         if (reason == null || reason.isBlank()) {
             throw new IOException("linter whitelist entry " + index + " must set a non-empty reason");
         }
         AllowedFinding entry = new AllowedFinding(
-                asString(map.get("rule")),
-                asString(map.get("file")),
-                asString(map.get("changeset")),
-                asString(map.get("statement")),
+                selector(index, map, "rule"),
+                selector(index, map, "file"),
+                selector(index, map, "changeset"),
+                selector(index, map, "statement"),
                 reason);
         if (entry.rule() == null && entry.file() == null && entry.changeset() == null && entry.statement() == null) {
             throw new IOException("linter whitelist entry " + index
@@ -113,8 +123,23 @@ public final class Whitelist {
         return entry;
     }
 
-    private static String asString(Object value) {
-        return value == null ? null : value.toString();
+    private static String selector(int index, Map<?, ?> map, String key) throws IOException {
+        String value = asString(index, key, map.get(key));
+        if (value != null && value.isBlank()) {
+            throw new IOException("linter whitelist entry " + index + " field " + key + " must not be blank");
+        }
+        return value;
+    }
+
+    private static String asString(int index, String key, Object value) throws IOException {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String text)) {
+            throw new IOException("linter whitelist entry " + index + " field " + key
+                    + " must be a string, got: " + value);
+        }
+        return text;
     }
 
     /**
@@ -198,8 +223,10 @@ public final class Whitelist {
             if (file == null) {
                 return true;
             }
-            String candidate = actual.toString().replace('\\', '/');
-            String expected = file.replace('\\', '/');
+            // Compare case-insensitively so a path that differs only in case (a
+            // case-insensitive filesystem) is not reported as a stale entry.
+            String candidate = actual.toString().replace('\\', '/').toLowerCase(Locale.ROOT);
+            String expected = file.replace('\\', '/').toLowerCase(Locale.ROOT);
             return candidate.equals(expected) || candidate.endsWith("/" + expected);
         }
 

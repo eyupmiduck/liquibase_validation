@@ -170,4 +170,35 @@ class WhitelistTest {
                 - reason: accepted
                 """));
     }
+
+    /**
+     * Malformed YAML, a non-string selector and a blank selector are rejected as
+     * IOException, so fail-closed parsing does not depend on the YAML value type.
+     */
+    @Test
+    void rejectsMalformedYamlAndIllTypedSelectors() {
+        assertThrows(IOException.class, () -> load("- rule: [unclosed\n"));
+        assertThrows(IOException.class, () -> load("""
+                - changeset: 7
+                  reason: accepted
+                """));
+        assertThrows(IOException.class, () -> load("""
+                - file: ""
+                  reason: accepted
+                """));
+    }
+
+    /**
+     * The file selector matches a path suffix case-insensitively, so a case
+     * difference is not reported as a stale entry.
+     */
+    @Test
+    void matchesFileCaseInsensitively() throws IOException {
+        Whitelist whitelist = load("""
+                - file: CHANGES/SQL_CHANGES/007-SOME-INDEX.SQL
+                  reason: accepted
+                """);
+
+        assertTrue(whitelist.apply(List.of(FINDING)).isEmpty());
+    }
 }

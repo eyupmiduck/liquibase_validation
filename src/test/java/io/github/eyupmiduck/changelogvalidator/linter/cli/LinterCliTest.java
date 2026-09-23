@@ -156,7 +156,41 @@ class LinterCliTest {
 
         assertEquals(1, run("--changelog-root", root.toString(), "--config", old.toString()).code());
         assertEquals(0, run("--changelog-root", root.toString(), "--config", current.toString()).code());
-        assertEquals(0, run("--changelog-root", root.toString(), "--config", invalid.toString()).code());
+
+        Result invalidResult = run("--changelog-root", root.toString(), "--config", invalid.toString());
+        assertEquals(2, invalidResult.code());
+        assertTrue(invalidResult.err().contains("pgVersion"));
+    }
+
+    /**
+     * A repeated option and a value that looks like another option are usage
+     * errors, so a forgotten value is not silently bound as a path.
+     */
+    @Test
+    void rejectsDuplicateOptionsAndMissingValues() throws IOException {
+        Path root = changelog("clean", CLEAN);
+
+        assertEquals(2,
+                run("--changelog-root", root.toString(), "--changelog-root", root.toString()).code());
+        assertEquals(2, run("--changelog-root", root.toString(), "--reporter", "--config").code());
+    }
+
+    /**
+     * {@code --fail-on none} also suppresses the stale-whitelist failure.
+     */
+    @Test
+    void failOnNoneSuppressesStaleWhitelist() throws IOException {
+        Path root = changelog("clean", CLEAN);
+        Path whitelist = whitelist("""
+                - rule: changeset-run-in-transaction-required
+                  changeset: 999-gone
+                  reason: the changeset was removed
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString(),
+                "--fail-on", "none");
+
+        assertEquals(0, result.code());
     }
 
     /**
