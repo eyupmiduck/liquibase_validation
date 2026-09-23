@@ -6,6 +6,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.sql.Array;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -45,6 +46,7 @@ public final class PlpgsqlCheck {
     public static List<Finding> findFindings(Connection connection, Collection<String> schemas) throws SQLException {
         String[] names = schemaNames(schemas);
         List<Finding> findings = new ArrayList<>();
+        Array schemaArray = connection.createArrayOf("text", names);
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT DISTINCT n.nspname, p.proname, (issue).lineno, (issue).level,
                        (issue).statement, (issue).message
@@ -70,7 +72,7 @@ public final class PlpgsqlCheck {
                     AND l.lanname = 'plpgsql'
                 ORDER BY 1, 2, 3
                 """)) {
-            statement.setArray(1, connection.createArrayOf("text", names));
+            statement.setArray(1, schemaArray);
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     findings.add(new Finding(
@@ -82,6 +84,8 @@ public final class PlpgsqlCheck {
                             resultSet.getString(6)));
                 }
             }
+        } finally {
+            schemaArray.free();
         }
         return findings;
     }

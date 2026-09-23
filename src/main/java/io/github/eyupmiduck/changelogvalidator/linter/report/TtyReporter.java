@@ -8,7 +8,9 @@ import java.util.Locale;
 
 /**
  * Renders findings as one line per finding in a compiler-like format:
- * {@code file:line:column: severity: message [rule-id]}.
+ * {@code file:line:column: severity: message [rule-id]}. Newlines in the message
+ * and help are collapsed so each finding stays on one parseable line, and the
+ * line terminator is always {@code \n} regardless of the host OS.
  */
 public final class TtyReporter implements Reporter {
 
@@ -23,14 +25,18 @@ public final class TtyReporter implements Reporter {
                     .append(": ")
                     .append(finding.severity().name().toLowerCase(Locale.ROOT))
                     .append(": ")
-                    .append(finding.message())
+                    .append(oneLine(finding.message()))
                     .append(" [")
                     .append(finding.ruleId())
                     .append(']');
             if (finding.help() != null) {
-                out.append(System.lineSeparator()).append("  help: ").append(finding.help());
+                out.append('\n').append("  help: ").append(oneLine(finding.help()));
             }
-            out.append(System.lineSeparator());
+            out.append('\n');
         }
+    }
+
+    private static String oneLine(String value) {
+        return value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
     }
 }

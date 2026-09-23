@@ -35,3 +35,10 @@ target/
 .beads/
 .dolt/
 .beads-credential-key
+
+# Local secret material
+.env
+.env.*
+*.pem
+*.key
+application-local.properties
