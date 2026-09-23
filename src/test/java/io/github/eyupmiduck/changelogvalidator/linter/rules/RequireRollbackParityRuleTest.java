@@ -22,20 +22,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RequireRollbackParityRuleTest {
 
-    private static final Path FILE = Path.of("/db/sql.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
     private static RuleContext context(boolean rollbackDefined, String forward, String... rollback) {
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
                 null, null, null, List.of(), rollbackDefined, List.of());
-        List<SqlUnit> forwardUnits = forward == null ? List.of() : List.of(unit(forward));
-        List<SqlUnit> rollbackUnits = java.util.Arrays.stream(rollback).map(RequireRollbackParityRuleTest::unit).toList();
+        List<SqlUnit> forwardUnits = forward == null ? List.of() : List.of(RuleTestSupport.unit(forward));
+        List<SqlUnit> rollbackUnits = java.util.Arrays.stream(rollback).map(RuleTestSupport::unit).toList();
         return new RuleContext(changeSet, forwardUnits, rollbackUnits);
     }
 
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     /**
      * A rollback that reverses none of several forward statements is reported.

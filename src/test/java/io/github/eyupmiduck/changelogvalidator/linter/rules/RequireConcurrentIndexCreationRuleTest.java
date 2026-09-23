@@ -24,20 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RequireConcurrentIndexCreationRuleTest {
 
-    private static final Path FILE = Path.of("/db/changes.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
-    private static RuleContext context(String forwardSql, String... rollbackSql) {
-        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
-        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(RequireConcurrentIndexCreationRuleTest::unit).toList();
-        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
-                null, null, null, List.of(), false, List.of());
-        return new RuleContext(changeSet, forward, rollback);
-    }
 
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     private static ChangeSet changeSet(String sql) {
         return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false, null, null, null,
@@ -52,7 +41,7 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void reportsPlainCreateIndex() {
         List<Rule.Violation> violations = new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE INDEX idx ON t (c);"));
+                .check(RuleTestSupport.context("CREATE INDEX idx ON t (c);"));
 
         assertEquals(1, violations.size());
         Rule.Violation violation = violations.get(0);
@@ -70,13 +59,13 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void acceptsConcurrentAndIgnoresOtherStatements() {
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (c);")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("DROP INDEX idx;")).isEmpty());
+                .check(RuleTestSupport.context("DROP INDEX idx;")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE t (c int);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE t (c int);")).isEmpty());
     }
 
     /**
@@ -86,9 +75,9 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void reportsUniqueAndOnly() {
         assertEquals(1, new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE UNIQUE INDEX idx ON t (c);")).size());
+                .check(RuleTestSupport.context("CREATE UNIQUE INDEX idx ON t (c);")).size());
         List<Rule.Violation> only = new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE INDEX idx ON ONLY t (c);"));
+                .check(RuleTestSupport.context("CREATE INDEX idx ON ONLY t (c);"));
         assertEquals(1, only.size());
         assertTrue(only.get(0).message().contains("blocks writes on t"));
     }
@@ -100,14 +89,14 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void exemptsTablesCreatedInTheSameChangeset() {
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE public.t (c int); CREATE INDEX idx ON public.t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE public.t (c int); CREATE INDEX idx ON public.t (c);")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE UNLOGGED TABLE IF NOT EXISTS t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE UNLOGGED TABLE IF NOT EXISTS t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
 
         assertEquals(1, new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE other (c int); CREATE INDEX idx ON t (c);")).size());
+                .check(RuleTestSupport.context("CREATE TABLE other (c int); CREATE INDEX idx ON t (c);")).size());
     }
 
     /**
@@ -117,10 +106,10 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void comparesNormalisedIdentifiers() {
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE \"T\" (c int); CREATE INDEX idx ON \"T\" (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE \"T\" (c int); CREATE INDEX idx ON \"T\" (c);")).isEmpty());
 
         assertEquals(1, new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE T (c int); CREATE INDEX idx ON \"T\" (c);")).size());
+                .check(RuleTestSupport.context("CREATE TABLE T (c int); CREATE INDEX idx ON \"T\" (c);")).size());
     }
 
     /**
@@ -129,7 +118,7 @@ class RequireConcurrentIndexCreationRuleTest {
     @Test
     void checksRollback() {
         List<Rule.Violation> violations = new RequireConcurrentIndexCreationRule()
-                .check(context(null, "CREATE INDEX idx ON t (c);"));
+                .check(RuleTestSupport.context(null, "CREATE INDEX idx ON t (c);"));
 
         assertEquals(1, violations.size());
     }
@@ -153,7 +142,7 @@ class RequireConcurrentIndexCreationRuleTest {
         assertTrue(violations.get(0).message().contains("blocks writes on t"));
 
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(context("CREATE TABLE t (c int);", "CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE t (c int);", "CREATE INDEX idx ON t (c);")).isEmpty());
     }
 
     /**

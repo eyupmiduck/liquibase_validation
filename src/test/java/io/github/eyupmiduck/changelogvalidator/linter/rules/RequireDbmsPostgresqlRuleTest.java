@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RequireDbmsPostgresqlRuleTest {
 
-    private static final Path FILE = Path.of("/db/sql.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
     private static RuleContext context(String dbms, String forwardSql) {
         SqlUnit unit = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, forwardSql, true, ";", true, null),

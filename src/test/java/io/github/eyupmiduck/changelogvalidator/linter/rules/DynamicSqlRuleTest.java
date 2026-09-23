@@ -24,15 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DynamicSqlRuleTest {
 
-    private static final Path FILE = Path.of("/db/routines/foo.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
     @TempDir
     Path tempDir;
 
-    private static SqlUnit routine(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.ROUTINE_BODY, FILE, null, true, ";", false, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     private static RuleContext context(SqlUnit... units) {
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true,
@@ -45,7 +41,7 @@ class DynamicSqlRuleTest {
      */
     @Test
     void reportsDynamicSql() {
-        List<Rule.Violation> violations = new DynamicSqlRule().check(context(routine(
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, 
                 "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN EXECUTE format('DROP TABLE %I', 't'); END; $$ LANGUAGE plpgsql;")));
 
         assertEquals(1, violations.size());
@@ -61,7 +57,7 @@ class DynamicSqlRuleTest {
      */
     @Test
     void ignoresBodiesWithoutDynamicSql() {
-        assertTrue(new DynamicSqlRule().check(context(routine(
+        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, 
                 "CREATE FUNCTION foo() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
 
         SqlUnit inline = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, "SELECT 'EXECUTE';", true, ";", false, null),

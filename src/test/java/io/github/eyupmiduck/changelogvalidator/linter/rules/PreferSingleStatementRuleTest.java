@@ -24,20 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PreferSingleStatementRuleTest {
 
-    private static final Path FILE = Path.of("/db/changes.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
-    private static RuleContext context(boolean runInTransaction, String forwardSql, String... rollbackSql) {
-        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), runInTransaction, false,
-                null, null, null, List.of(), false, List.of());
-        List<SqlUnit> forward = forwardSql == null ? List.of() : List.of(unit(forwardSql));
-        List<SqlUnit> rollback = Arrays.stream(rollbackSql).map(PreferSingleStatementRuleTest::unit).toList();
-        return new RuleContext(changeSet, forward, rollback);
-    }
 
-    private static SqlUnit unit(String sql) {
-        return new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
-                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     private static ChangeSet changeSet(String sql) {
         return new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), false, false, null, null, null,
@@ -52,7 +41,7 @@ class PreferSingleStatementRuleTest {
     @Test
     void warnsOnMultipleStatements() {
         List<Rule.Violation> violations = new PreferSingleStatementRule()
-                .check(context(false, "CREATE INDEX idx ON t (c); DROP INDEX idx;"));
+                .check(RuleTestSupport.context(false, "CREATE INDEX idx ON t (c); DROP INDEX idx;"));
 
         assertEquals(1, violations.size());
         Rule.Violation violation = violations.get(0);
@@ -69,7 +58,7 @@ class PreferSingleStatementRuleTest {
     @Test
     void acceptsASingleStatement() {
         assertTrue(new PreferSingleStatementRule()
-                .check(context(false, "DROP INDEX CONCURRENTLY idx;")).isEmpty());
+                .check(RuleTestSupport.context(false, "DROP INDEX CONCURRENTLY idx;")).isEmpty());
     }
 
     /**
@@ -80,9 +69,9 @@ class PreferSingleStatementRuleTest {
     @Test
     void ignoresTransactionalAndForbiddenChangesets() {
         assertTrue(new PreferSingleStatementRule()
-                .check(context(true, "CREATE INDEX idx ON t (c); DROP INDEX idx;")).isEmpty());
+                .check(RuleTestSupport.context(true, "CREATE INDEX idx ON t (c); DROP INDEX idx;")).isEmpty());
         assertTrue(new PreferSingleStatementRule()
-                .check(context(false, "CREATE INDEX CONCURRENTLY idx ON t (c); DROP INDEX idx;")).isEmpty());
+                .check(RuleTestSupport.context(false, "CREATE INDEX CONCURRENTLY idx ON t (c); DROP INDEX idx;")).isEmpty());
     }
 
     /**
@@ -91,7 +80,7 @@ class PreferSingleStatementRuleTest {
     @Test
     void checksRollback() {
         List<Rule.Violation> violations = new PreferSingleStatementRule()
-                .check(context(false, null, "DROP INDEX idx; DROP INDEX idx2;"));
+                .check(RuleTestSupport.context(false, null, "DROP INDEX idx; DROP INDEX idx2;"));
 
         assertEquals(1, violations.size());
         assertTrue(violations.get(0).message().contains("2 statements"));
@@ -105,7 +94,7 @@ class PreferSingleStatementRuleTest {
     @Test
     void distinguishesForwardAndRollback() {
         List<Rule.Violation> violations = new PreferSingleStatementRule()
-                .check(context(false, "DROP INDEX idx; DROP INDEX idx2;", "DROP INDEX idx3; DROP INDEX idx4;"));
+                .check(RuleTestSupport.context(false, "DROP INDEX idx; DROP INDEX idx2;", "DROP INDEX idx3; DROP INDEX idx4;"));
 
         assertEquals(2, violations.size());
         assertTrue(violations.stream().anyMatch(violation -> violation.message().contains("forward")));

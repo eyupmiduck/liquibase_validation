@@ -22,25 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RequireRollbackRuleTest {
 
-    private static final Path FILE = Path.of("/db/changes.sql");
+    private static final Path FILE = RuleTestSupport.FILE;
 
     private static RuleContext context(boolean runOnChange, boolean rollbackDefined, SqlSource.Kind... kinds) {
         List<SqlUnit> forward = List.of(kinds).stream()
-                .map(kind -> unit(kind, "CREATE TABLE t (c int);"))
+                .map(kind -> RuleTestSupport.unit(kind, "CREATE TABLE t (c int);"))
                 .toList();
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, runOnChange,
                 null, null, null, List.of(), rollbackDefined, List.of());
         return new RuleContext(changeSet, forward, List.of());
     }
 
-    private static SqlUnit unit(SqlSource.Kind kind, String sql) {
-        SqlSource source = switch (kind) {
-            case ROUTINE_BODY -> new SqlSource(kind, Path.of("/f.sql"), null, true, ";", true, null);
-            case SQL_FILE -> new SqlSource(kind, FILE, null, true, ";", true, null);
-            case INLINE_SQL -> new SqlSource(kind, null, sql, true, ";", true, null);
-        };
-        return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
-    }
 
     /**
      * A changeset without a rollback is reported.
