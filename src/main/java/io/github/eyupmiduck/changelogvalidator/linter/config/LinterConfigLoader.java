@@ -1,9 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.config;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -37,10 +34,7 @@ public final class LinterConfigLoader {
             return LinterConfig.defaults();
         }
         try (Reader reader = Files.newBufferedReader(configFile)) {
-            // SafeConstructor only produces plain maps/lists/scalars; the default
-            // Constructor would resolve global tags and can instantiate classes
-            // (CVE-2022-1471).
-            Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(reader);
+            Object loaded = YamlDocuments.safe().load(reader);
             if (loaded == null) {
                 return LinterConfig.defaults();
             }

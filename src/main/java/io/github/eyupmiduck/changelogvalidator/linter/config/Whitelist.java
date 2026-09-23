@@ -1,9 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.config;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Finding;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.IOException;
@@ -77,7 +74,7 @@ public final class Whitelist {
     public static Whitelist load(InputStream input) throws IOException {
         Object loaded;
         try {
-            loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(input);
+            loaded = YamlDocuments.safe().load(input);
         } catch (YAMLException e) {
             // SnakeYAML reports malformed YAML as an unchecked YAMLException; the
             // documented contract here is IOException, so a caller that handles it

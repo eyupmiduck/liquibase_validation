@@ -1,8 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator;
 
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
+import io.github.eyupmiduck.changelogvalidator.linter.config.YamlDocuments;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -144,7 +142,7 @@ public final class PlpgsqlCheck {
      *                     entry sets none of the recognised keys
      */
     public static List<AllowedFinding> loadWhitelist(InputStream input) throws IOException {
-        Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(input);
+        Object loaded = YamlDocuments.safe().load(input);
         if (!(loaded instanceof List<?> entries)) {
             throw new IOException("plpgsql_check whitelist must be a YAML list");
         }
