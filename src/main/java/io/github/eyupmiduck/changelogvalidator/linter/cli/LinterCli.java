@@ -17,8 +17,10 @@ import io.github.eyupmiduck.changelogvalidator.linter.rules.Rules;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * The linter command line.
@@ -26,8 +28,9 @@ import java.util.Locale;
  * <p>Usage: {@code liquibase-linter --changelog-root DIR [--master FILE]
  * [--config FILE] [--reporter tty|json|sarif] [--fail-on error|warning|info|none]}.
  *
- * <p>The exit code is 0 when the run passes, 1 when it fails the {@code failOn}
- * threshold, and 2 for a usage or runtime error.
+ * <p>The exit code is 0 when the run passes, 1 when findings reach the
+ * {@code failOn} threshold or a whitelist entry is stale (0 under
+ * {@code --fail-on none}), and 2 for a usage or runtime error.
  */
 public final class LinterCli {
 
@@ -69,7 +72,7 @@ public final class LinterCli {
         try {
             options = Options.parse(args);
         } catch (IllegalArgumentException e) {
-            err.println("error: " + e.getMessage());
+            err.println("error: " + describe(e));
             err.print(USAGE);
             return 2;
         }
@@ -91,13 +94,18 @@ public final class LinterCli {
                 for (Whitelist.AllowedFinding entry : report.stale()) {
                     err.println("stale whitelist entry: " + entry.describe());
                 }
-                return 1;
+                return options.ignoreFailures() ? 0 : 1;
             }
             return options.ignoreFailures() || !linter.fails(report.unmatched()) ? 0 : 1;
         } catch (IOException | RuntimeException e) {
-            err.println("error: " + e.getMessage());
+            err.println("error: " + describe(e));
             return 2;
         }
+    }
+
+    private static String describe(Throwable error) {
+        String message = error.getMessage();
+        return message == null || message.isBlank() ? error.toString() : message;
     }
 
     private static Integer majorVersion(String pgVersion) {
@@ -107,7 +115,7 @@ public final class LinterCli {
         try {
             return Integer.valueOf(pgVersion.strip().split("\\.")[0]);
         } catch (NumberFormatException e) {
-            return null;
+            throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
         }
     }
 
@@ -126,15 +134,32 @@ public final class LinterCli {
             Severity failOn = null;
             boolean ignoreFailures = false;
             boolean help = false;
+            Set<String> seen = new HashSet<>();
             for (int i = 0; i < args.length; i++) {
                 String argument = args[i];
                 switch (argument) {
-                    case "-r", "--changelog-root" -> changelogRoot = Path.of(value(args, ++i, argument));
-                    case "-m", "--master" -> master = Path.of(value(args, ++i, argument));
-                    case "-c", "--config" -> config = Path.of(value(args, ++i, argument));
-                    case "-w", "--whitelist" -> whitelist = Path.of(value(args, ++i, argument));
-                    case "--reporter" -> reporter = reporter(value(args, ++i, argument));
+                    case "-r", "--changelog-root" -> {
+                        mark(seen, "changelog-root", argument);
+                        changelogRoot = Path.of(value(args, ++i, argument));
+                    }
+                    case "-m", "--master" -> {
+                        mark(seen, "master", argument);
+                        master = Path.of(value(args, ++i, argument));
+                    }
+                    case "-c", "--config" -> {
+                        mark(seen, "config", argument);
+                        config = Path.of(value(args, ++i, argument));
+                    }
+                    case "-w", "--whitelist" -> {
+                        mark(seen, "whitelist", argument);
+                        whitelist = Path.of(value(args, ++i, argument));
+                    }
+                    case "--reporter" -> {
+                        mark(seen, "reporter", argument);
+                        reporter = reporter(value(args, ++i, argument));
+                    }
                     case "--fail-on" -> {
+                        mark(seen, "fail-on", argument);
                         String severity = value(args, ++i, argument);
                         if ("none".equalsIgnoreCase(severity)) {
                             ignoreFailures = true;
@@ -155,11 +180,21 @@ public final class LinterCli {
             return new Options(changelogRoot, masterFile, config, whitelist, reporter, failOn, ignoreFailures, help);
         }
 
+        private static void mark(Set<String> seen, String canonical, String argument) {
+            if (!seen.add(canonical)) {
+                throw new IllegalArgumentException("duplicate option: " + argument);
+            }
+        }
+
         private static String value(String[] args, int index, String option) {
             if (index >= args.length) {
                 throw new IllegalArgumentException("missing value for " + option);
             }
-            return args[index];
+            String value = args[index];
+            if (value.startsWith("-")) {
+                throw new IllegalArgumentException("missing value for " + option + ": " + value + " is an option");
+            }
+            return value;
         }
 
         private static Reporter reporter(String value) {

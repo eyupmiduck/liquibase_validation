@@ -1,7 +1,9 @@
 package io.github.eyupmiduck.changelogvalidator.linter.config;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -35,7 +37,10 @@ public final class LinterConfigLoader {
             return LinterConfig.defaults();
         }
         try (Reader reader = Files.newBufferedReader(configFile)) {
-            Object loaded = new Yaml().load(reader);
+            // SafeConstructor only produces plain maps/lists/scalars; the default
+            // Constructor would resolve global tags and can instantiate classes
+            // (CVE-2022-1471).
+            Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(reader);
             if (loaded == null) {
                 return LinterConfig.defaults();
             }
@@ -70,7 +75,9 @@ public final class LinterConfigLoader {
         }
         Map<String, LinterConfig.RuleSettings> result = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : ruleMap.entrySet()) {
-            String id = String.valueOf(entry.getKey());
+            if (!(entry.getKey() instanceof String id)) {
+                throw new IllegalArgumentException("rule id must be a string, got: " + entry.getKey());
+            }
             result.put(id, ruleSettings(id, entry.getValue()));
         }
         return result;
@@ -97,7 +104,14 @@ public final class LinterConfigLoader {
             }
             Map<String, Object> normalized = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : optionMap.entrySet()) {
-                normalized.put(String.valueOf(entry.getKey()), entry.getValue());
+                if (!(entry.getKey() instanceof String key)) {
+                    throw new IllegalArgumentException(
+                            "option key for rule " + id + " must be a string, got: " + entry.getKey());
+                }
+                if (entry.getValue() == null) {
+                    throw new IllegalArgumentException("option " + key + " for rule " + id + " has no value");
+                }
+                normalized.put(key, entry.getValue());
             }
             return new LinterConfig.RuleSettings(severity, normalized);
         }

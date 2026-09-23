@@ -138,6 +138,26 @@ class LinterConfigLoaderTest {
         assertTrue(loaded.referencedRuleIds().containsAll(List.of("a", "b", "c")));
     }
 
+    /**
+     * A null-valued rule option, a non-string rule id, and a global YAML tag are
+     * rejected instead of failing later or instantiating a class.
+     */
+    @Test
+    void rejectsUnsafeOrIllTypedValues() throws IOException {
+        assertThrows(IllegalArgumentException.class, () -> load("""
+                rules:
+                  a-rule:
+                    options:
+                      someFlag:
+                """));
+        assertThrows(IllegalArgumentException.class, () -> load("""
+                rules:
+                  1: warning
+                """));
+        assertThrows(RuntimeException.class,
+                () -> load("pgVersion: !!javax.script.ScriptEngineManager []"));
+    }
+
     private LinterConfig load(String yaml) throws IOException {
         Path config = tempDir.resolve("config.yml");
         Files.writeString(config, yaml);
