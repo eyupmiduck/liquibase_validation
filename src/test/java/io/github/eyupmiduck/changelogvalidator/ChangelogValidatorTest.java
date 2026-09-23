@@ -325,8 +325,8 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * An unparseable changelog file in the graph is reported as an illegal
-     * state.
+     * An unparseable changelog file in the graph is reported as an I/O error,
+     * matching the declared contract.
      */
     @Test
     void rejectsMalformedChangelogFile() throws IOException {
@@ -337,6 +337,57 @@ class ChangelogValidatorTest {
                 """));
         Files.writeString(changes.resolve("broken.xml"), "<databaseChangeLog>");
 
-        assertThrows(IllegalStateException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertThrows(IOException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+    }
+
+    /**
+     * An include that escapes the changelog root is rejected instead of being
+     * parsed, so a traversal cannot reach outside the changelog.
+     */
+    @Test
+    void rejectsIncludeEscapingTheChangelogRoot() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="../outside.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(tempDir.resolve("outside.xml"), databaseChangeLog(""));
+
+        assertThrows(IOException.class, () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+    }
+
+    /**
+     * An absolute include path is rejected too.
+     */
+    @Test
+    void rejectsAbsoluteIncludePath() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="/etc/hosts" relativeToChangelogFile="true"/>
+                """));
+
+        assertThrows(IOException.class, () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+    }
+
+    /**
+     * A SQL file reference that escapes the changelog root is rejected, so a
+     * {@code ../} reference is not silently reported as orphaned (or mishandled
+     * on a different filesystem root).
+     */
+    @Test
+    void rejectsSqlReferenceEscapingTheChangelogRoot() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, databaseChangeLog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), databaseChangeLog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile path="../outside.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        assertThrows(IOException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
     }
 }

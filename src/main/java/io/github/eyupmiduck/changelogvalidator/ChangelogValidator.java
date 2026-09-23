@@ -3,8 +3,10 @@ package io.github.eyupmiduck.changelogvalidator;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -235,7 +237,7 @@ public final class ChangelogValidator {
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
-                pending.add(base.resolve(file).normalize());
+                pending.add(resolveWithin(root, base, file, "include"));
             }
         }
         return List.copyOf(visited);
@@ -263,7 +265,7 @@ public final class ChangelogValidator {
         return result;
     }
 
-    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile) {
+    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile) throws IOException {
         Set<Path> result = new HashSet<>();
         Document document = parse(changelogFile);
         for (String elementName : SQL_REFERENCE_ELEMENTS) {
@@ -277,19 +279,42 @@ public final class ChangelogValidator {
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
-                result.add(root.relativize(base.resolve(path).normalize()));
+                result.add(root.relativize(resolveWithin(root, base, path, "SQL file reference")));
             }
         }
         return result;
     }
 
-    private static Document parse(Path changelogFile) {
+    /**
+     * Resolves a reference against {@code base} and rejects it when it escapes
+     * the changelog root, so an include or SQL path cannot reach outside the
+     * changelog (for example {@code ../../secret.xml}) or make
+     * {@link Path#relativize} fail on a different filesystem root.
+     *
+     * @param root      the absolute, normalized changelog root
+     * @param base      the directory the reference is resolved against
+     * @param reference the reference from the changelog
+     * @param kind      what is being resolved, for the error message
+     * @return the absolute, normalized path, guaranteed to be under {@code root}
+     * @throws IOException if the reference escapes the changelog root
+     */
+    private static Path resolveWithin(Path root, Path base, String reference, String kind) throws IOException {
+        Path resolved = base.resolve(reference).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new IOException(kind + " escapes the changelog root: " + reference);
+        }
+        return resolved;
+    }
+
+    private static Document parse(Path changelogFile) throws IOException {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
             return factory.newDocumentBuilder().parse(changelogFile.toFile());
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse " + changelogFile, e);
+        } catch (SAXException e) {
+            throw new IOException("failed to parse changelog " + changelogFile, e);
+        } catch (ParserConfigurationException e) {
+            throw new IllegalStateException("failed to configure the XML parser", e);
         }
     }
 
