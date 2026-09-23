@@ -129,6 +129,16 @@ class LinterTest {
     }
 
     /**
+     * Registering two rules with the same id is rejected, so a rule cannot report
+     * the same violation twice.
+     */
+    @Test
+    void rejectsDuplicateRuleIds() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Linter.withRules(List.of(new ForbiddenWordRule(), new ForbiddenWordRule())));
+    }
+
+    /**
      * The {@code failOn} threshold decides whether findings fail the run.
      */
     @Test
