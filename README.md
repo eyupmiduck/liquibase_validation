@@ -47,8 +47,8 @@ and the `createTable`/`createIndex`/`dropIndex` change types are rendered to SQL
 The limits of this normalisation are recorded in
 [docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
 
-Run it with the executable jar (published as the `cli` classifier and, from
-0.15.0, attached to the release), or from the library API:
+Run it with the executable jar (published to GitHub Packages as the `cli`
+classifier alongside the library), or from the library API:
 
 ```sh
 liquibase-linter --changelog-root src/main/resources/db/changelog
@@ -63,6 +63,7 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                    |
 | `--reporter`               | `tty`                             | `tty`, `json` or `sarif`             |
 | `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
+| `-h, --help`               |                                   | print usage and exit                 |
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold or a whitelist entry is stale (`0` under `--fail-on none`), and `2`
@@ -331,7 +332,8 @@ lexer understands the PostgreSQL lexical forms the changelog files use:
 - dollar-quoted strings (`$$...$$` and `$tag$...$tag$`), which is how routine
   bodies appear — a whole body is one token;
 - quoted identifiers (`"..."` with doubled double quotes);
-- numeric literals (including the `L`, `_` and hex forms);
+- numeric literals (including the `0x`, `0o`, `0b`, `L` and `_` forms) and
+  positional parameters (`$1`);
 - operators and punctuation, and bare words (keywords are matched by rules with
   `Token.matchesKeyword`, so identifier/keyword classification is not baked in);
 - Liquibase formatted-SQL directives (`--liquibase`, `--changeset`,
@@ -339,9 +341,10 @@ lexer understands the PostgreSQL lexical forms the changelog files use:
 
 Input the lexer cannot classify — for example an unterminated string — becomes an
 `ERROR` token rather than being skipped, so a rule (or a future rule) can report
-it. Unicode-escape strings (`U&'...'`) are not yet a distinct form. There is no
-parser and no identifier/type resolution; a rule that needs those is out of scope
-for this tokenizer (see [docs/adr/0001-sql-lexer-approach.md](docs/adr/0001-sql-lexer-approach.md)).
+it. Unicode-escape strings and identifiers (`U&'...'` / `U&"..."`) are not
+supported and become an `ERROR` token. There is no parser and no
+identifier/type resolution; a rule that needs those is out of scope for this
+tokenizer (see [docs/adr/0001-sql-lexer-approach.md](docs/adr/0001-sql-lexer-approach.md)).
 
 ### Code scanning
 
@@ -368,14 +371,14 @@ same-repo pull requests and manual runs still publish.
 ## Using the library
 
 The library is published to GitHub Packages from a `v*` tag (for example
-`v0.12.0`), and each artifact version is immutable:
+`v1.1.0`), and each artifact version is immutable:
 
 ```xml
 
 <dependency>
     <groupId>io.github.eyupmiduck</groupId>
     <artifactId>liquibase-validation</artifactId>
-    <version>0.12.0</version>
+    <version>1.1.0</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -477,15 +480,16 @@ An empty table has no row to probe, so the result is empty.
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag, e.g. `git tag v0.12.0 && git push origin v0.12.0`.
+3. Push a matching tag, e.g. `git tag v1.1.0 && git push origin v1.1.0`.
 
 The `Publish` workflow fails if the tag does not equal `v` + the POM version.
 Consumer POMs must then be updated to the new version explicitly.
 
 ## Building
 
-The `PlpgsqlCheck` tests start a PostgreSQL container (and build a small image
-with the `plpgsql_check` package), so Docker must be running:
+The `PlpgsqlCheck` and `AuditColumnsCheck` tests start PostgreSQL containers (the
+former builds a small image with the `plpgsql_check` package), so Docker must be
+running:
 
 ```sh
 ./mvnw verify

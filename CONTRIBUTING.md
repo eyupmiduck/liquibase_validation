@@ -8,29 +8,37 @@ build, test, and release changes.
 - **JDK 25** — the build targets Java 25.
 - **Maven wrapper** — always use `./mvnw`; do not rely on a globally installed
   Maven.
+- **Docker** — the `PlpgsqlCheck` and `AuditColumnsCheck` tests start PostgreSQL
+  containers through Testcontainers, so Docker must be running for
+  `./mvnw verify`.
 
-There are no other runtime or test dependencies beyond JUnit, so no database or
-Docker setup is required.
+The only runtime dependency is `snakeyaml` (for the YAML config and allow-lists);
+everything else is test-scoped (JUnit, Testcontainers, the PostgreSQL driver,
+Jackson and the SARIF schema validator).
 
 ## Build and test
 
 ```sh
-./mvnw verify                                       # full build and tests
+./mvnw verify                                       # full build and tests (needs Docker)
 ./mvnw test -Dtest=ChangelogValidatorTest           # one test class
 ```
 
-The build fails on any javac lint warning (`-Xlint:all -Werror`) and enforces
-`requireMavenVersion`, `requireJavaVersion`, and dependency convergence.
+The build fails on any javac lint warning (`-Xlint:all -Werror`), enforces
+`requireMavenVersion`, `requireJavaVersion`, and dependency convergence, and
+checks JaCoCo line/branch coverage.
 
 ## Project layout
 
 ```
-src/main/java/io/github/eyupmiduck/changelogvalidator/ChangelogValidator.java
-src/test/java/io/github/eyupmiduck/changelogvalidator/ChangelogValidatorTest.java
+src/main/java/io/github/eyupmiduck/changelogvalidator/
+    ChangelogValidator.java   changelog graph traversal, naming and orphan checks
+    PlpgsqlCheck.java         plpgsql_check static analysis and allow-list
+    AuditColumnsCheck.java    audit-column catalog check and behavioral probe
+    linter/                   changelog linter (lexer, model, rules, config, reporters, CLI)
 ```
 
-`ChangelogValidator` is the entire public surface. Keep it small and
-well-documented.
+The public surface is `ChangelogValidator`, `PlpgsqlCheck`, `AuditColumnsCheck`
+and the `linter` package. Keep it small and well-documented.
 
 ## Java conventions
 
@@ -55,7 +63,7 @@ Artifacts are immutable once published to GitHub Packages. To release:
 
 1. Bump `<version>` in `pom.xml` (no `-SNAPSHOT` suffix).
 2. Merge to `main`.
-3. Push a matching tag: `git tag v0.2.0 && git push origin v0.2.0`.
+3. Push a matching tag: `git tag v1.1.0 && git push origin v1.1.0`.
 
 The `Publish` workflow fails if the tag is not `v` + the POM version. Do not
 bump the version in an unrelated change; consumers pin exact versions and are
