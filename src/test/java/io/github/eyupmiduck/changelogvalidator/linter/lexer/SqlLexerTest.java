@@ -332,4 +332,57 @@ class SqlLexerTest {
         assertTrue(keyword.matchesKeyword("create"));
         assertFalse(identifier.matchesKeyword("create"));
     }
+
+    /**
+     * A radix literal consumes only valid digits for its radix, so an invalid
+     * suffix is a separate token instead of being merged into one NUMBER.
+     */
+    @Test
+    void stopsRadixLiteralsAtInvalidDigits() {
+        List<Token> hex = SqlLexer.tokenize("0xZZ");
+        assertEquals("0x", hex.get(0).text());
+        assertEquals(TokenType.NUMBER, hex.get(0).type());
+        assertEquals("ZZ", hex.get(1).text());
+
+        List<Token> binary = SqlLexer.tokenize("0b12");
+        assertEquals("0b1", binary.get(0).text());
+        assertEquals("2", binary.get(1).text());
+    }
+
+    /**
+     * A bare carriage return is a line break, so positions after it are on the
+     * next line.
+     */
+    @Test
+    void treatsBareCarriageReturnAsALineBreak() {
+        List<Token> tokens = SqlLexer.tokenize("SELECT 1\rFROM t");
+        Token from = tokens.stream().filter(token -> token.matchesKeyword("FROM")).findFirst().orElseThrow();
+
+        assertEquals(2, from.line());
+        assertEquals(1, from.column());
+    }
+
+    /**
+     * Unicode-escape strings and identifiers are unsupported and fail closed as
+     * one ERROR token.
+     */
+    @Test
+    void reportsUnicodeEscapeFormsAsError() {
+        List<Token> string = SqlLexer.tokenize("U&'abc'");
+        assertEquals(1, string.size());
+        assertEquals(TokenType.ERROR, string.get(0).type());
+
+        List<Token> identifier = SqlLexer.tokenize("U&\"col\"");
+        assertEquals(1, identifier.size());
+        assertEquals(TokenType.ERROR, identifier.get(0).type());
+    }
+
+    /**
+     * A formatted-SQL directive may be written with whitespace after the marker.
+     */
+    @Test
+    void recognisesDirectivesWithWhitespace() {
+        assertEquals(TokenType.DIRECTIVE, SqlLexer.tokenize("-- changeset me:1").get(0).type());
+        assertEquals(TokenType.DIRECTIVE, SqlLexer.tokenize("--\trollback DROP TABLE t").get(0).type());
+    }
 }
