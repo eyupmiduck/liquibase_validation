@@ -14,6 +14,10 @@ import java.util.Locale;
  */
 public final class TtyReporter implements Reporter {
 
+    private static String oneLine(String value) {
+        return value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
+    }
+
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         for (Finding finding : findings) {
@@ -34,9 +38,5 @@ public final class TtyReporter implements Reporter {
             }
             out.append('\n');
         }
-    }
-
-    private static String oneLine(String value) {
-        return value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
     }
 }

@@ -110,10 +110,6 @@ public final class TransactionForbiddenClassifier {
     }
 
 
-
-
-
-
     /**
      * A statement family that cannot run inside a transaction block.
      */

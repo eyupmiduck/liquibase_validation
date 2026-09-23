@@ -92,7 +92,7 @@ public enum TokenType {
         return switch (this) {
             case WHITESPACE, LINE_COMMENT, BLOCK_COMMENT, DIRECTIVE -> true;
             case STRING, E_STRING, DOLLAR_STRING, QUOTED_IDENTIFIER, PARAMETER, NUMBER, WORD, OPERATOR,
-                    PUNCTUATION, ERROR -> false;
+                 PUNCTUATION, ERROR -> false;
         };
     }
 
@@ -108,7 +108,7 @@ public enum TokenType {
         return switch (this) {
             case STRING, E_STRING, DOLLAR_STRING -> true;
             case WHITESPACE, LINE_COMMENT, BLOCK_COMMENT, DIRECTIVE, QUOTED_IDENTIFIER, PARAMETER, NUMBER,
-                    WORD, OPERATOR, PUNCTUATION, ERROR -> false;
+                 WORD, OPERATOR, PUNCTUATION, ERROR -> false;
         };
     }
 

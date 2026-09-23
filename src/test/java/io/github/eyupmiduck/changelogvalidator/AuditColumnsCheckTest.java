@@ -280,7 +280,8 @@ class AuditColumnsCheckTest {
      * reported, so the relaxed default matching does not accept everything.
      */
     @Test
-    void rejectsNonTransactionTimestampDefault() throws Exception {        execute("""
+    void rejectsNonTransactionTimestampDefault() throws Exception {
+        execute("""
                 CREATE TABLE unaudited.untracked (
                     id integer PRIMARY KEY,
                     created_at timestamptz NOT NULL DEFAULT statement_timestamp(),

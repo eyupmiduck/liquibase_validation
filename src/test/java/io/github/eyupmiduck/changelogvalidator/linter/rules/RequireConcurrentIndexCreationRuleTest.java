@@ -9,7 +9,6 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -25,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RequireConcurrentIndexCreationRuleTest {
 
     private static final Path FILE = RuleTestSupport.FILE;
-
 
 
     private static ChangeSet changeSet(String sql) {

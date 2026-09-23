@@ -12,11 +12,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Runs a set of {@link Rule}s over changesets from a changelog model.

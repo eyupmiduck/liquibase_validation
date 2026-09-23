@@ -5,7 +5,10 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Finds {@code CREATE INDEX} and {@code DROP INDEX} statements that do not use
@@ -149,9 +152,6 @@ final class ConcurrentIndexes {
                 || token.matchesKeyword("GLOBAL")
                 || token.matchesKeyword("LOCAL");
     }
-
-
-
 
 
     /**

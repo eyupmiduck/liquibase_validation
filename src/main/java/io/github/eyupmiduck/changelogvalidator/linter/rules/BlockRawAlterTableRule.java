@@ -112,8 +112,6 @@ public final class BlockRawAlterTableRule implements Rule {
     }
 
 
-
-
     @Override
     public String id() {
         return ID;
