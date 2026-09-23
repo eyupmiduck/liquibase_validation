@@ -14,6 +14,8 @@ import java.util.Map;
  */
 public record Normalisation(Map<String, String> properties, List<SqlModification> modifySql) {
 
+    private static final Normalisation NONE = new Normalisation(Map.of(), List.of());
+
     /**
      * Validates the normalisation and copies its collections.
      */
@@ -28,6 +30,6 @@ public record Normalisation(Map<String, String> properties, List<SqlModification
      * @return the identity normalisation
      */
     public static Normalisation none() {
-        return new Normalisation(Map.of(), List.of());
+        return NONE;
     }
 }

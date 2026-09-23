@@ -13,9 +13,16 @@ import java.util.Objects;
  * linter has no run context (see ADR 0003).
  *
  * @param kind            the transformation
- * @param value           the text to append or prepend, or the text to replace
+ * @param value           the text to append or prepend, the literal text to
+ *                        replace, or the regular expression for
+ *                        {@link Kind#REGEXP_REPLACE}
  * @param with            the replacement text for {@link Kind#REPLACE} and
- *                        {@link Kind#REGEXP_REPLACE}, otherwise null
+ *                        {@link Kind#REGEXP_REPLACE}, otherwise null. For
+ *                        {@link Kind#REGEXP_REPLACE} it is a
+ *                        {@link java.util.regex.Matcher#replaceAll(String)
+ *                        replacement pattern}, where {@code $} and {@code \} are
+ *                        group/escape syntax, and it may be empty to delete the
+ *                        match
  * @param applyToRollback whether the transformation also applies to rollback SQL
  * @param dbms            the comma-separated dbms filter, or null
  */
@@ -28,25 +35,44 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(value, "value");
         if ((kind == Kind.REPLACE || kind == Kind.REGEXP_REPLACE) && with == null) {
-            throw new NullPointerException("with");
+            throw new IllegalArgumentException("a " + kind + " modification needs a with value");
         }
     }
 
     /**
-     * Returns whether this modification applies to PostgreSQL.
+     * Returns whether this modification applies to PostgreSQL, following
+     * Liquibase's dbms filter: unset or blank applies everywhere; a plain name or
+     * {@code all} includes it; {@code none} excludes everything; a {@code !name}
+     * excludes that database; a list of only exclusions includes everything not
+     * excluded.
      *
-     * @return {@code true} when {@code dbms} is unset or lists {@code postgresql}
+     * @return {@code true} when the filter includes PostgreSQL
      */
     public boolean appliesToPostgres() {
         if (dbms == null || dbms.isBlank()) {
             return true;
         }
+        boolean hasInclusion = false;
+        boolean included = false;
         for (String candidate : dbms.split(",")) {
-            if (candidate.strip().equalsIgnoreCase("postgresql")) {
-                return true;
+            String name = candidate.strip();
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (name.startsWith("!")) {
+                if (name.substring(1).strip().equalsIgnoreCase("postgresql")) {
+                    return false;
+                }
+            } else if (name.equalsIgnoreCase("none")) {
+                return false;
+            } else if (name.equalsIgnoreCase("all") || name.equalsIgnoreCase("postgresql")) {
+                hasInclusion = true;
+                included = true;
+            } else {
+                hasInclusion = true;
             }
         }
-        return false;
+        return included || !hasInclusion;
     }
 
     /**

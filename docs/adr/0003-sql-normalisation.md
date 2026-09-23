@@ -36,8 +36,8 @@ Normalise each SQL source **inside the linter, before lexing**, using a
 2. **`<modifySql>`.** Parse a changeset's `<modifySql>` children and apply them
    in declaration order, mirroring Liquibase's `SqlVisitor`s exactly (`append`/`prepend` concatenate, `replace` is
    literal, `regExpReplace` uses a
-   `java.util.regex.Pattern`, `appendSqlIfNotPresent` appends unless already
-   present). Rollback SQL only receives visitors declared
+   `java.util.regex.Pattern`, `appendSqlIfNotPresent` appends unless the SQL
+   already ends with the value). Rollback SQL only receives visitors declared
    `applyToRollback="true"`; a visitor whose `dbms` does not include PostgreSQL
    is skipped.
 3. **Structured change types.** Render the change types a rule needs into a

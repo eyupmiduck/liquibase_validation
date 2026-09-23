@@ -19,10 +19,11 @@ import java.util.regex.Pattern;
  * transformations declared with {@code applyToRollback="true"}; a transformation
  * whose {@code dbms} does not include PostgreSQL is skipped.
  *
- * <p>Property substitution is repeated so a value may reference another
- * property, up to a small depth. A placeholder with no property is left as-is,
- * because the linter cannot see properties supplied on the Liquibase command
- * line (see ADR 0003).
+ * <p>Property substitution is repeated to a fixed point (a value may reference
+ * another property), up to a small depth; a circular reference therefore stops
+ * rather than looping, and exceeding the depth fails loudly. A placeholder with
+ * no property is left as-is, because the linter cannot see properties supplied
+ * on the Liquibase command line (see ADR 0003).
  */
 public final class SqlNormalizer {
 
@@ -62,22 +63,21 @@ public final class SqlNormalizer {
         for (int depth = 0; depth < MAX_SUBSTITUTION_DEPTH; depth++) {
             Matcher matcher = PLACEHOLDER.matcher(current);
             StringBuilder replaced = new StringBuilder();
-            boolean changed = false;
             while (matcher.find()) {
                 String value = properties.get(matcher.group(1));
-                if (value == null) {
-                    matcher.appendReplacement(replaced, Matcher.quoteReplacement(matcher.group()));
-                } else {
-                    matcher.appendReplacement(replaced, Matcher.quoteReplacement(value));
-                    changed = true;
-                }
+                matcher.appendReplacement(replaced,
+                        Matcher.quoteReplacement(value == null ? matcher.group() : value));
             }
             matcher.appendTail(replaced);
-            current = replaced.toString();
-            if (!changed) {
-                break;
+            String next = replaced.toString();
+            if (next.equals(current)) {
+                // A fixed point: no property changed (including a self or
+                // circular reference that substitutes to the same text).
+                return current;
             }
+            current = next;
         }
-        return current;
+        throw new IllegalStateException("property substitution exceeded " + MAX_SUBSTITUTION_DEPTH
+                + " passes; check for a circular property reference");
     }
 }

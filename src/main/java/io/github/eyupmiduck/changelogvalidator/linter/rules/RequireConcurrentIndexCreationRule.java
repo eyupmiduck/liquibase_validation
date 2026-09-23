@@ -20,12 +20,12 @@ import java.util.Set;
  *
  * <p>The rule is opt-in and advisory. It exempts an index whose table is created
  * in the same changeset, because a fresh schema legitimately builds its indexes
- * non-concurrently. Two limits follow from the token-level heuristic: a
- * schema-qualified reference must match the {@code CREATE TABLE} reference
- * (unqualified and qualified forms are not reconciled), and the structured
- * {@code <createIndex>} change type is not seen by the linter yet (bead
- * ddl-w8y.6), so only {@code CREATE INDEX} SQL is checked, in forward and
- * rollback SQL alike.
+ * non-concurrently. The structured {@code <createIndex>} change type is rendered
+ * into a synthetic inline source, so both it and literal {@code CREATE INDEX} SQL
+ * are checked, in forward and rollback SQL alike. One limit follows from the
+ * token-level heuristic: a schema-qualified reference must match the
+ * {@code CREATE TABLE} reference (unqualified and qualified forms are not
+ * reconciled).
  */
 public final class RequireConcurrentIndexCreationRule implements Rule {
 
