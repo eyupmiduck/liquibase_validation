@@ -135,6 +135,28 @@ class RequireConcurrentIndexCreationRuleTest {
     }
 
     /**
+     * A trailing {@code CREATE INDEX} in an unsplit block is still detected, and
+     * a table created in the other direction exempts an index.
+     */
+    @Test
+    void detectsIndexesInAnUnsplitBlockAndExemptsAcrossDirections() {
+        String sql = "CREATE TABLE other (c int); CREATE INDEX idx ON t (c);";
+        SqlUnit unsplit = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql, false, ";", true));
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(), false, List.of());
+
+        List<Rule.Violation> violations = new RequireConcurrentIndexCreationRule()
+                .check(new RuleContext(changeSet, List.of(unsplit), List.of()));
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("blocks writes on t"));
+
+        assertTrue(new RequireConcurrentIndexCreationRule()
+                .check(context("CREATE TABLE t (c int);", "CREATE INDEX idx ON t (c);")).isEmpty());
+    }
+
+    /**
      * The rule is opt-in, warns by default, and reports through the engine when
      * included.
      */

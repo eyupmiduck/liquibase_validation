@@ -98,6 +98,21 @@ class PreferSingleStatementRuleTest {
     }
 
     /**
+     * Forward and rollback findings are distinguishable, so a changeset with
+     * several statements in both directions does not produce two byte-identical
+     * findings.
+     */
+    @Test
+    void distinguishesForwardAndRollback() {
+        List<Rule.Violation> violations = new PreferSingleStatementRule()
+                .check(context(false, "DROP INDEX idx; DROP INDEX idx2;", "DROP INDEX idx3; DROP INDEX idx4;"));
+
+        assertEquals(2, violations.size());
+        assertTrue(violations.stream().anyMatch(violation -> violation.message().contains("forward")));
+        assertTrue(violations.stream().anyMatch(violation -> violation.message().contains("rollback")));
+    }
+
+    /**
      * The rule is opt-in, warns by default, and reports through the engine when
      * included.
      */

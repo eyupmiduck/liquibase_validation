@@ -56,7 +56,7 @@ public final class BlockRawAlterTableRule implements Rule {
             return "use ddl_utils.rename_column";
         }
         if (hasClause(tokens, "RENAME", "CONSTRAINT")) {
-            return "use ddl_utils.rename_table";
+            return "use ddl_utils.rename_constraint";
         }
         if (hasClause(tokens, "RENAME", "TO")) {
             return "use ddl_utils.rename_table";
@@ -79,7 +79,16 @@ public final class BlockRawAlterTableRule implements Rule {
         if (hasClause(tokens, "DROP", "CONSTRAINT")) {
             return "use ddl_utils.drop_constraint";
         }
-        if (hasClause(tokens, "ADD", "COLUMN") || hasClause(tokens, "ADD")) {
+        if (hasClause(tokens, "ADD", "CONSTRAINT")) {
+            if (hasClause(tokens, "PRIMARY", "KEY")) {
+                return "use ddl_utils.add_primary_key_using_index";
+            }
+            if (hasClause(tokens, "UNIQUE")) {
+                return "use ddl_utils.add_unique_constraint_using_index";
+            }
+            return "use the matching ddl_utils constraint helper";
+        }
+        if (hasClause(tokens, "ADD")) {
             return "use ddl_utils.add_column or ddl_utils.add_columns";
         }
         if (hasClause(tokens, "ALTER", "COLUMN")) {
@@ -108,42 +117,33 @@ public final class BlockRawAlterTableRule implements Rule {
         if (start >= tokens.size()) {
             return null;
         }
-        StringBuilder name = new StringBuilder();
-        for (int i = start; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (token.type() == TokenType.WORD || token.type() == TokenType.QUOTED_IDENTIFIER) {
-                name.append(identifier(token));
-            } else if (token.type() == TokenType.PUNCTUATION && token.text().equals(".")) {
-                name.append('.');
-            } else {
-                break;
-            }
+        String first = identifier(tokens.get(start));
+        if (first == null) {
+            return null;
         }
-        return name.isEmpty() ? null : name.toString();
+        // Only consume identifiers that are dot-separated, so following keywords
+        // (ADD, COLUMN, ...) are not appended to the name.
+        StringBuilder name = new StringBuilder(first);
+        int i = start + 1;
+        while (i + 1 < tokens.size() && isDot(tokens.get(i)) && identifier(tokens.get(i + 1)) != null) {
+            name.append('.').append(identifier(tokens.get(i + 1)));
+            i += 2;
+        }
+        return name.toString();
+    }
+
+    private static boolean isDot(Token token) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
     }
 
     private static String identifier(Token token) {
         if (token.type() == TokenType.QUOTED_IDENTIFIER) {
             return token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
         }
-        return token.text().toLowerCase(Locale.ROOT);
-    }
-
-    private static Token firstToken(SqlUnit unit, SqlStatement statement) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() >= statement.startOffset()) {
-                return token;
-            }
+        if (token.type() == TokenType.WORD) {
+            return token.text().toLowerCase(Locale.ROOT);
         }
-        throw new IllegalStateException("no token for statement at offset " + statement.startOffset());
-    }
-
-    private static List<Token> nonTriviaWithin(List<Token> tokens, SqlStatement statement) {
-        return tokens.stream()
-                .filter(token -> !token.isTrivia())
-                .filter(token -> token.startOffset() >= statement.startOffset()
-                        && token.endOffset() <= statement.endOffset())
-                .toList();
+        return null;
     }
 
     @Override
@@ -170,11 +170,11 @@ public final class BlockRawAlterTableRule implements Rule {
                 continue;
             }
             for (SqlStatement statement : unit.statements()) {
-                List<Token> tokens = nonTriviaWithin(unit.tokens(), statement);
+                List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
                 if (!isAlterTable(tokens)) {
                     continue;
                 }
-                Token token = firstToken(unit, statement);
+                Token token = RuleSupport.firstToken(unit, statement);
                 String table = qualifiedName(tokens, 2);
                 String hint = wrapperHint(tokens);
                 violations.add(new Violation(

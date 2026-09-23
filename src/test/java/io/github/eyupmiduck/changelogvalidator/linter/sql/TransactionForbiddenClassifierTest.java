@@ -100,6 +100,17 @@ class TransactionForbiddenClassifierTest {
     }
 
     /**
+     * The grammar forms must be adjacent, so an identifier named
+     * {@code concurrently} or an {@code ADD} that is not {@code ADD VALUE} is not
+     * misclassified.
+     */
+    @Test
+    void requiresGrammarAdjacency() {
+        assertTrue(families("CREATE INDEX idx ON t (concurrently);", 17).isEmpty());
+        assertTrue(families("ALTER TYPE mood ADD ATTRIBUTE value int;", 11).isEmpty());
+    }
+
+    /**
      * Each statement is classified independently, with its source span.
      */
     @Test
