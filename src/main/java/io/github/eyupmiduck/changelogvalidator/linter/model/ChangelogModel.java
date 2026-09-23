@@ -4,8 +4,10 @@ import io.github.eyupmiduck.changelogvalidator.ChangelogValidator;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -61,7 +63,8 @@ public final class ChangelogModel {
         return List.copyOf(changesets);
     }
 
-    private static List<ChangeSet> changesetsIn(Path root, Path changelogFile, Map<String, String> properties) {
+    private static List<ChangeSet> changesetsIn(Path root, Path changelogFile, Map<String, String> properties)
+            throws IOException {
         Document document = parse(changelogFile);
         NodeList nodes = document.getElementsByTagName("changeSet");
         List<ChangeSet> changesets = new ArrayList<>();
@@ -112,7 +115,7 @@ public final class ChangelogModel {
                 new Normalisation(properties, modifySql));
     }
 
-    private static Map<String, String> properties(List<Path> changelogFiles) {
+    private static Map<String, String> properties(List<Path> changelogFiles) throws IOException {
         // Liquibase's "first set value wins": keep the first value a name gets.
         Map<String, String> properties = new LinkedHashMap<>();
         for (Path changelogFile : changelogFiles) {
@@ -274,13 +277,15 @@ public final class ChangelogModel {
         return elements;
     }
 
-    private static Document parse(Path changelogFile) {
+    private static Document parse(Path changelogFile) throws IOException {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setNamespaceAware(true);
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
             return factory.newDocumentBuilder().parse(changelogFile.toFile());
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse " + changelogFile, e);
+        } catch (SAXException e) {
+            throw new IOException("failed to parse changelog " + changelogFile, e);
+        } catch (ParserConfigurationException e) {
+            throw new IllegalStateException("failed to configure the XML parser", e);
         }
     }
 }
