@@ -28,7 +28,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <json-schema-validator.version>3.0.7</json-schema-validator.version>
-        <jackson.version>3.2.2</jackson.version>
+        <jackson.version>3.2.3</jackson.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <slf4j.version>2.0.20</slf4j.version>
         <postgresql.version>42.7.13</postgresql.version>
