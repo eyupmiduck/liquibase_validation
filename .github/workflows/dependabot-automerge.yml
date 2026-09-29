@@ -1,16 +1,13 @@
 name: Dependabot auto-merge
 
-# Dependabot PRs are queued for auto-merge once the branch protection's
-# required checks pass, so a green PR lands without a manual merge while a
-# failing one stays open. Only minor and patch updates are queued; major
-# updates (which Dependabot opens as individual PRs, see dependabot.yml) are
-# left for a human to review and merge.
+# Dependabot PRs are queued for auto-merge once the required checks on main
+# pass, so a green PR lands without a manual merge and a failing one stays
+# open. The shared workflow only queues minor and patch updates (grouped by
+# dependabot.yml); major updates stay for a human to merge.
 #
-# `pull_request_target` runs in the context of the base branch and therefore
-# gets a read/write GITHUB_TOKEN, which `gh pr merge --auto` needs. A run
-# triggered by Dependabot on `pull_request` instead gets a read-only token.
-# The workflow never checks out or executes the pull request's code, so the
-# write token cannot be abused by a compromised dependency.
+# `pull_request_target` gives the run a read/write GITHUB_TOKEN, which
+# Dependabot's `pull_request` runs lack. The shared workflow never checks out
+# or executes the pull request's code.
 on: pull_request_target
 
 permissions:
@@ -19,25 +16,4 @@ permissions:
 
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'eyupmiduck/liquibase_validation'
-
-    steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
-
-      # update-type is the highest semver change in the PR, so a grouped
-      # minor/patch PR reports semver-minor at most and a major update never
-      # matches. The merge is only queued: it waits for the required checks
-      # configured on main, and is dropped if they fail.
-      - name: Enable auto-merge for minor and patch updates
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        run: gh pr merge --auto --merge "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: eyupmiduck/workflow_library/.github/workflows/dependabot-automerge.yml@93e83bc32b1372fa3c961d9ede6d6d036df5dfd8 # main
