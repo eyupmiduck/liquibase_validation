@@ -1,14 +1,14 @@
 package io.github.eyupmiduck.changelogvalidator.linter.report;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.Error;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,15 +45,15 @@ class SarifReporterSchemaTest {
     }
 
     private static Set<String> validationErrors(String sarif) throws IOException {
-        JsonSchema schema;
+        Schema schema;
         try (InputStream input = SarifReporterSchemaTest.class.getClassLoader().getResourceAsStream(SCHEMA)) {
             assertNotNull(input, SCHEMA + " not found on the test classpath");
-            schema = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7).getSchema(input);
+            schema = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_7).getSchema(input);
         }
         JsonNode document = new ObjectMapper().readTree(sarif);
-        Set<ValidationMessage> messages = schema.validate(document);
+        List<Error> messages = schema.validate(document);
         assertTrue(sarif.startsWith("{"), "SARIF must be a JSON object");
-        return messages.stream().map(ValidationMessage::getMessage).collect(Collectors.toSet());
+        return messages.stream().map(Error::getMessage).collect(Collectors.toSet());
     }
 
     /**
@@ -86,16 +86,16 @@ class SarifReporterSchemaTest {
         JsonNode results = sarif.at("/runs/0/results");
 
         assertEquals(3, results.size());
-        assertEquals("error", results.get(0).path("level").asText());
-        assertEquals("warning", results.get(1).path("level").asText());
-        assertEquals("note", results.get(2).path("level").asText());
+        assertEquals("error", results.get(0).path("level").asString());
+        assertEquals("warning", results.get(1).path("level").asString());
+        assertEquals("note", results.get(2).path("level").asString());
         JsonNode region = results.get(0).at("/locations/0/physicalLocation/region");
         assertEquals(3, region.path("startLine").asInt());
         assertEquals(1, region.path("startColumn").asInt());
-        assertEquals(ERROR.message() + "\n\n" + ERROR.help(), results.get(0).path("message").path("markdown").asText());
+        assertEquals(ERROR.message() + "\n\n" + ERROR.help(), results.get(0).path("message").path("markdown").asString());
 
         JsonNode rules = sarif.at("/runs/0/tool/driver/rules");
         assertEquals(3, rules.size());
-        assertEquals("error", rules.get(0).path("defaultConfiguration").path("level").asText());
+        assertEquals("error", rules.get(0).path("defaultConfiguration").path("level").asString());
     }
 }
