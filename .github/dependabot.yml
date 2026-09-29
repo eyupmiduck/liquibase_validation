@@ -2,6 +2,8 @@
 #
 # Minor and patch updates are grouped into a single PR per ecosystem to reduce
 # noise; major updates arrive as individual PRs so they get a real review.
+# The auto-merge workflow only queues the grouped minor/patch PRs, so a major
+# update always needs a manual merge.
 version: 2
 updates:
   - package-ecosystem: maven
