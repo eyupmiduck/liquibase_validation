@@ -24,11 +24,11 @@ import java.util.stream.Stream;
  *
  * <p>SQL files are referenced either by a {@code <sqlFile>} element or as the
  * external body of a {@code <createProcedure>} (or {@code <createFunction>})
- * element through its {@code path} attribute. Stored-routine bodies are usually
- * named after the routine rather than with an {@code NNN-} prefix, so SQL files
- * under a stored-routine directory ({@code functions}, {@code procedures}, or
- * their {@code -rollback} variants) are exempt from the naming rule while still
- * being checked for references.
+ * element through its {@code path} attribute. Stored routines and triggers are
+ * usually named after the object rather than with an {@code NNN-} prefix, so SQL
+ * files under a dedicated directory ({@code functions}, {@code procedures},
+ * {@code triggers}, or their {@code -rollback} variants) are exempt from the
+ * naming rule while still being checked for references.
  */
 public final class ChangelogValidator {
 
@@ -52,11 +52,12 @@ public final class ChangelogValidator {
     private static final List<String> SQL_REFERENCE_ELEMENTS = List.of("sqlFile", "createProcedure", "createFunction");
 
     /**
-     * Directory names whose SQL files are routine bodies and are therefore
-     * exempt from the {@code NNN-} naming rule.
+     * Directory names whose SQL files are named after a stored routine or
+     * trigger and are therefore exempt from the {@code NNN-} naming rule.
      */
-    private static final List<String> ROUTINE_DIRECTORIES =
-            List.of("functions", "procedures", "functions-rollback", "procedures-rollback");
+    private static final List<String> EXEMPT_DIRECTORIES =
+            List.of("functions", "procedures", "triggers",
+                    "functions-rollback", "procedures-rollback", "triggers-rollback");
 
     private ChangelogValidator() {
     }
@@ -64,9 +65,9 @@ public final class ChangelogValidator {
     /**
      * Finds {@code .sql} files under {@code changelogRoot} whose file name does
      * not start with a three-digit, zero-padded integer followed by {@code -}
-     * or {@code _} (for example {@code 001-create.sql}). Files under a
-     * stored-routine directory (see {@link #ROUTINE_DIRECTORIES}) are routine
-     * bodies and are exempt.
+     * or {@code _} (for example {@code 001-create.sql}). Files under an exempt
+     * directory (see {@link #EXEMPT_DIRECTORIES}) are named after a stored
+     * routine or trigger and are exempt.
      *
      * @param changelogRoot the changelog directory to scan
      * @return the invalidly named SQL files, relative to {@code changelogRoot}
@@ -78,7 +79,7 @@ public final class ChangelogValidator {
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".sql"))
-                    .filter(p -> !isRoutineSqlFile(root, p))
+                    .filter(p -> !isExemptSqlFile(root, p))
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
                     .forEach(invalid::add);
@@ -87,9 +88,9 @@ public final class ChangelogValidator {
         return invalid;
     }
 
-    private static boolean isRoutineSqlFile(Path root, Path sqlFile) {
+    private static boolean isExemptSqlFile(Path root, Path sqlFile) {
         for (Path segment : root.relativize(sqlFile)) {
-            if (ROUTINE_DIRECTORIES.contains(segment.toString())) {
+            if (EXEMPT_DIRECTORIES.contains(segment.toString())) {
                 return true;
             }
         }

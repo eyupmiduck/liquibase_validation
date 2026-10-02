@@ -44,12 +44,12 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * SQL files under a routine directory ({@code functions}, {@code procedures},
-     * or their {@code -rollback} variants, at any depth) are exempt from the
-     * naming rule, while other SQL files are still checked.
+     * SQL files under an exempt directory ({@code functions}, {@code procedures},
+     * {@code triggers}, or their {@code -rollback} variants, at any depth) are
+     * exempt from the naming rule, while other SQL files are still checked.
      */
     @Test
-    void exemptsRoutineDirectoriesFromNaming() throws IOException {
+    void exemptsRoutineAndTriggerDirectoriesFromNaming() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path functions = Files.createDirectories(changes.resolve("functions"));
         Files.writeString(functions.resolve("alter_table.sql"), "");
@@ -61,6 +61,10 @@ class ChangelogValidatorTest {
         Files.writeString(procedures.resolve("do_thing.sql"), "");
         Path proceduresRollback = Files.createDirectories(changes.resolve("procedures-rollback"));
         Files.writeString(proceduresRollback.resolve("do_thing-rollback.sql"), "");
+        Path triggers = Files.createDirectories(changes.resolve("triggers"));
+        Files.writeString(triggers.resolve("set_updated_at.sql"), "");
+        Path triggersRollback = Files.createDirectories(changes.resolve("triggers-rollback"));
+        Files.writeString(triggersRollback.resolve("set_updated_at-rollback.sql"), "");
         Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("bad.sql"), "");
 
