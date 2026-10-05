@@ -330,6 +330,18 @@ public abstract class PostgresTestBase {
         return connection(database, postgres.getUsername(), postgres.getPassword());
     }
 
+    /**
+     * Opens a superuser connection to a database in the shared container, for
+     * use from {@link #installExtensions(String)}. The caller closes it.
+     *
+     * @param database the database to connect to
+     * @return a superuser connection
+     * @throws SQLException if the connection cannot be opened
+     */
+    protected Connection openAdminConnection(String database) throws SQLException {
+        return adminConnection(database);
+    }
+
     private Connection connection(String database, String user, String password) throws SQLException {
         return DriverManager.getConnection(
                 "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/" + database,
