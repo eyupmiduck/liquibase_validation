@@ -29,7 +29,20 @@ public final class ChangelogTestSupport {
      * @return the changelog root
      */
     public static Path changelogRoot() {
-        return classpathDir("db/changelog");
+        return changelogRoot("db/changelog");
+    }
+
+    /**
+     * Returns a changelog root directory by classpath resource name, for
+     * changelogs that do not use the default {@code db/changelog} location.
+     *
+     * @param resource the classpath resource directory
+     * @return the changelog root
+     * @throws NullPointerException  when the resource is absent from the classpath
+     * @throws IllegalStateException when the resource is not an exploded directory
+     */
+    public static Path changelogRoot(String resource) {
+        return classpathDir(resource);
     }
 
     /**

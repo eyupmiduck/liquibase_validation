@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <!-- Fixture for ChangelogTestSupportTest: exists only so the changelog tree
+         has a changes directory and a referenced SQL file. -->
+    <changeSet id="001-placeholder" author="test" dbms="postgresql">
+        <sqlFile path="sql_changes/001-placeholder.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+</databaseChangeLog>
