@@ -22,9 +22,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Base class for tests that need a migrated PostgreSQL database.
@@ -81,6 +79,50 @@ public abstract class PostgresTestBase {
      */
     protected static String postgresImage() {
         return System.getProperty("postgres.image", "postgres:17-alpine");
+    }
+
+    private static void execute(Connection connection, String sql) throws SQLException {
+        try (connection; Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
+    }
+
+    /**
+     * Returns the SQLSTATE of the first {@link SQLException} in a throwable's
+     * cause chain, or {@code null} when there is none.
+     *
+     * @param throwable the throwable to inspect
+     * @return the SQLSTATE, or {@code null}
+     */
+    public static String sqlState(Throwable throwable) {
+        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sqlException) {
+                return sqlException.getSQLState();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Asserts that a call fails with the given SQLSTATE.
+     *
+     * @param expectedSqlState the expected SQLSTATE
+     * @param call             the call under test
+     */
+    public static void assertSqlState(String expectedSqlState, Executable call) {
+        DataAccessException exception = assertThrows(DataAccessException.class, call);
+        assertEquals(expectedSqlState, sqlState(exception),
+                () -> "expected SQLSTATE " + expectedSqlState + " but was: " + exception.getMessage());
+    }
+
+    /**
+     * Asserts that a call fails with SQLSTATE {@code 23514}
+     * ({@code check_violation}), as a domain constraint violation does.
+     *
+     * @param call the call under test
+     */
+    public static void assertDomainViolation(Executable call) {
+        assertSqlState("23514", call);
     }
 
     /**
@@ -292,50 +334,6 @@ public abstract class PostgresTestBase {
         return DriverManager.getConnection(
                 "jdbc:postgresql://" + postgres.getHost() + ":" + postgres.getMappedPort(5432) + "/" + database,
                 user, password);
-    }
-
-    private static void execute(Connection connection, String sql) throws SQLException {
-        try (connection; Statement statement = connection.createStatement()) {
-            statement.execute(sql);
-        }
-    }
-
-    /**
-     * Returns the SQLSTATE of the first {@link SQLException} in a throwable's
-     * cause chain, or {@code null} when there is none.
-     *
-     * @param throwable the throwable to inspect
-     * @return the SQLSTATE, or {@code null}
-     */
-    public static String sqlState(Throwable throwable) {
-        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sqlException) {
-                return sqlException.getSQLState();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Asserts that a call fails with the given SQLSTATE.
-     *
-     * @param expectedSqlState the expected SQLSTATE
-     * @param call             the call under test
-     */
-    public static void assertSqlState(String expectedSqlState, Executable call) {
-        DataAccessException exception = assertThrows(DataAccessException.class, call);
-        assertEquals(expectedSqlState, sqlState(exception),
-                () -> "expected SQLSTATE " + expectedSqlState + " but was: " + exception.getMessage());
-    }
-
-    /**
-     * Asserts that a call fails with SQLSTATE {@code 23514}
-     * ({@code check_violation}), as a domain constraint violation does.
-     *
-     * @param call the call under test
-     */
-    public static void assertDomainViolation(Executable call) {
-        assertSqlState("23514", call);
     }
 
     /**
