@@ -33,6 +33,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   combine SQL tokens with Liquibase changeset semantics. See the
   [rule reference](#rule-reference), [configuration](#configuration) and
   [tokenizer](#tokenizer) sections.
+- `io.github.eyupmiduck.changelogvalidator.testing` — shared test support,
+  published under the `tests` classifier: a Testcontainers `PostgresTestBase`
+  (shared container, migrated template database, per-class clone, introspection
+  and SQLSTATE helpers), a classpath `ChangelogTestSupport`, and
+  `ChangelogAssertions`/`RoutineAssertions`. See
+  [Using the library](#using-the-library) and
+  [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md).
 
 ## Changelog linter
 
@@ -382,6 +389,28 @@ The library is published to GitHub Packages from a `v*` tag (for example
     <scope>test</scope>
 </dependency>
 ```
+
+The same artifact also publishes a `tests` classifier with shared test support
+(`io.github.eyupmiduck.changelogvalidator.testing`): `ChangelogTestSupport`,
+`PostgresTestBase` and the `ChangelogAssertions`/`RoutineAssertions` helpers,
+so a project that builds a Liquibase changelog and PostgreSQL routines can share
+one implementation instead of copying it (see
+[docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
+
+```xml
+
+<dependency>
+    <groupId>io.github.eyupmiduck</groupId>
+    <artifactId>liquibase-validation</artifactId>
+    <version>1.1.0</version>
+    <type>test-jar</type>
+    <scope>test</scope>
+</dependency>
+```
+
+Test-jar dependencies are not transitive, so the consumer declares its own
+JUnit, Testcontainers (`testcontainers-postgresql`), jOOQ, `liquibase-core` and
+PostgreSQL driver at test scope.
 
 Consuming builds must be authenticated to GitHub Packages even for public
 packages. Add the repository to the consuming POM:
