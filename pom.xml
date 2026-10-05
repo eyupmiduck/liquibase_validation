@@ -167,6 +167,11 @@
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>3.6.2</version>
                 </plugin>
@@ -243,6 +248,29 @@
                                     </limits>
                                 </rule>
                             </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Publish the shared test support
+                 (io.github.eyupmiduck.changelogvalidator.testing) as a `tests`
+                 classifier so projects building a Liquibase changelog can share
+                 one implementation. Only that package is included, so the
+                 library's own tests are not shipped. The runtime dependency set
+                 is unchanged. See docs/adr/0004-shared-test-support-packaging.md. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-support-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>io/github/eyupmiduck/changelogvalidator/testing/**</include>
+                            </includes>
                         </configuration>
                     </execution>
                 </executions>
