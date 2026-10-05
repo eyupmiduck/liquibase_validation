@@ -23,8 +23,8 @@ public surface is `ChangelogValidator`, `PlpgsqlCheck`, `AuditColumnsCheck` and
 the `linter` package. ADR 0002 established a preference for keeping one artifact
 and adding no runtime dependencies.
 
-The scaffolding needs JUnit 5, Testcontainers (`postgresql`), jOOQ
-(`DSLContext`), `liquibase-core` and the PostgreSQL driver. Both consumers
+The scaffolding needs JUnit 5, Testcontainers (`postgresql`), jOOQ (`DSLContext`), `liquibase-core` and the PostgreSQL
+driver. Both consumers
 already declare all of these at test scope.
 
 ## Decision
