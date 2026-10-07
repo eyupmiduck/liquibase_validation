@@ -6,7 +6,7 @@
                             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <!-- Fixture for ChangelogTestSupportTest: exists only so the changelog tree
          has a changes directory and a referenced SQL file. -->
-    <changeSet id="001-placeholder" author="test" dbms="postgresql">
+    <changeSet id="001-placeholder" author="lee.horner" dbms="postgresql">
         <sqlFile path="sql_changes/001-placeholder.sql" relativeToChangelogFile="true"/>
     </changeSet>
 </databaseChangeLog>
