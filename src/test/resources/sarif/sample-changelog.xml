@@ -8,14 +8,14 @@
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-5.0.xsd">
 
-    <changeSet id="001-create-account" author="ci">
+    <changeSet id="001-create-account" author="lee.horner">
         <createTable tableName="account">
             <column name="id" type="bigint"/>
             <column name="email" type="text"/>
         </createTable>
     </changeSet>
 
-    <changeSet id="002-index-email" author="ci">
+    <changeSet id="002-index-email" author="lee.horner">
         <createIndex indexName="account_email_idx" tableName="account">
             <column name="email"/>
         </createIndex>
