@@ -1,9 +1,9 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,13 +12,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Exercises {@link RoutineAssertions} against a real PostgreSQL: the
  * audit-column catalog check and behavioral probe, and the allow-list plumbing
  * of the plpgsql_check assertion.
+ *
+ * <p>The audited fixture is created in this class's private database rather than
+ * via {@code installExtensions}, because the shared container prepares its
+ * template once per JVM and only the first database test class's
+ * {@code installExtensions} runs; a per-class fixture keeps this test
+ * independent of class execution order.
  */
 class RoutineAssertionsTest extends PostgresTestBase {
 
-    @Override
-    protected void installExtensions(String templateDatabase) throws SQLException {
-        super.installExtensions(templateDatabase);
-        try (Connection admin = openAdminConnection(templateDatabase);
+    /**
+     * Creates the audited schema, table and trigger in this class's private
+     * database.
+     */
+    @BeforeAll
+    void createAuditedFixture() throws Exception {
+        String database = dsl.fetchOne("SELECT pg_catalog.current_database()").get(0, String.class);
+        try (Connection admin = openAdminConnection(database);
              var statement = admin.createStatement()) {
             statement.execute("CREATE SCHEMA audited");
             statement.execute("""

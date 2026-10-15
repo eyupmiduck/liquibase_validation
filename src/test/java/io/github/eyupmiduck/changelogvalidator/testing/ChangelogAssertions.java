@@ -25,7 +25,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public final class ChangelogAssertions {
 
+    /**
+     * The canonical changeSet id pattern shared by the consumers: either a
+     * {@code NNN-name} schema/table id (a three-digit prefix followed by
+     * hyphen/underscore-separated alphanumeric segments) or a stored-object id of
+     * the form {@code function-<schema>.<name>} / {@code procedure-<schema>.<name>}
+     * / {@code trigger-<schema>.<name>}. Overloads of one routine share a
+     * changeset, so the id is the routine's schema and name, not its signature.
+     */
+    public static final Pattern CHANGESET_ID_PATTERN = Pattern.compile(
+            "^(?:\\d{3}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*"
+                    + "|(?:function|procedure|trigger)-[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*)$");
+
     private ChangelogAssertions() {
+    }
+
+    /**
+     * Asserts that every changeSet id reachable from the master changelog matches
+     * {@link #CHANGESET_ID_PATTERN}.
+     *
+     * @param changelogRoot the changelog root directory
+     * @param master        the master changelog file
+     * @throws IOException if the changelog graph cannot be read
+     */
+    public static void assertChangeSetsFollowNaming(Path changelogRoot, Path master) throws IOException {
+        assertChangeSetsFollowNaming(changelogRoot, master, CHANGESET_ID_PATTERN);
     }
 
     /**
