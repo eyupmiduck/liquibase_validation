@@ -3,10 +3,13 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies {@link ChangelogAssertions} accepts the valid fixture changelog and
@@ -43,6 +46,35 @@ class ChangelogAssertionsTest {
 
         assertThrows(AssertionError.class,
                 () -> ChangelogAssertions.assertChangeSetsFollowNaming(root, master, fourDigits));
+    }
+
+    /**
+     * The canonical {@link ChangelogAssertions#CHANGESET_ID_PATTERN} accepts the
+     * documented schema/table and stored-object ids and rejects malformed ones,
+     * and the no-pattern overload uses it.
+     */
+    @Test
+    void canonicalChangeSetIdPatternAcceptsAndRejects() {
+        for (String valid : List.of(
+                "001-create-schema",
+                "999-grant_privileges",
+                "006-create-migration-tables",
+                "function-dml_utils.run_migration_chunks",
+                "procedure-ddl_utils.ensure_not_null",
+                "trigger-dml_utils_data.set_updated_at")) {
+            assertTrue(ChangelogAssertions.CHANGESET_ID_PATTERN.matcher(valid).matches(), valid);
+        }
+        for (String invalid : List.of(
+                "1-short",
+                "0012-too-long",
+                "function-dml_utils",
+                "function-dml_utils.bad-name",
+                "function-.name")) {
+            assertFalse(ChangelogAssertions.CHANGESET_ID_PATTERN.matcher(invalid).matches(), invalid);
+        }
+
+        assertDoesNotThrow(() -> ChangelogAssertions.assertChangeSetsFollowNaming(
+                ChangelogTestSupport.changelogRoot(), ChangelogTestSupport.master()));
     }
 
     /**
