@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.*;
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Captures the schema of a set of PostgreSQL schemas as a map of
@@ -33,6 +36,13 @@ public final class CatalogSnapshot {
      * {@code target/catalog-snapshot}.
      */
     public static final Path DEFAULT_DUMP_DIRECTORY = Path.of("target", "catalog-snapshot");
+
+    /**
+     * The longest file-name component a dump uses; a longer object name is
+     * truncated and given a content hash so it stays unique and under the
+     * filesystem's 255-byte component limit.
+     */
+    private static final int MAX_DUMP_NAME_LENGTH = 200;
 
     /**
      * The system schemas that are never captured.
@@ -84,6 +94,11 @@ public final class CatalogSnapshot {
      * {@code root/<kind>/<qualified-name>.json}, so two captures can be compared
      * with a directory diff and uploaded as a build artifact.
      *
+     * <p>A routine's signature can make the qualified name longer than a file
+     * name may be; such a name is truncated to a readable prefix plus a short
+     * content hash, so it stays unique and under the filesystem limit. The
+     * directory is replaced, so a stale dump from an earlier run cannot remain.
+     *
      * @param snapshot the capture to write
      * @param root     the directory to write under
      * @throws IOException if a file cannot be written
@@ -91,16 +106,54 @@ public final class CatalogSnapshot {
     public static void dump(Map<String, String> snapshot, Path root) throws IOException {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(root, "root");
+        deleteRecursively(root);
         for (Map.Entry<String, String> entry : snapshot.entrySet()) {
             int slash = entry.getKey().indexOf('/');
             String kind = entry.getKey().substring(0, slash);
-            String name = sanitize(entry.getKey().substring(slash + 1));
+            String name = dumpName(entry.getKey().substring(slash + 1));
             Path file = root.resolve(kind).resolve(name + ".json").normalize();
             if (!file.startsWith(root.normalize())) {
                 throw new IllegalArgumentException("object name escapes the dump directory: " + entry.getKey());
             }
             Files.createDirectories(file.getParent());
             Files.writeString(file, entry.getValue() + System.lineSeparator(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Returns a file-name component for an object name, bounded so a long
+     * routine signature cannot exceed the filesystem's name limit.
+     */
+    private static String dumpName(String name) {
+        String sanitized = sanitize(name);
+        if (sanitized.length() <= MAX_DUMP_NAME_LENGTH) {
+            return sanitized;
+        }
+        String suffix = "-" + shortHash(sanitized);
+        return sanitized.substring(0, MAX_DUMP_NAME_LENGTH - suffix.length()) + suffix;
+    }
+
+    private static void deleteRecursively(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
+    }
+
+    private static String shortHash(String value) {        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(16);
+            for (int i = 0; i < 8; i++) {
+                hex.append(Character.forDigit((digest[i] >> 4) & 0xF, 16))
+                        .append(Character.forDigit(digest[i] & 0xF, 16));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
         }
     }
 
