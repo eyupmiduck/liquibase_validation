@@ -4,20 +4,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Array;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.SortedMap;
-import java.util.SortedSet;
-import java.util.TreeMap;
-import java.util.TreeSet;
+import java.sql.*;
+import java.util.*;
 
 /**
  * Captures the schema of a set of PostgreSQL schemas as a map of
@@ -96,8 +84,8 @@ public final class CatalogSnapshot {
      * {@code root/<kind>/<qualified-name>.json}, so two captures can be compared
      * with a directory diff and uploaded as a build artifact.
      *
-     * @param snapshot  the capture to write
-     * @param root      the directory to write under
+     * @param snapshot the capture to write
+     * @param root     the directory to write under
      * @throws IOException if a file cannot be written
      */
     public static void dump(Map<String, String> snapshot, Path root) throws IOException {
@@ -113,85 +101,6 @@ public final class CatalogSnapshot {
             }
             Files.createDirectories(file.getParent());
             Files.writeString(file, entry.getValue() + System.lineSeparator(), StandardCharsets.UTF_8);
-        }
-    }
-
-    /**
-     * A document that differs between the two captures.
-     *
-     * @param expected the from-scratch document
-     * @param actual   the upgraded document
-     */
-    public record Change(String expected, String actual) {
-    }
-
-    /**
-     * The difference between a from-scratch capture and an upgraded one.
-     *
-     * @param missing    objects the from-scratch build has but the upgrade does
-     *                   not (the dangerous case: the upgrade path is incomplete)
-     * @param unexpected objects the upgrade has but a from-scratch build does
-     *                   not
-     * @param changed    objects present in both with a different document
-     */
-    public record Report(SortedSet<String> missing, SortedSet<String> unexpected,
-                         SortedMap<String, Change> changed) {
-
-        /**
-         * Defensively copies and orders the collections.
-         */
-        public Report {
-            missing = Collections.unmodifiableSortedSet(new TreeSet<>(missing));
-            unexpected = Collections.unmodifiableSortedSet(new TreeSet<>(unexpected));
-            changed = Collections.unmodifiableSortedMap(new TreeMap<>(changed));
-        }
-
-        /**
-         * Returns whether the two captures describe the same schema.
-         *
-         * @return {@code true} when there is no difference
-         */
-        public boolean equivalent() {
-            return missing.isEmpty() && unexpected.isEmpty() && changed.isEmpty();
-        }
-
-        /**
-         * Renders the difference for a failure message, limiting each section so
-         * a large divergence does not flood the log.
-         *
-         * @param limit the most entries to list per section
-         * @return a human-readable description
-         */
-        public String describe(int limit) {
-            if (equivalent()) {
-                return "the upgraded schema matches the from-scratch build";
-            }
-            StringBuilder message = new StringBuilder(
-                    "the upgraded schema differs from the from-scratch build");
-            appendKeys(message, "missing in the upgraded database", missing, limit);
-            appendKeys(message, "unexpected in the upgraded database", unexpected, limit);
-            if (!changed.isEmpty()) {
-                message.append(System.lineSeparator())
-                        .append("  changed (").append(changed.size()).append("):");
-                changed.entrySet().stream().limit(limit).forEach(entry -> message
-                        .append(System.lineSeparator()).append("    ").append(entry.getKey())
-                        .append(System.lineSeparator()).append("      from-scratch: ")
-                        .append(entry.getValue().expected())
-                        .append(System.lineSeparator()).append("      upgraded:     ")
-                        .append(entry.getValue().actual()));
-            }
-            return message.toString();
-        }
-
-        private static void appendKeys(StringBuilder message, String heading,
-                                       SortedSet<String> keys, int limit) {
-            if (keys.isEmpty()) {
-                return;
-            }
-            message.append(System.lineSeparator())
-                    .append("  ").append(heading).append(" (").append(keys.size()).append("):");
-            keys.stream().limit(limit)
-                    .forEach(key -> message.append(System.lineSeparator()).append("    ").append(key));
         }
     }
 
@@ -231,7 +140,7 @@ public final class CatalogSnapshot {
         }
     }
 
-    private static void captureKind(Connection connection, String query, List<String> schemas,                                    Map<String, String> snapshot) {
+    private static void captureKind(Connection connection, String query, List<String> schemas, Map<String, String> snapshot) {
         try (PreparedStatement statement = connection.prepareStatement(query)) {
             Array array = connection.createArrayOf("text", schemas.toArray());
             try {
@@ -439,5 +348,84 @@ public final class CatalogSnapshot {
                 + "'comment', obj_description(e.oid, 'pg_extension')) "
                 + "FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
                 + "WHERE n.nspname = ANY (?) AND e.extname <> 'plpgsql'";
+    }
+
+    /**
+     * A document that differs between the two captures.
+     *
+     * @param expected the from-scratch document
+     * @param actual   the upgraded document
+     */
+    public record Change(String expected, String actual) {
+    }
+
+    /**
+     * The difference between a from-scratch capture and an upgraded one.
+     *
+     * @param missing    objects the from-scratch build has but the upgrade does
+     *                   not (the dangerous case: the upgrade path is incomplete)
+     * @param unexpected objects the upgrade has but a from-scratch build does
+     *                   not
+     * @param changed    objects present in both with a different document
+     */
+    public record Report(SortedSet<String> missing, SortedSet<String> unexpected,
+                         SortedMap<String, Change> changed) {
+
+        /**
+         * Defensively copies and orders the collections.
+         */
+        public Report {
+            missing = Collections.unmodifiableSortedSet(new TreeSet<>(missing));
+            unexpected = Collections.unmodifiableSortedSet(new TreeSet<>(unexpected));
+            changed = Collections.unmodifiableSortedMap(new TreeMap<>(changed));
+        }
+
+        private static void appendKeys(StringBuilder message, String heading,
+                                       SortedSet<String> keys, int limit) {
+            if (keys.isEmpty()) {
+                return;
+            }
+            message.append(System.lineSeparator())
+                    .append("  ").append(heading).append(" (").append(keys.size()).append("):");
+            keys.stream().limit(limit)
+                    .forEach(key -> message.append(System.lineSeparator()).append("    ").append(key));
+        }
+
+        /**
+         * Returns whether the two captures describe the same schema.
+         *
+         * @return {@code true} when there is no difference
+         */
+        public boolean equivalent() {
+            return missing.isEmpty() && unexpected.isEmpty() && changed.isEmpty();
+        }
+
+        /**
+         * Renders the difference for a failure message, limiting each section so
+         * a large divergence does not flood the log.
+         *
+         * @param limit the most entries to list per section
+         * @return a human-readable description
+         */
+        public String describe(int limit) {
+            if (equivalent()) {
+                return "the upgraded schema matches the from-scratch build";
+            }
+            StringBuilder message = new StringBuilder(
+                    "the upgraded schema differs from the from-scratch build");
+            appendKeys(message, "missing in the upgraded database", missing, limit);
+            appendKeys(message, "unexpected in the upgraded database", unexpected, limit);
+            if (!changed.isEmpty()) {
+                message.append(System.lineSeparator())
+                        .append("  changed (").append(changed.size()).append("):");
+                changed.entrySet().stream().limit(limit).forEach(entry -> message
+                        .append(System.lineSeparator()).append("    ").append(entry.getKey())
+                        .append(System.lineSeparator()).append("      from-scratch: ")
+                        .append(entry.getValue().expected())
+                        .append(System.lineSeparator()).append("      upgraded:     ")
+                        .append(entry.getValue().actual()));
+            }
+            return message.toString();
+        }
     }
 }

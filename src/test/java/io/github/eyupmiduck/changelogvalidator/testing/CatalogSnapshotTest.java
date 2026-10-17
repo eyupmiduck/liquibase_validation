@@ -15,9 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link CatalogSnapshot} against a real PostgreSQL: it captures the
@@ -30,7 +28,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CatalogSnapshotTest extends PostgresTestBase {
 
     private static final String FIXTURE = "fixture";
-
+    private static final List<String> FIXTURE_SQL = List.of(
+            "CREATE SCHEMA " + FIXTURE,
+            "CREATE DOMAIN " + FIXTURE + ".positive_int AS integer CHECK (VALUE > 0)",
+            "CREATE TYPE " + FIXTURE + ".color AS ENUM ('red', 'green')",
+            "CREATE TYPE " + FIXTURE + ".pair AS (a integer, b text)",
+            "CREATE TABLE " + FIXTURE + ".widget ("
+                    + "id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "
+                    + "name text NOT NULL DEFAULT 'x', "
+                    + "shade " + FIXTURE + ".color, "
+                    + "amount " + FIXTURE + ".positive_int)",
+            "CREATE INDEX widget_name_idx ON " + FIXTURE + ".widget (name)",
+            "CREATE SEQUENCE " + FIXTURE + ".widget_seq",
+            "CREATE FUNCTION " + FIXTURE + ".bump(i integer) RETURNS integer "
+                    + "LANGUAGE sql IMMUTABLE AS 'SELECT i + 1'",
+            "CREATE FUNCTION " + FIXTURE + ".bump(s text) RETURNS text "
+                    + "LANGUAGE sql IMMUTABLE AS 'SELECT s || ''!'''",
+            "CREATE FUNCTION " + FIXTURE + ".touch() RETURNS trigger LANGUAGE plpgsql AS "
+                    + "$$ BEGIN NEW.name := coalesce(NEW.name, 't'); RETURN NEW; END $$",
+            "CREATE TRIGGER widget_touch BEFORE UPDATE ON " + FIXTURE + ".widget "
+                    + "FOR EACH ROW EXECUTE FUNCTION " + FIXTURE + ".touch()",
+            "COMMENT ON TABLE " + FIXTURE + ".widget IS 'fixture table'",
+            "COMMENT ON COLUMN " + FIXTURE + ".widget.name IS 'fixture column'");
     private Connection scratch;
     private String scratchDatabase;
 
@@ -143,27 +162,4 @@ class CatalogSnapshotTest extends PostgresTestBase {
         assertEquals(snapshot.get("relation/fixture.widget"), Files.readString(relation).strip());
         assertTrue(Files.isRegularFile(root.resolve("function/fixture.bump(integer).json")));
     }
-
-    private static final List<String> FIXTURE_SQL = List.of(
-            "CREATE SCHEMA " + FIXTURE,
-            "CREATE DOMAIN " + FIXTURE + ".positive_int AS integer CHECK (VALUE > 0)",
-            "CREATE TYPE " + FIXTURE + ".color AS ENUM ('red', 'green')",
-            "CREATE TYPE " + FIXTURE + ".pair AS (a integer, b text)",
-            "CREATE TABLE " + FIXTURE + ".widget ("
-                    + "id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "
-                    + "name text NOT NULL DEFAULT 'x', "
-                    + "shade " + FIXTURE + ".color, "
-                    + "amount " + FIXTURE + ".positive_int)",
-            "CREATE INDEX widget_name_idx ON " + FIXTURE + ".widget (name)",
-            "CREATE SEQUENCE " + FIXTURE + ".widget_seq",
-            "CREATE FUNCTION " + FIXTURE + ".bump(i integer) RETURNS integer "
-                    + "LANGUAGE sql IMMUTABLE AS 'SELECT i + 1'",
-            "CREATE FUNCTION " + FIXTURE + ".bump(s text) RETURNS text "
-                    + "LANGUAGE sql IMMUTABLE AS 'SELECT s || ''!'''",
-            "CREATE FUNCTION " + FIXTURE + ".touch() RETURNS trigger LANGUAGE plpgsql AS "
-                    + "$$ BEGIN NEW.name := coalesce(NEW.name, 't'); RETURN NEW; END $$",
-            "CREATE TRIGGER widget_touch BEFORE UPDATE ON " + FIXTURE + ".widget "
-                    + "FOR EACH ROW EXECUTE FUNCTION " + FIXTURE + ".touch()",
-            "COMMENT ON TABLE " + FIXTURE + ".widget IS 'fixture table'",
-            "COMMENT ON COLUMN " + FIXTURE + ".widget.name IS 'fixture column'");
 }

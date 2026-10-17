@@ -492,8 +492,8 @@ fetches `liquibase-validation` does) and the repository must have read access to
 the package.
 
 Beyond applying cleanly, the base also builds a database from the current
-changelog **alone** and asserts the two schemas match, object by object
-(`CatalogSnapshot`, direct `pg_catalog` queries). It catches an upgrade that runs
+changelog **alone** and asserts the two schemas match, object by object (`CatalogSnapshot`, direct `pg_catalog`
+queries). It catches an upgrade that runs
 but leaves a schema different from a fresh install: a missing or extra column, a
 constraint or index only the fresh path gets, a stale routine overload, a
 forgotten comment, a grant only one path has. Overloads are compared per
