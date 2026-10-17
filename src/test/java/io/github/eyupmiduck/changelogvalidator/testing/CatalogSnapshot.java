@@ -10,10 +10,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Captures the schema of a set of PostgreSQL schemas as a map of
@@ -112,8 +116,122 @@ public final class CatalogSnapshot {
         }
     }
 
-    private static void captureKind(Connection connection, String query, List<String> schemas,
-                                    Map<String, String> snapshot) {
+    /**
+     * A document that differs between the two captures.
+     *
+     * @param expected the from-scratch document
+     * @param actual   the upgraded document
+     */
+    public record Change(String expected, String actual) {
+    }
+
+    /**
+     * The difference between a from-scratch capture and an upgraded one.
+     *
+     * @param missing    objects the from-scratch build has but the upgrade does
+     *                   not (the dangerous case: the upgrade path is incomplete)
+     * @param unexpected objects the upgrade has but a from-scratch build does
+     *                   not
+     * @param changed    objects present in both with a different document
+     */
+    public record Report(SortedSet<String> missing, SortedSet<String> unexpected,
+                         SortedMap<String, Change> changed) {
+
+        /**
+         * Defensively copies and orders the collections.
+         */
+        public Report {
+            missing = Collections.unmodifiableSortedSet(new TreeSet<>(missing));
+            unexpected = Collections.unmodifiableSortedSet(new TreeSet<>(unexpected));
+            changed = Collections.unmodifiableSortedMap(new TreeMap<>(changed));
+        }
+
+        /**
+         * Returns whether the two captures describe the same schema.
+         *
+         * @return {@code true} when there is no difference
+         */
+        public boolean equivalent() {
+            return missing.isEmpty() && unexpected.isEmpty() && changed.isEmpty();
+        }
+
+        /**
+         * Renders the difference for a failure message, limiting each section so
+         * a large divergence does not flood the log.
+         *
+         * @param limit the most entries to list per section
+         * @return a human-readable description
+         */
+        public String describe(int limit) {
+            if (equivalent()) {
+                return "the upgraded schema matches the from-scratch build";
+            }
+            StringBuilder message = new StringBuilder(
+                    "the upgraded schema differs from the from-scratch build");
+            appendKeys(message, "missing in the upgraded database", missing, limit);
+            appendKeys(message, "unexpected in the upgraded database", unexpected, limit);
+            if (!changed.isEmpty()) {
+                message.append(System.lineSeparator())
+                        .append("  changed (").append(changed.size()).append("):");
+                changed.entrySet().stream().limit(limit).forEach(entry -> message
+                        .append(System.lineSeparator()).append("    ").append(entry.getKey())
+                        .append(System.lineSeparator()).append("      from-scratch: ")
+                        .append(entry.getValue().expected())
+                        .append(System.lineSeparator()).append("      upgraded:     ")
+                        .append(entry.getValue().actual()));
+            }
+            return message.toString();
+        }
+
+        private static void appendKeys(StringBuilder message, String heading,
+                                       SortedSet<String> keys, int limit) {
+            if (keys.isEmpty()) {
+                return;
+            }
+            message.append(System.lineSeparator())
+                    .append("  ").append(heading).append(" (").append(keys.size()).append("):");
+            keys.stream().limit(limit)
+                    .forEach(key -> message.append(System.lineSeparator()).append("    ").append(key));
+        }
+    }
+
+    /**
+     * Compares a from-scratch capture with an upgraded one.
+     *
+     * @param fresh   the from-scratch capture (the reference)
+     * @param upgrade the upgraded capture
+     * @return the difference
+     */
+    public static Report compare(Map<String, String> fresh, Map<String, String> upgrade) {
+        Objects.requireNonNull(fresh, "fresh");
+        Objects.requireNonNull(upgrade, "upgrade");
+        SortedSet<String> missing = new TreeSet<>(fresh.keySet());
+        missing.removeAll(upgrade.keySet());
+        SortedSet<String> unexpected = new TreeSet<>(upgrade.keySet());
+        unexpected.removeAll(fresh.keySet());
+        SortedMap<String, Change> changed = new TreeMap<>();
+        for (Map.Entry<String, String> entry : fresh.entrySet()) {
+            String actual = upgrade.get(entry.getKey());
+            if (actual != null && !actual.equals(entry.getValue())) {
+                changed.put(entry.getKey(), new Change(entry.getValue(), actual));
+            }
+        }
+        return new Report(missing, unexpected, changed);
+    }
+
+    /**
+     * Fails with the difference when the upgraded schema does not match the
+     * from-scratch build.
+     *
+     * @param report the comparison result
+     */
+    public static void assertEquivalent(Report report) {
+        if (!report.equivalent()) {
+            throw new AssertionError(report.describe(20));
+        }
+    }
+
+    private static void captureKind(Connection connection, String query, List<String> schemas,                                    Map<String, String> snapshot) {
         try (PreparedStatement statement = connection.prepareStatement(query)) {
             Array array = connection.createArrayOf("text", schemas.toArray());
             try {
