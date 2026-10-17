@@ -121,6 +121,10 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     }
 
     private void prepareUpgradeDatabase() throws SQLException {
+        // The scratch database is fresh, so the consumer's extension hook (for
+        // example plpgsql_check or pg_background, which the changelog's routines
+        // reference) must run here too, not only for the template.
+        installExtensions(upgradeDatabase);
         // The owner creates the changelog's schemas and objects, so grant it
         // what a real deployment would have (the init script does this for the
         // project's main database only).
