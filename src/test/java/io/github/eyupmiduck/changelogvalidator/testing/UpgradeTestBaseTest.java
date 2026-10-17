@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.jar.JarEntry;
@@ -66,6 +67,15 @@ class UpgradeTestBaseTest extends UpgradeTestBase {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * The fixture changelog creates nothing, so the public schema is the only
+     * one to compare (both captures are empty).
+     */
+    @Override
+    protected Collection<String> managedSchemas() {
+        return List.of("public");
     }
 
     /**
