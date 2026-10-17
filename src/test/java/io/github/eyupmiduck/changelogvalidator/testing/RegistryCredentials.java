@@ -75,16 +75,6 @@ public record RegistryCredentials(String username, String password) {
     }
 
     /**
-     * Returns whether both a username and a password are present.
-     *
-     * @return {@code true} when the credentials are usable
-     */
-    public boolean present() {
-        return username != null && !username.isBlank()
-                && password != null && !password.isBlank();
-    }
-
-    /**
      * Detects credentials from the environment, falling back to
      * {@code ~/.m2/settings.xml}.
      *
@@ -216,5 +206,15 @@ public record RegistryCredentials(String username, String password) {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /**
+     * Returns whether both a username and a password are present.
+     *
+     * @return {@code true} when the credentials are usable
+     */
+    public boolean present() {
+        return username != null && !username.isBlank()
+                && password != null && !password.isBlank();
     }
 }

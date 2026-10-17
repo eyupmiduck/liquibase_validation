@@ -8,16 +8,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link RegistryCredentials} resolves credentials the way CI
  * (environment variables) and a local build ({@code settings.xml}) provide them.
  */
 class RegistryCredentialsTest {
+
+    private static Path writeSettings(Path directory, String xml) throws IOException {
+        Path settings = directory.resolve("settings.xml");
+        Files.writeString(settings, xml);
+        return settings;
+    }
 
     /**
      * The environment variables win when both a username and a token are set.
@@ -177,11 +180,5 @@ class RegistryCredentialsTest {
                 IllegalStateException.class,
                 () -> RegistryCredentials.fromSettingsXml(settings, name -> null));
         assertTrue(failure.getMessage().contains(settings.toString()));
-    }
-
-    private static Path writeSettings(Path directory, String xml) throws IOException {
-        Path settings = directory.resolve("settings.xml");
-        Files.writeString(settings, xml);
-        return settings;
     }
 }

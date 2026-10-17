@@ -29,6 +29,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class UpgradeTestBaseTest extends UpgradeTestBase {
 
+    private static Path buildFixtureJar() throws IOException {
+        Path db = ChangelogTestSupport.changelogRoot().getParent();
+        Path fixture = Path.of("target", "upgrade-test-fixture");
+        Files.createDirectories(fixture);
+        Path jar = fixture.resolve("previous.jar");
+        try (OutputStream output = Files.newOutputStream(jar);
+             JarOutputStream jarOutput = new JarOutputStream(output);
+             Stream<Path> paths = Files.walk(db)) {
+            for (Path path : paths.filter(Files::isRegularFile).toList()) {
+                String name = "db/" + db.relativize(path).toString().replace(File.separatorChar, '/');
+                jarOutput.putNextEntry(new JarEntry(name));
+                Files.copy(path, jarOutput);
+                jarOutput.closeEntry();
+            }
+        }
+        return jar;
+    }
+
     /**
      * The coordinates are unused because the fixture jar is supplied directly.
      */
@@ -62,23 +80,5 @@ class UpgradeTestBaseTest extends UpgradeTestBase {
                         + report().currentRelease());
         assertEquals(1, upgradeDsl().fetchOne("SELECT 1").get(0, Integer.class));
         assertTrue(upgradeDatabaseName().startsWith("upgrade_"));
-    }
-
-    private static Path buildFixtureJar() throws IOException {
-        Path db = ChangelogTestSupport.changelogRoot().getParent();
-        Path fixture = Path.of("target", "upgrade-test-fixture");
-        Files.createDirectories(fixture);
-        Path jar = fixture.resolve("previous.jar");
-        try (OutputStream output = Files.newOutputStream(jar);
-             JarOutputStream jarOutput = new JarOutputStream(output);
-             Stream<Path> paths = Files.walk(db)) {
-            for (Path path : paths.filter(Files::isRegularFile).toList()) {
-                String name = "db/" + db.relativize(path).toString().replace(File.separatorChar, '/');
-                jarOutput.putNextEntry(new JarEntry(name));
-                Files.copy(path, jarOutput);
-                jarOutput.closeEntry();
-            }
-        }
-        return jar;
     }
 }

@@ -11,11 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,43 +52,12 @@ public final class PublishedRelease {
     }
 
     /**
-     * The coordinates of the artifact to resolve.
-     *
-     * @param baseUrl        the repository base URL, for example
-     *                       {@code https://maven.pkg.github.com/eyupmiduck/dml_utils}
-     * @param groupId        the Maven group id
-     * @param artifactId     the Maven artifact id
-     * @param currentVersion the version being built; the release must be below it
-     */
-    public record Coordinates(String baseUrl, String groupId, String artifactId, String currentVersion) {
-
-        /**
-         * Validates the coordinates.
-         */
-        public Coordinates {
-            requireNonBlank(baseUrl, "baseUrl");
-            requireNonBlank(groupId, "groupId");
-            requireNonBlank(artifactId, "artifactId");
-            requireNonBlank(currentVersion, "currentVersion");
-        }
-    }
-
-    /**
-     * A resolved release and the local path of its jar.
-     *
-     * @param version the release version
-     * @param jar     the cached jar
-     */
-    public record Resolved(String version, Path jar) {
-    }
-
-    /**
      * Resolves the most recent published release using the default cache
      * directory and detected credentials.
      *
      * @param coordinates the artifact coordinates
      * @return the resolved release, or empty when no release is below the
-     *         current version
+     * current version
      */
     public static Optional<Resolved> resolve(Coordinates coordinates) {
         return resolve(coordinates, DEFAULT_CACHE_DIRECTORY, RegistryCredentials.detect());
@@ -104,7 +69,7 @@ public final class PublishedRelease {
      * @param coordinates    the artifact coordinates
      * @param cacheDirectory the directory the jar is cached in
      * @return the resolved release, or empty when no release is below the
-     *         current version
+     * current version
      */
     public static Optional<Resolved> resolve(Coordinates coordinates, Path cacheDirectory) {
         return resolve(coordinates, cacheDirectory, RegistryCredentials.detect());
@@ -117,7 +82,7 @@ public final class PublishedRelease {
      * @param cacheDirectory the directory the jar is cached in
      * @param credentials    the registry credentials
      * @return the resolved release, or empty when no release is below the
-     *         current version
+     * current version
      */
     static Optional<Resolved> resolve(Coordinates coordinates, Path cacheDirectory,
                                       RegistryCredentials credentials) {
@@ -236,9 +201,9 @@ public final class PublishedRelease {
         if (status == 401 || status == 403) {
             String hint = credentials.present()
                     ? "the supplied credentials were rejected; check the token has read:packages "
-                            + "and the repository has access to the package"
+                    + "and the repository has access to the package"
                     : "no credentials were found; set GITHUB_ACTOR/GITHUB_TOKEN or add a '"
-                            + RegistryCredentials.DEFAULT_SERVER_ID + "' server to ~/.m2/settings.xml";
+                    + RegistryCredentials.DEFAULT_SERVER_ID + "' server to ~/.m2/settings.xml";
             throw new IllegalStateException(
                     what + " at " + uri + " returned HTTP " + status + ": " + hint);
         }
@@ -299,5 +264,36 @@ public final class PublishedRelease {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");
         }
+    }
+
+    /**
+     * The coordinates of the artifact to resolve.
+     *
+     * @param baseUrl        the repository base URL, for example
+     *                       {@code https://maven.pkg.github.com/eyupmiduck/dml_utils}
+     * @param groupId        the Maven group id
+     * @param artifactId     the Maven artifact id
+     * @param currentVersion the version being built; the release must be below it
+     */
+    public record Coordinates(String baseUrl, String groupId, String artifactId, String currentVersion) {
+
+        /**
+         * Validates the coordinates.
+         */
+        public Coordinates {
+            requireNonBlank(baseUrl, "baseUrl");
+            requireNonBlank(groupId, "groupId");
+            requireNonBlank(artifactId, "artifactId");
+            requireNonBlank(currentVersion, "currentVersion");
+        }
+    }
+
+    /**
+     * A resolved release and the local path of its jar.
+     *
+     * @param version the release version
+     * @param jar     the cached jar
+     */
+    public record Resolved(String version, Path jar) {
     }
 }

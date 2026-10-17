@@ -44,7 +44,7 @@ final class MavenVersion {
      * @param left  the left version
      * @param right the right version
      * @return a negative integer, zero or a positive integer as {@code left} is
-     *         less than, equal to or greater than {@code right}
+     * less than, equal to or greater than {@code right}
      */
     static int compare(String left, String right) {
         String[] leftTokens = SEPARATOR.split(left.toLowerCase(Locale.ROOT));

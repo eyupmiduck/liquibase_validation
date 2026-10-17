@@ -41,43 +41,6 @@ public final class LiquibaseUpgrade {
     }
 
     /**
-     * Where Liquibase keeps its tracking tables.
-     *
-     * @param liquibaseSchema      the schema holding the tracking tables
-     * @param changeLogTable       the changelog tracking table name
-     * @param changeLogLockTable   the changelog lock table name
-     */
-    public record TrackingSettings(String liquibaseSchema, String changeLogTable,
-                                   String changeLogLockTable) {
-
-        /**
-         * Validates the settings.
-         */
-        public TrackingSettings {
-            requireNonBlank(liquibaseSchema, "liquibaseSchema");
-            requireNonBlank(changeLogTable, "changeLogTable");
-            requireNonBlank(changeLogLockTable, "changeLogLockTable");
-        }
-    }
-
-    /**
-     * The changesets each run applied, by id, in changelog order.
-     *
-     * @param previousRelease the changesets applied from the previous release
-     * @param currentRelease  the changesets the current changelog added on top
-     */
-    public record Report(List<String> previousRelease, List<String> currentRelease) {
-
-        /**
-         * Defensively copies the lists.
-         */
-        public Report {
-            previousRelease = List.copyOf(previousRelease);
-            currentRelease = List.copyOf(currentRelease);
-        }
-    }
-
-    /**
      * Applies the previous release jar's changelog, then the current changelog
      * on the test classpath.
      *
@@ -162,6 +125,43 @@ public final class LiquibaseUpgrade {
     private static void requireNonBlank(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");
+        }
+    }
+
+    /**
+     * Where Liquibase keeps its tracking tables.
+     *
+     * @param liquibaseSchema    the schema holding the tracking tables
+     * @param changeLogTable     the changelog tracking table name
+     * @param changeLogLockTable the changelog lock table name
+     */
+    public record TrackingSettings(String liquibaseSchema, String changeLogTable,
+                                   String changeLogLockTable) {
+
+        /**
+         * Validates the settings.
+         */
+        public TrackingSettings {
+            requireNonBlank(liquibaseSchema, "liquibaseSchema");
+            requireNonBlank(changeLogTable, "changeLogTable");
+            requireNonBlank(changeLogLockTable, "changeLogLockTable");
+        }
+    }
+
+    /**
+     * The changesets each run applied, by id, in changelog order.
+     *
+     * @param previousRelease the changesets applied from the previous release
+     * @param currentRelease  the changesets the current changelog added on top
+     */
+    public record Report(List<String> previousRelease, List<String> currentRelease) {
+
+        /**
+         * Defensively copies the lists.
+         */
+        public Report {
+            previousRelease = List.copyOf(previousRelease);
+            currentRelease = List.copyOf(currentRelease);
         }
     }
 }

@@ -10,8 +10,8 @@
 the published jar. Every test that touches the changelog starts from an **empty
 database**: the jOOQ codegen container and
 `testing.PostgresTestBase` both apply the full changelog to a fresh database.
-Nothing ever exercises the path a real consumer takes — applying a new release
-**on top of** an already-deployed older release.
+Nothing ever exercises the path a real consumer takes — applying a new release **on top of** an already-deployed older
+release.
 
 That gap hides a class of upgrade bugs:
 

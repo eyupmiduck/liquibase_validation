@@ -11,20 +11,14 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.List;
 import java.util.UUID;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link LiquibaseUpgrade} against a real PostgreSQL: the previous
@@ -63,6 +57,49 @@ class LiquibaseUpgradeTest extends PostgresTestBase {
 
     private Connection scratch;
     private String scratchDatabase;
+
+    private static Path writeChangelog(Path root, String... changeSets) throws IOException {
+        Path changelog = root.resolve("db/changelog");
+        Path changes = changelog.resolve("changes");
+        Files.createDirectories(changes);
+        Files.writeString(changelog.resolve("db.changelog-master.xml"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+                    <include file="changes/changes.xml" relativeToChangelogFile="true"/>
+                </databaseChangeLog>
+                """);
+        StringBuilder xml = new StringBuilder("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog
+                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+                """);
+        for (String changeSet : changeSets) {
+            xml.append(changeSet);
+        }
+        Files.writeString(changes.resolve("changes.xml"), xml.append("</databaseChangeLog>\n").toString());
+        return root;
+    }
+
+    private static Path jar(Path root, Path jarFile) throws IOException {
+        try (OutputStream output = Files.newOutputStream(jarFile);
+             JarOutputStream jar = new JarOutputStream(output);
+             Stream<Path> paths = Files.walk(root)) {
+            for (Path path : paths.filter(Files::isRegularFile).toList()) {
+                String name = root.relativize(path).toString().replace(File.separatorChar, '/');
+                jar.putNextEntry(new JarEntry(name));
+                Files.copy(path, jar);
+                jar.closeEntry();
+            }
+        }
+        return jarFile;
+    }
 
     /**
      * Creates a scratch database with the Liquibase tracking schema.
@@ -148,49 +185,6 @@ class LiquibaseUpgradeTest extends PostgresTestBase {
         assertEquals(List.of("001-create-widget"), report.previousRelease());
         assertEquals(List.of("002-add-widget-name"), report.currentRelease());
         assertEquals(1, columnCount("upgrade_widget", "name"));
-    }
-
-    private static Path writeChangelog(Path root, String... changeSets) throws IOException {
-        Path changelog = root.resolve("db/changelog");
-        Path changes = changelog.resolve("changes");
-        Files.createDirectories(changes);
-        Files.writeString(changelog.resolve("db.changelog-master.xml"), """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog
-                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
-                                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                    <include file="changes/changes.xml" relativeToChangelogFile="true"/>
-                </databaseChangeLog>
-                """);
-        StringBuilder xml = new StringBuilder("""
-                <?xml version="1.0" encoding="UTF-8"?>
-                <databaseChangeLog
-                        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
-                                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-                """);
-        for (String changeSet : changeSets) {
-            xml.append(changeSet);
-        }
-        Files.writeString(changes.resolve("changes.xml"), xml.append("</databaseChangeLog>\n").toString());
-        return root;
-    }
-
-    private static Path jar(Path root, Path jarFile) throws IOException {
-        try (OutputStream output = Files.newOutputStream(jarFile);
-             JarOutputStream jar = new JarOutputStream(output);
-             Stream<Path> paths = Files.walk(root)) {
-            for (Path path : paths.filter(Files::isRegularFile).toList()) {
-                String name = root.relativize(path).toString().replace(File.separatorChar, '/');
-                jar.putNextEntry(new JarEntry(name));
-                Files.copy(path, jar);
-                jar.closeEntry();
-            }
-        }
-        return jarFile;
     }
 
     private int columnCount(String table, String column) throws SQLException {

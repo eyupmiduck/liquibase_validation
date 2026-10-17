@@ -2,15 +2,20 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link MavenVersion}'s ordering and snapshot detection, the rules
  * {@link PublishedRelease} uses to pick the release below the current version.
  */
 class MavenVersionTest {
+
+    private static void assertLess(String left, String right) {
+        assertTrue(MavenVersion.compare(left, right) < 0,
+                () -> left + " should sort below " + right);
+        assertTrue(MavenVersion.compare(right, left) > 0,
+                () -> right + " should sort above " + left);
+    }
 
     /**
      * Numeric segments compare numerically, and a missing trailing segment is
@@ -45,12 +50,5 @@ class MavenVersionTest {
         assertTrue(MavenVersion.isSnapshot("1.5.2.SNAPSHOT"));
         assertFalse(MavenVersion.isSnapshot("1.5.2"));
         assertFalse(MavenVersion.isSnapshot("1.5.2-RC1"));
-    }
-
-    private static void assertLess(String left, String right) {
-        assertTrue(MavenVersion.compare(left, right) < 0,
-                () -> left + " should sort below " + right);
-        assertTrue(MavenVersion.compare(right, left) > 0,
-                () -> right + " should sort above " + left);
     }
 }

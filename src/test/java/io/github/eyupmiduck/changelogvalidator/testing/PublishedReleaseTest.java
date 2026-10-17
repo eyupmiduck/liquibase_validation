@@ -21,10 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link PublishedRelease} against local HTTP servers: version
@@ -34,18 +31,42 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PublishedReleaseTest {
 
     private static final byte[] JAR = "dml_utils-1.2.0.jar".getBytes(StandardCharsets.UTF_8);
-
-    private HttpServer repository;
-    private HttpServer blob;
     private final List<String> repositoryPaths = new CopyOnWriteArrayList<>();
     private final List<String> blobPaths = new CopyOnWriteArrayList<>();
     private final Map<String, String> repositoryAuthorization = new ConcurrentHashMap<>();
     private final Map<String, String> blobAuthorization = new ConcurrentHashMap<>();
+    private HttpServer repository;
+    private HttpServer blob;
     private HttpHandler repositoryHandler;
     private HttpHandler blobHandler;
 
     @TempDir
     private Path cacheDirectory;
+
+    private static boolean isMetadata(HttpExchange exchange) {
+        return exchange.getRequestURI().getPath().endsWith("maven-metadata.xml");
+    }
+
+    private static byte[] metadata(String... versions) {
+        StringBuilder xml = new StringBuilder("<metadata><versioning><versions>");
+        for (String version : versions) {
+            xml.append("<version>").append(version).append("</version>");
+        }
+        return xml.append("</versions></versioning></metadata>")
+                .toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void respond(HttpExchange exchange, int status, byte[] body) throws IOException {
+        if (body.length == 0) {
+            exchange.sendResponseHeaders(status, -1);
+            exchange.close();
+            return;
+        }
+        exchange.sendResponseHeaders(status, body.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(body);
+        }
+    }
 
     /**
      * Starts a repository server and a second "blob storage" server.
@@ -251,30 +272,5 @@ class PublishedReleaseTest {
 
     private String blobBase() {
         return "http://127.0.0.1:" + blob.getAddress().getPort();
-    }
-
-    private static boolean isMetadata(HttpExchange exchange) {
-        return exchange.getRequestURI().getPath().endsWith("maven-metadata.xml");
-    }
-
-    private static byte[] metadata(String... versions) {
-        StringBuilder xml = new StringBuilder("<metadata><versioning><versions>");
-        for (String version : versions) {
-            xml.append("<version>").append(version).append("</version>");
-        }
-        return xml.append("</versions></versioning></metadata>")
-                .toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static void respond(HttpExchange exchange, int status, byte[] body) throws IOException {
-        if (body.length == 0) {
-            exchange.sendResponseHeaders(status, -1);
-            exchange.close();
-            return;
-        }
-        exchange.sendResponseHeaders(status, body.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(body);
-        }
     }
 }
