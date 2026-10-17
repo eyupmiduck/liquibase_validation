@@ -373,6 +373,56 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Opens a connection to an arbitrary database in the shared container as
+     * the test role, for a test that builds its own database (for example the
+     * previous-release upgrade test). The caller is responsible for closing it.
+     *
+     * @param database the database to connect to
+     * @return a new connection as the test role
+     * @throws SQLException if the connection cannot be opened
+     */
+    protected Connection openTestConnection(String database) throws SQLException {
+        return connection(database, testUser(), testPassword());
+    }
+
+    /**
+     * Opens a connection to an arbitrary database in the shared container as
+     * the schema owner, for a test that builds its own database. The caller is
+     * responsible for closing it.
+     *
+     * @param database the database to connect to
+     * @return a new owner connection
+     * @throws SQLException if the connection cannot be opened
+     */
+    protected Connection openOwnerConnection(String database) throws SQLException {
+        return connection(database, ownerUser(), ownerPassword());
+    }
+
+    /**
+     * Creates an empty database in the shared container, as the superuser. The
+     * caller grants the owner role the privileges it needs and drops the
+     * database afterwards.
+     *
+     * @param database the database to create
+     * @throws SQLException if the database cannot be created
+     */
+    protected void createDatabase(String database) throws SQLException {
+        execute(adminConnection(databaseName()), "CREATE DATABASE \"" + database + "\"");
+    }
+
+    /**
+     * Drops a database in the shared container, as the superuser, tolerating an
+     * already-gone database.
+     *
+     * @param database the database to drop
+     * @throws SQLException if the database cannot be dropped
+     */
+    protected void dropDatabase(String database) throws SQLException {
+        execute(adminConnection(databaseName()),
+                "DROP DATABASE IF EXISTS \"" + database + "\" WITH (FORCE)");
+    }
+
+    /**
      * Returns whether a base table exists (ordinary or partitioned), reading the
      * catalog directly so the lookup works for schemas the test role has no
      * privileges on. A view, sequence or index with the same name does not count.
@@ -494,8 +544,7 @@ public abstract class PostgresTestBase {
             return;
         }
         try {
-            execute(adminConnection(databaseName()),
-                    "DROP DATABASE IF EXISTS \"" + databaseName + "\" WITH (FORCE)");
+            dropDatabase(databaseName);
         } catch (SQLException ignored) {
             // Best effort; the @AfterAll cleanup is the backstop.
         }
