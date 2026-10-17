@@ -36,10 +36,13 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 - `io.github.eyupmiduck.changelogvalidator.testing` — shared test support,
   published under the `tests` classifier: a Testcontainers `PostgresTestBase`
   (shared container, migrated template database, per-class clone, introspection
-  and SQLSTATE helpers), a classpath `ChangelogTestSupport`, and
-  `ChangelogAssertions`/`RoutineAssertions`. See
-  [Using the library](#using-the-library) and
-  [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md).
+  and SQLSTATE helpers), a classpath `ChangelogTestSupport`,
+  `ChangelogAssertions`/`RoutineAssertions`, and an `UpgradeTestBase` that
+  applies the most recent published release's changelog and then the current one
+  (see [Using the library](#using-the-library),
+  [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)
+  and
+  [docs/adr/0005-previous-release-upgrade-test.md](docs/adr/0005-previous-release-upgrade-test.md)).
 
 ## Changelog linter
 
@@ -392,9 +395,10 @@ The library is published to GitHub Packages from a `v*` tag (for example
 
 The same artifact also publishes a `tests` classifier with shared test support
 (`io.github.eyupmiduck.changelogvalidator.testing`): `ChangelogTestSupport`,
-`PostgresTestBase` and the `ChangelogAssertions`/`RoutineAssertions` helpers,
-so a project that builds a Liquibase changelog and PostgreSQL routines can share
-one implementation instead of copying it (see
+`PostgresTestBase`, the `ChangelogAssertions`/`RoutineAssertions` helpers and the
+previous-release `UpgradeTestBase`, so a project that builds a Liquibase
+changelog and PostgreSQL routines can share one implementation instead of
+copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
 
 ```xml
@@ -444,6 +448,49 @@ token with the `read:packages` scope is required):
 Before a consuming repository's `GITHUB_TOKEN` can read the package, grant
 that repository read access under the package's **Manage Actions access**
 settings.
+
+### Incremental upgrade from the previous release
+
+`UpgradeTestBase` checks the path a real consumer takes: it applies the **most
+recent published release** of the project's own artifact, then the current
+changelog, to a scratch database in the shared container. Liquibase records the
+same `FILENAME` for a changeset applied from the released jar and from the
+current classpath, so the second run applies only the delta; a changeset that
+was released and then edited fails Liquibase's checksum validation.
+
+Extend it and supply the coordinates of the project's own artifact:
+
+```java
+class LiquibaseUpgradeTest extends UpgradeTestBase {
+
+    @Override
+    protected PublishedRelease.Coordinates releaseCoordinates() {
+        return new PublishedRelease.Coordinates(
+                "https://maven.pkg.github.com/eyupmiduck/my_project",
+                "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
+    }
+}
+```
+
+The fixture-free version resolves the release automatically: it reads
+`maven-metadata.xml` from the repository, selects the highest non-`SNAPSHOT`
+version strictly below the current version, and downloads the jar to
+`target/previous-release` (override `cacheDirectory()` to change that). The
+roles, image, tracking-table names and changelog resource come from the
+`PostgresTestBase` accessors the project already overrides.
+
+Credentials are read from `GITHUB_ACTOR`/`GITHUB_TOKEN` (or `GH_TOKEN`), falling
+back to the `github` server in `~/.m2/settings.xml` with `${env.VAR}`
+placeholders expanded. CI must grant `packages: read` (the workflow that already
+fetches `liquibase-validation` does) and the repository must have read access to
+the package.
+
+It is intentionally **deploy-only**: it proves the migration path executes, not
+that the upgraded schema equals a from-scratch build. When there is no published
+release below the current version it skips (so a project's first release does not
+break its build), and it can be disabled for an offline run with
+`-Dskip.upgrade-test=true`. See
+[docs/adr/0005-previous-release-upgrade-test.md](docs/adr/0005-previous-release-upgrade-test.md).
 
 ## PL/pgSQL static analysis
 
