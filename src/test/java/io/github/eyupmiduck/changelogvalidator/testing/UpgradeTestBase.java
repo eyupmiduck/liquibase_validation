@@ -7,10 +7,13 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -25,8 +28,16 @@ import java.util.Optional;
  * its own database, grants the owner role the privileges the changelog needs,
  * and runs {@link LiquibaseUpgrade} as the owner against it.
  *
- * <p>A subclass supplies {@link #releaseCoordinates()}; the roles, image,
- * tracking table names and changelog resource come from the inherited accessors.
+ * <p>It also builds a second database from the current changelog alone and
+ * compares the two schemas with {@link CatalogSnapshot}, so an upgrade that runs
+ * but leaves the schema different from a fresh build fails. The comparison is
+ * over {@link #managedSchemas()}, can be turned off with
+ * {@link #catalogComparisonEnabled()}, and writes both captures to
+ * {@link #catalogDumpDirectory()} for review.
+ *
+ * <p>A subclass supplies {@link #releaseCoordinates()} and
+ * {@link #managedSchemas()}; the roles, image, tracking table names and changelog
+ * resource come from the inherited accessors.
  *
  * <p>The test skips (rather than fails) when there is no published release below
  * the current version, so a project's first release does not break its build. It
@@ -40,6 +51,7 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     public static final String SKIP_PROPERTY = "skip.upgrade-test";
 
     private String upgradeDatabase;
+    private String freshDatabase;
     private Connection upgradeConnection;
     private DSLContext upgradeDsl;
     private LiquibaseUpgrade.Report report;
@@ -51,6 +63,14 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      * @return the artifact coordinates
      */
     protected abstract PublishedRelease.Coordinates releaseCoordinates();
+
+    /**
+     * The schemas the changelog manages, compared between the upgraded database
+     * and a from-scratch build.
+     *
+     * @return the managed schemas
+     */
+    protected abstract Collection<String> managedSchemas();
 
     /**
      * Resolves the previous release jar, or empty when there is none. Override
@@ -84,9 +104,29 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     }
 
     /**
+     * Whether to compare the upgraded schema with a from-scratch build.
+     *
+     * @return {@code true} to compare (the default)
+     */
+    protected boolean catalogComparisonEnabled() {
+        return true;
+    }
+
+    /**
+     * The directory the two captures are written to, so a difference can be
+     * reviewed with a directory diff and uploaded as a build artifact.
+     *
+     * @return the dump directory
+     */
+    protected Path catalogDumpDirectory() {
+        return CatalogSnapshot.DEFAULT_DUMP_DIRECTORY;
+    }
+
+    /**
      * Resolves the previous release, creates a scratch database, applies the
-     * previous then the current changelog as the owner, and opens the upgraded
-     * database for assertions.
+     * previous then the current changelog as the owner, builds a from-scratch
+     * database and compares the two, and opens the upgraded database for
+     * assertions.
      */
     @BeforeAll
     void upgradeFromThePreviousRelease() throws Exception {
@@ -99,16 +139,46 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
 
         upgradeDatabase = "upgrade_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
         createDatabase(upgradeDatabase);
-        prepareUpgradeDatabase();
+        prepareDatabase(upgradeDatabase);
         try (Connection owner = openOwnerConnection(upgradeDatabase)) {
             report = LiquibaseUpgrade.apply(owner, trackingSettings(), previousJar.get(), masterResource());
         }
         upgradeConnection = openTestConnection(upgradeDatabase);
         upgradeDsl = DSL.using(upgradeConnection, SQLDialect.POSTGRES);
+
+        if (catalogComparisonEnabled()) {
+            compareCatalogWithFromScratchBuild();
+        }
     }
 
     /**
-     * Drops the scratch database and closes the upgraded connection.
+     * Builds a database from the current changelog alone and asserts its schema
+     * matches the upgraded one.
+     */
+    private void compareCatalogWithFromScratchBuild() throws SQLException, IOException {
+        freshDatabase = "fresh_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
+        createDatabase(freshDatabase);
+        prepareDatabase(freshDatabase);
+        try (Connection owner = openOwnerConnection(freshDatabase)) {
+            LiquibaseUpgrade.applyCurrent(owner, trackingSettings(), masterResource());
+        }
+
+        Map<String, String> fresh;
+        Map<String, String> upgrade;
+        try (Connection freshConnection = openOwnerConnection(freshDatabase);
+             Connection upgradeOwner = openOwnerConnection(upgradeDatabase)) {
+            fresh = CatalogSnapshot.capture(freshConnection, managedSchemas());
+            upgrade = CatalogSnapshot.capture(upgradeOwner, managedSchemas());
+        }
+        // Write both trees so a failure can be reviewed with `diff -r` and
+        // uploaded as a build artifact.
+        CatalogSnapshot.dump(fresh, catalogDumpDirectory().resolve("fresh"));
+        CatalogSnapshot.dump(upgrade, catalogDumpDirectory().resolve("upgrade"));
+        CatalogSnapshot.assertEquivalent(CatalogSnapshot.compare(fresh, upgrade));
+    }
+
+    /**
+     * Drops the scratch databases and closes the upgraded connection.
      */
     @AfterAll
     void dropUpgradeDatabase() throws Exception {
@@ -118,21 +188,24 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         if (upgradeDatabase != null) {
             dropDatabase(upgradeDatabase);
         }
+        if (freshDatabase != null) {
+            dropDatabase(freshDatabase);
+        }
     }
 
-    private void prepareUpgradeDatabase() throws SQLException {
+    private void prepareDatabase(String database) throws SQLException {
         // The scratch database is fresh, so the consumer's extension hook (for
         // example plpgsql_check or pg_background, which the changelog's routines
         // reference) must run here too, not only for the template.
-        installExtensions(upgradeDatabase);
+        installExtensions(database);
         // The owner creates the changelog's schemas and objects, so grant it
         // what a real deployment would have (the init script does this for the
         // project's main database only).
         try (Connection admin = openAdminConnection(databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON DATABASE \"" + upgradeDatabase + "\" TO " + ownerUser());
+            statement.execute("GRANT CREATE ON DATABASE \"" + database + "\" TO " + ownerUser());
         }
-        try (Connection admin = openAdminConnection(upgradeDatabase);
+        try (Connection admin = openAdminConnection(database);
              Statement statement = admin.createStatement()) {
             statement.execute("GRANT CREATE ON SCHEMA public TO " + ownerUser());
             statement.execute("GRANT CREATE ON SCHEMA public TO " + testUser());

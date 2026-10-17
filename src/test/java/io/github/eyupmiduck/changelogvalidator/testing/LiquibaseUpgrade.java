@@ -99,17 +99,44 @@ public final class LiquibaseUpgrade {
         Objects.requireNonNull(current, "current");
         Objects.requireNonNull(masterResource, "masterResource");
         try {
-            Database database = DatabaseFactory.getInstance()
-                    .findCorrectDatabaseImplementation(new JdbcConnection(connection));
-            database.setLiquibaseSchemaName(tracking.liquibaseSchema());
-            database.setDatabaseChangeLogTableName(tracking.changeLogTable());
-            database.setDatabaseChangeLogLockTableName(tracking.changeLogLockTable());
+            Database database = database(connection, tracking);
             List<String> previousApplied = run(database, previous, masterResource);
             List<String> currentApplied = run(database, current, masterResource);
             return new Report(previousApplied, currentApplied);
         } catch (LiquibaseException e) {
             throw new IllegalStateException("the Liquibase upgrade failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Applies the current changelog on the classpath to an empty database, the
+     * from-scratch build a catalog comparison checks the upgrade against.
+     *
+     * @param connection     an owner connection to an empty database
+     * @param tracking       the Liquibase tracking settings
+     * @param masterResource the changelog master resource, relative to the
+     *                       classpath
+     * @return the changesets applied, by id
+     */
+    public static List<String> applyCurrent(Connection connection, TrackingSettings tracking,
+                                            String masterResource) {
+        Objects.requireNonNull(connection, "connection");
+        Objects.requireNonNull(tracking, "tracking");
+        Objects.requireNonNull(masterResource, "masterResource");
+        try {
+            return run(database(connection, tracking), new ClassLoaderResourceAccessor(), masterResource);
+        } catch (LiquibaseException e) {
+            throw new IllegalStateException("the Liquibase update failed: " + e.getMessage(), e);
+        }
+    }
+
+    private static Database database(Connection connection, TrackingSettings tracking) throws LiquibaseException {
+        Database database = DatabaseFactory.getInstance()
+                .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+        database.setLiquibaseSchemaName(tracking.liquibaseSchema());
+        database.setDatabaseChangeLogTableName(tracking.changeLogTable());
+        database.setDatabaseChangeLogLockTableName(tracking.changeLogLockTable());
+        return database;
     }
 
     private static List<String> run(Database database, ResourceAccessor accessor, String masterResource)
