@@ -458,7 +458,8 @@ same `FILENAME` for a changeset applied from the released jar and from the
 current classpath, so the second run applies only the delta; a changeset that
 was released and then edited fails Liquibase's checksum validation.
 
-Extend it and supply the coordinates of the project's own artifact:
+Extend it and supply the coordinates of the project's own artifact and the
+schemas the changelog manages:
 
 ```java
 class LiquibaseUpgradeTest extends UpgradeTestBase {
@@ -468,6 +469,11 @@ class LiquibaseUpgradeTest extends UpgradeTestBase {
         return new PublishedRelease.Coordinates(
                 "https://maven.pkg.github.com/eyupmiduck/my_project",
                 "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
+    }
+
+    @Override
+    protected Collection<String> managedSchemas() {
+        return List.of("my_project", "my_project_lib");
     }
 }
 ```
@@ -485,11 +491,20 @@ placeholders expanded. CI must grant `packages: read` (the workflow that already
 fetches `liquibase-validation` does) and the repository must have read access to
 the package.
 
-It is intentionally **deploy-only**: it proves the migration path executes, not
-that the upgraded schema equals a from-scratch build. When there is no published
-release below the current version it skips (so a project's first release does not
-break its build), and it can be disabled for an offline run with
-`-Dskip.upgrade-test=true`. See
+Beyond applying cleanly, the base also builds a database from the current
+changelog **alone** and asserts the two schemas match, object by object
+(`CatalogSnapshot`, direct `pg_catalog` queries). It catches an upgrade that runs
+but leaves a schema different from a fresh install: a missing or extra column, a
+constraint or index only the fresh path gets, a stale routine overload, a
+forgotten comment, a grant only one path has. Overloads are compared per
+signature. Both captures are written one file per object under
+`target/catalog-snapshot/{fresh,upgrade}`, so a difference can be reviewed with
+`diff -r` and uploaded as a build artifact. The comparison covers
+`managedSchemas()` and can be turned off with `catalogComparisonEnabled()`.
+
+When there is no published release below the current version it skips (so a
+project's first release does not break its build), and it can be disabled for an
+offline run with `-Dskip.upgrade-test=true`. See
 [docs/adr/0005-previous-release-upgrade-test.md](docs/adr/0005-previous-release-upgrade-test.md).
 
 ## PL/pgSQL static analysis
