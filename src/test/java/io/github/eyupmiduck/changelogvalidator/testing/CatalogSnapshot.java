@@ -1,0 +1,325 @@
+package io.github.eyupmiduck.changelogvalidator.testing;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Array;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
+
+/**
+ * Captures the schema of a set of PostgreSQL schemas as a map of
+ * {@code kind/qualified-name -> canonical jsonb}, for comparing an upgraded
+ * database with a from-scratch build.
+ *
+ * <p>Every object is read from the PostgreSQL dictionary ({@code pg_catalog})
+ * with a direct query; the document is built server-side with
+ * {@code jsonb_build_object}/{@code jsonb_agg}, so {@code jsonb}'s text form is
+ * canonical (object keys sorted, whitespace normalised) and needs no JSON
+ * library and no client-side normalisation. Extension-owned objects, the
+ * {@code liquibase} tracking schema and the system schemas are excluded, as are
+ * row data, OIDs, sequence {@code last_value} and statistics, none of which are
+ * schema.
+ *
+ * <p>The map can be written to a directory tree (one file per object) so a
+ * mismatch can be reviewed with a directory diff and uploaded as a build
+ * artifact; see {@link #DEFAULT_DUMP_DIRECTORY}.
+ */
+public final class CatalogSnapshot {
+
+    /**
+     * The default directory a capture is dumped to, relative to the module's
+     * working directory: one subtree per database under
+     * {@code target/catalog-snapshot}.
+     */
+    public static final Path DEFAULT_DUMP_DIRECTORY = Path.of("target", "catalog-snapshot");
+
+    /**
+     * The system schemas that are never captured.
+     */
+    private static final List<String> SYSTEM_SCHEMAS =
+            List.of("pg_catalog", "information_schema", "liquibase");
+
+    private static final List<String> QUERIES = List.of(
+            schemaQuery(),
+            relationQuery(),
+            columnQuery(),
+            constraintQuery(),
+            indexQuery(),
+            sequenceQuery(),
+            domainQuery(),
+            typeQuery(),
+            functionQuery(),
+            triggerQuery(),
+            extensionQuery());
+
+    private CatalogSnapshot() {
+    }
+
+    /**
+     * Captures the objects in the given schemas.
+     *
+     * @param connection a connection to the database to capture
+     * @param schemas    the schemas to capture
+     * @return the objects by {@code kind/qualified-name}, in a stable order
+     */
+    public static Map<String, String> capture(Connection connection, Collection<String> schemas) {
+        Objects.requireNonNull(connection, "connection");
+        Objects.requireNonNull(schemas, "schemas");
+        List<String> wanted = schemas.stream()
+                .filter(schema -> !SYSTEM_SCHEMAS.contains(schema))
+                .toList();
+        Map<String, String> snapshot = new TreeMap<>();
+        if (wanted.isEmpty()) {
+            return snapshot;
+        }
+        for (String query : QUERIES) {
+            captureKind(connection, query, wanted, snapshot);
+        }
+        return snapshot;
+    }
+
+    /**
+     * Writes a capture as one file per object under
+     * {@code root/<kind>/<qualified-name>.json}, so two captures can be compared
+     * with a directory diff and uploaded as a build artifact.
+     *
+     * @param snapshot  the capture to write
+     * @param root      the directory to write under
+     * @throws IOException if a file cannot be written
+     */
+    public static void dump(Map<String, String> snapshot, Path root) throws IOException {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(root, "root");
+        for (Map.Entry<String, String> entry : snapshot.entrySet()) {
+            int slash = entry.getKey().indexOf('/');
+            String kind = entry.getKey().substring(0, slash);
+            String name = sanitize(entry.getKey().substring(slash + 1));
+            Path file = root.resolve(kind).resolve(name + ".json").normalize();
+            if (!file.startsWith(root.normalize())) {
+                throw new IllegalArgumentException("object name escapes the dump directory: " + entry.getKey());
+            }
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, entry.getValue() + System.lineSeparator(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static void captureKind(Connection connection, String query, List<String> schemas,
+                                    Map<String, String> snapshot) {
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            Array array = connection.createArrayOf("text", schemas.toArray());
+            try {
+                statement.setArray(1, array);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        snapshot.put(resultSet.getString(1), resultSet.getString(2));
+                    }
+                }
+            } finally {
+                array.free();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("could not capture the schema catalog", e);
+        }
+    }
+
+    private static String sanitize(String name) {
+        StringBuilder sanitized = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char character = name.charAt(i);
+            // Parentheses and commas are kept so an overloaded routine's file
+            // name stays readable, for example fixture.bump(integer, text).
+            sanitized.append(Character.isLetterOrDigit(character) || character == '.' || character == '_'
+                    || character == '-' || character == '(' || character == ')' || character == ','
+                    ? character : '_');
+        }
+        return sanitized.toString();
+    }
+
+    /**
+     * The ACL of an object as a sorted array of grants, so the order of
+     * {@code aclexplode} cannot make two equivalent ACLs differ.
+     */
+    private static String acl(String column) {
+        return "COALESCE((SELECT jsonb_agg(jsonb_build_object("
+                + "'grantee', COALESCE(pg_get_userbyid(x.grantee), 'PUBLIC'), "
+                + "'privilege', x.privilege_type, 'grantable', x.is_grantable) "
+                + "ORDER BY COALESCE(pg_get_userbyid(x.grantee), 'PUBLIC'), x.privilege_type) "
+                + "FROM aclexplode(" + column + ") x), '[]'::jsonb)";
+    }
+
+    private static String schemaQuery() {
+        return "SELECT 'schema/' || n.nspname, jsonb_build_object("
+                + "'owner', pg_get_userbyid(n.nspowner), "
+                + "'acl', " + acl("n.nspacl") + ", "
+                + "'comment', obj_description(n.oid, 'pg_namespace')) "
+                + "FROM pg_namespace n WHERE n.nspname = ANY (?)";
+    }
+
+    private static String relationQuery() {
+        return "SELECT 'relation/' || n.nspname || '.' || c.relname, jsonb_build_object("
+                + "'kind', CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'partitioned_table' "
+                + "WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' WHEN 'f' THEN 'foreign_table' END, "
+                + "'owner', pg_get_userbyid(c.relowner), "
+                + "'persistence', c.relpersistence, "
+                + "'view_definition', CASE WHEN c.relkind IN ('v', 'm') THEN pg_get_viewdef(c.oid, true) END, "
+                + "'partition_key', CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END, "
+                + "'partition_bound', CASE WHEN c.relispartition THEN pg_get_expr(c.relpartbound, c.oid) END, "
+                + "'options', to_jsonb(c.reloptions), "
+                + "'acl', " + acl("c.relacl") + ", "
+                + "'comment', obj_description(c.oid, 'pg_class')) "
+                + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "WHERE n.nspname = ANY (?) AND c.relkind IN ('r', 'p', 'v', 'm', 'f')";
+    }
+
+    private static String columnQuery() {
+        return "SELECT 'column/' || n.nspname || '.' || c.relname || '.' || a.attname, jsonb_build_object("
+                + "'type', format_type(a.atttypid, a.atttypmod), "
+                + "'not_null', a.attnotnull, "
+                + "'identity', NULLIF(a.attidentity, ''), "
+                + "'generated', NULLIF(a.attgenerated, ''), "
+                + "'collation', CASE WHEN a.attcollation <> t.typcollation "
+                + "THEN (SELECT col.collname FROM pg_collation col WHERE col.oid = a.attcollation) END, "
+                + "'default', pg_get_expr(ad.adbin, ad.adrelid), "
+                + "'comment', col_description(c.oid, a.attnum)) "
+                + "FROM pg_attribute a "
+                + "JOIN pg_class c ON c.oid = a.attrelid "
+                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "JOIN pg_type t ON t.oid = a.atttypid "
+                + "LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum "
+                + "WHERE n.nspname = ANY (?) AND c.relkind IN ('r', 'p', 'v', 'm', 'f') "
+                + "AND a.attnum > 0 AND NOT a.attisdropped";
+    }
+
+    private static String constraintQuery() {
+        return "SELECT 'constraint/' || n.nspname || '.' || c.relname || '.' || con.conname, jsonb_build_object("
+                + "'type', con.contype, "
+                + "'definition', pg_get_constraintdef(con.oid, true), "
+                + "'deferrable', con.condeferrable, "
+                + "'deferred', con.condeferred, "
+                + "'validated', con.convalidated, "
+                + "'comment', obj_description(con.oid, 'pg_constraint')) "
+                + "FROM pg_constraint con "
+                + "JOIN pg_class c ON c.oid = con.conrelid "
+                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "WHERE n.nspname = ANY (?)";
+    }
+
+    private static String indexQuery() {
+        return "SELECT 'index/' || n.nspname || '.' || ic.relname, jsonb_build_object("
+                + "'table', tn.nspname || '.' || tc.relname, "
+                + "'definition', pg_get_indexdef(i.indexrelid), "
+                + "'primary', i.indisprimary, 'unique', i.indisunique, 'valid', i.indisvalid, "
+                + "'comment', obj_description(ic.oid, 'pg_class')) "
+                + "FROM pg_index i "
+                + "JOIN pg_class ic ON ic.oid = i.indexrelid "
+                + "JOIN pg_namespace n ON n.oid = ic.relnamespace "
+                + "JOIN pg_class tc ON tc.oid = i.indrelid "
+                + "JOIN pg_namespace tn ON tn.oid = tc.relnamespace "
+                + "WHERE n.nspname = ANY (?)";
+    }
+
+    private static String sequenceQuery() {
+        return "SELECT 'sequence/' || n.nspname || '.' || c.relname, jsonb_build_object("
+                + "'data_type', format_type(s.seqtypid, NULL), "
+                + "'start', s.seqstart, 'increment', s.seqincrement, "
+                + "'min', s.seqmin, 'max', s.seqmax, 'cache', s.seqcache, 'cycle', s.seqcycle, "
+                + "'owner', pg_get_userbyid(c.relowner), "
+                + "'acl', " + acl("c.relacl") + ", "
+                + "'comment', obj_description(c.oid, 'pg_class')) "
+                + "FROM pg_sequence s "
+                + "JOIN pg_class c ON c.oid = s.seqrelid "
+                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "WHERE n.nspname = ANY (?)";
+    }
+
+    private static String domainQuery() {
+        return "SELECT 'domain/' || n.nspname || '.' || t.typname, jsonb_build_object("
+                + "'base_type', format_type(t.typbasetype, t.typtypmod), "
+                + "'not_null', t.typnotnull, "
+                + "'default', t.typdefault, "
+                + "'owner', pg_get_userbyid(t.typowner), "
+                + "'acl', " + acl("t.typacl") + ", "
+                + "'comment', obj_description(t.oid, 'pg_type'), "
+                + "'constraints', COALESCE((SELECT jsonb_agg(jsonb_build_object("
+                + "'name', con.conname, 'definition', pg_get_constraintdef(con.oid, true)) ORDER BY con.conname) "
+                + "FROM pg_constraint con WHERE con.contypid = t.oid), '[]'::jsonb)) "
+                + "FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+                + "WHERE n.nspname = ANY (?) AND t.typtype = 'd'";
+    }
+
+    private static String typeQuery() {
+        return "SELECT 'type/' || n.nspname || '.' || t.typname, jsonb_build_object("
+                + "'typtype', t.typtype, "
+                + "'owner', pg_get_userbyid(t.typowner), "
+                + "'comment', obj_description(t.oid, 'pg_type'), "
+                + "'attributes', CASE WHEN t.typtype = 'c' THEN (SELECT jsonb_agg(jsonb_build_object("
+                + "'name', a.attname, 'type', format_type(a.atttypid, a.atttypmod)) ORDER BY a.attnum) "
+                + "FROM pg_attribute a WHERE a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped) END, "
+                + "'enum_labels', CASE WHEN t.typtype = 'e' THEN (SELECT jsonb_agg(e.enumlabel ORDER BY e.enumsortorder) "
+                + "FROM pg_enum e WHERE e.enumtypid = t.oid) END, "
+                + "'range_subtype', CASE WHEN t.typtype = 'r' THEN format_type(r.rngsubtype, NULL) END) "
+                + "FROM pg_type t "
+                + "JOIN pg_namespace n ON n.oid = t.typnamespace "
+                + "LEFT JOIN pg_class c ON c.oid = t.typrelid "
+                + "LEFT JOIN pg_range r ON r.rngtypid = t.oid "
+                + "WHERE n.nspname = ANY (?) AND (t.typtype IN ('e', 'r') OR (t.typtype = 'c' AND c.relkind = 'c'))";
+    }
+
+    private static String functionQuery() {
+        // The key is the identity by argument type only (not
+        // pg_get_function_identity_arguments, which also embeds parameter
+        // names), so overloads are distinct, order-independent entries and a
+        // parameter rename shows up as a changed document rather than a
+        // missing/unexpected pair.
+        return "SELECT 'function/' || n.nspname || '.' || p.proname || '(' "
+                + "|| COALESCE((SELECT string_agg(format_type(t.argtype, NULL), ', ' ORDER BY t.ord) "
+                + "FROM unnest(p.proargtypes) WITH ORDINALITY AS t(argtype, ord)), '') || ')', "
+                + "jsonb_build_object("
+                + "'schema', n.nspname, 'name', p.proname, "
+                + "'identity_arguments', pg_get_function_identity_arguments(p.oid), "
+                + "'returns', pg_get_function_result(p.oid), "
+                + "'kind', p.prokind, 'language', l.lanname, "
+                + "'volatility', p.provolatile, 'strict', p.proisstrict, "
+                + "'security_definer', p.prosecdef, 'leakproof', p.proleakproof, "
+                + "'parallel', p.proparallel, 'cost', p.procost, 'rows', p.prorows, "
+                + "'owner', pg_get_userbyid(p.proowner), "
+                + "'acl', " + acl("p.proacl") + ", "
+                + "'comment', obj_description(p.oid, 'pg_proc'), "
+                + "'definition', pg_get_functiondef(p.oid)) "
+                + "FROM pg_proc p "
+                + "JOIN pg_namespace n ON n.oid = p.pronamespace "
+                + "JOIN pg_language l ON l.oid = p.prolang "
+                + "WHERE n.nspname = ANY (?) AND p.prokind IN ('f', 'p') "
+                + "AND NOT EXISTS (SELECT 1 FROM pg_depend d "
+                + "WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')";
+    }
+
+    private static String triggerQuery() {
+        return "SELECT 'trigger/' || n.nspname || '.' || c.relname || '.' || t.tgname, jsonb_build_object("
+                + "'definition', pg_get_triggerdef(t.oid, true), "
+                + "'enabled', t.tgenabled, "
+                + "'comment', obj_description(t.oid, 'pg_trigger')) "
+                + "FROM pg_trigger t "
+                + "JOIN pg_class c ON c.oid = t.tgrelid "
+                + "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                + "WHERE n.nspname = ANY (?) AND NOT t.tgisinternal";
+    }
+
+    private static String extensionQuery() {
+        return "SELECT 'extension/' || e.extname, jsonb_build_object("
+                + "'version', e.extversion, "
+                + "'schema', n.nspname, "
+                + "'comment', obj_description(e.oid, 'pg_extension')) "
+                + "FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
+                + "WHERE n.nspname = ANY (?) AND e.extname <> 'plpgsql'";
+    }
+}
