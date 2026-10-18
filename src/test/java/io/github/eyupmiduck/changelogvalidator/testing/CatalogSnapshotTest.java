@@ -160,6 +160,6 @@ class CatalogSnapshotTest extends PostgresTestBase {
         Path relation = root.resolve("relation/fixture.widget.json");
         assertTrue(Files.isRegularFile(relation), relation.toString());
         assertEquals(snapshot.get("relation/fixture.widget"), Files.readString(relation).strip());
-        assertTrue(Files.isRegularFile(root.resolve("function/fixture.bump(integer).json")));
+        assertTrue(Files.isRegularFile(root.resolve("function/fixture.bump/(integer).json")));
     }
 }

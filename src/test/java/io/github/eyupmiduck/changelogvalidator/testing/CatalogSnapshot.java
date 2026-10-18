@@ -12,21 +12,26 @@ import java.util.stream.Stream;
 
 /**
  * Captures the schema of a set of PostgreSQL schemas as a map of
- * {@code kind/qualified-name -> canonical jsonb}, for comparing an upgraded
- * database with a from-scratch build.
+ * {@code kind/qualified-name -> document}, for comparing an upgraded database
+ * with a from-scratch build.
  *
  * <p>Every object is read from the PostgreSQL dictionary ({@code pg_catalog})
  * with a direct query; the document is built server-side with
- * {@code jsonb_build_object}/{@code jsonb_agg}, so {@code jsonb}'s text form is
- * canonical (object keys sorted, whitespace normalised) and needs no JSON
- * library and no client-side normalisation. Extension-owned objects, the
- * {@code liquibase} tracking schema and the system schemas are excluded, as are
- * row data, OIDs, sequence {@code last_value} and statistics, none of which are
- * schema.
+ * {@code jsonb_build_object}/{@code jsonb_agg} and rendered with
+ * {@code jsonb_pretty}, so it is canonical (object keys sorted, one field per
+ * line) and needs no JSON library and no client-side normalisation. Long text
+ * that spans lines (a routine body, a view) is captured as an array of its
+ * lines, so it reads as text in the document rather than one escaped string.
+ *
+ * <p>Extension-owned objects, the {@code liquibase} tracking schema and the
+ * system schemas are excluded, as are row data, OIDs, sequence
+ * {@code last_value} and statistics, none of which are schema.
  *
  * <p>The map can be written to a directory tree (one file per object) so a
  * mismatch can be reviewed with a directory diff and uploaded as a build
- * artifact; see {@link #DEFAULT_DUMP_DIRECTORY}.
+ * artifact; see {@link #DEFAULT_DUMP_DIRECTORY}. A routine is written one level
+ * deeper, {@code function/<schema>.<name>/<signature>.json}, so an overload's
+ * directory holds one file per signature.
  */
 public final class CatalogSnapshot {
 
@@ -38,11 +43,17 @@ public final class CatalogSnapshot {
     public static final Path DEFAULT_DUMP_DIRECTORY = Path.of("target", "catalog-snapshot");
 
     /**
-     * The longest file-name component a dump uses; a longer object name is
-     * truncated and given a content hash so it stays unique and under the
-     * filesystem's 255-byte component limit.
+     * The longest file-name component a dump uses; a longer name (for example a
+     * routine signature with many arguments) is replaced by a content hash so it
+     * stays unique and under the filesystem's 255-byte limit.
      */
     private static final int MAX_DUMP_NAME_LENGTH = 200;
+
+    /**
+     * The most characters of a document shown in a failure message, so a large
+     * divergence does not flood the log.
+     */
+    private static final int MAX_DESCRIBED_DOCUMENT_LENGTH = 2000;
 
     /**
      * The system schemas that are never captured.
@@ -91,13 +102,12 @@ public final class CatalogSnapshot {
 
     /**
      * Writes a capture as one file per object under
-     * {@code root/<kind>/<qualified-name>.json}, so two captures can be compared
-     * with a directory diff and uploaded as a build artifact.
+     * {@code root/<kind>/<qualified-name>.json} (a routine, one level deeper), so
+     * two captures can be compared with a directory diff and uploaded as a build
+     * artifact.
      *
-     * <p>A routine's signature can make the qualified name longer than a file
-     * name may be; such a name is truncated to a readable prefix plus a short
-     * content hash, so it stays unique and under the filesystem limit. The
-     * directory is replaced, so a stale dump from an earlier run cannot remain.
+     * <p>The directory is replaced, so a stale dump from an earlier run cannot
+     * remain.
      *
      * @param snapshot the capture to write
      * @param root     the directory to write under
@@ -106,13 +116,11 @@ public final class CatalogSnapshot {
     public static void dump(Map<String, String> snapshot, Path root) throws IOException {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(root, "root");
-        deleteRecursively(root);
+        Path base = root.normalize();
+        deleteRecursively(base);
         for (Map.Entry<String, String> entry : snapshot.entrySet()) {
-            int slash = entry.getKey().indexOf('/');
-            String kind = entry.getKey().substring(0, slash);
-            String name = dumpName(entry.getKey().substring(slash + 1));
-            Path file = root.resolve(kind).resolve(name + ".json").normalize();
-            if (!file.startsWith(root.normalize())) {
+            Path file = dumpFile(base, entry.getKey());
+            if (!file.startsWith(base)) {
                 throw new IllegalArgumentException("object name escapes the dump directory: " + entry.getKey());
             }
             Files.createDirectories(file.getParent());
@@ -121,16 +129,37 @@ public final class CatalogSnapshot {
     }
 
     /**
-     * Returns a file-name component for an object name, bounded so a long
-     * routine signature cannot exceed the filesystem's name limit.
+     * Returns the file an object is dumped to: a routine nests its signature
+     * under a directory named for the routine, every other object is a single
+     * file under its kind.
+     */
+    private static Path dumpFile(Path base, String key) {
+        int slash = key.indexOf('/');
+        String kind = key.substring(0, slash);
+        String qualifiedName = key.substring(slash + 1);
+        if ("function".equals(kind)) {
+            int open = qualifiedName.indexOf('(');
+            if (open > 0) {
+                String routine = sanitize(qualifiedName.substring(0, open));
+                String signature = dumpName(qualifiedName.substring(open));
+                return base.resolve(kind).resolve(routine).resolve(signature + ".json");
+            }
+        }
+        return base.resolve(kind).resolve(dumpName(qualifiedName) + ".json");
+    }
+
+    /**
+     * Returns a file-name component for an object name. A routine signature can
+     * be arbitrarily long (a single component is capped at 255 bytes), so a name
+     * that does not fit is replaced by a deterministic short hash of itself; the
+     * full signature is still in the document's {@code identity_arguments}.
      */
     private static String dumpName(String name) {
         String sanitized = sanitize(name);
         if (sanitized.length() <= MAX_DUMP_NAME_LENGTH) {
             return sanitized;
         }
-        String suffix = "-" + shortHash(sanitized);
-        return sanitized.substring(0, MAX_DUMP_NAME_LENGTH - suffix.length()) + suffix;
+        return shortHash(sanitized);
     }
 
     private static void deleteRecursively(Path root) throws IOException {
@@ -144,7 +173,8 @@ public final class CatalogSnapshot {
         }
     }
 
-    private static String shortHash(String value) {        try {
+    private static String shortHash(String value) {
+        try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(16);
             for (int i = 0; i < 8; i++) {
@@ -193,7 +223,8 @@ public final class CatalogSnapshot {
         }
     }
 
-    private static void captureKind(Connection connection, String query, List<String> schemas, Map<String, String> snapshot) {
+    private static void captureKind(Connection connection, String query, List<String> schemas,
+                                    Map<String, String> snapshot) {
         try (PreparedStatement statement = connection.prepareStatement(query)) {
             Array array = connection.createArrayOf("text", schemas.toArray());
             try {
@@ -215,13 +246,21 @@ public final class CatalogSnapshot {
         StringBuilder sanitized = new StringBuilder(name.length());
         for (int i = 0; i < name.length(); i++) {
             char character = name.charAt(i);
-            // Parentheses and commas are kept so an overloaded routine's file
-            // name stays readable, for example fixture.bump(integer, text).
+            // Parentheses and commas are kept so a routine signature stays
+            // readable: function/<schema>.<name>/(integer, text).json.
             sanitized.append(Character.isLetterOrDigit(character) || character == '.' || character == '_'
                     || character == '-' || character == '(' || character == ')' || character == ','
                     ? character : '_');
         }
         return sanitized.toString();
+    }
+
+    /**
+     * Renders a text value as an array of its lines, so a routine body or a view
+     * reads as text in the pretty document instead of one escaped string.
+     */
+    private static String lines(String expression) {
+        return "to_jsonb(string_to_array(" + expression + ", chr(10)))";
     }
 
     /**
@@ -237,31 +276,32 @@ public final class CatalogSnapshot {
     }
 
     private static String schemaQuery() {
-        return "SELECT 'schema/' || n.nspname, jsonb_build_object("
+        return "SELECT 'schema/' || n.nspname, jsonb_pretty(jsonb_build_object("
                 + "'owner', pg_get_userbyid(n.nspowner), "
                 + "'acl', " + acl("n.nspacl") + ", "
-                + "'comment', obj_description(n.oid, 'pg_namespace')) "
+                + "'comment', obj_description(n.oid, 'pg_namespace'))) "
                 + "FROM pg_namespace n WHERE n.nspname = ANY (?)";
     }
 
     private static String relationQuery() {
-        return "SELECT 'relation/' || n.nspname || '.' || c.relname, jsonb_build_object("
+        return "SELECT 'relation/' || n.nspname || '.' || c.relname, jsonb_pretty(jsonb_build_object("
                 + "'kind', CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'partitioned_table' "
                 + "WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' WHEN 'f' THEN 'foreign_table' END, "
                 + "'owner', pg_get_userbyid(c.relowner), "
                 + "'persistence', c.relpersistence, "
-                + "'view_definition', CASE WHEN c.relkind IN ('v', 'm') THEN pg_get_viewdef(c.oid, true) END, "
+                + "'view_definition', CASE WHEN c.relkind IN ('v', 'm') "
+                + "THEN " + lines("pg_get_viewdef(c.oid, true)") + " END, "
                 + "'partition_key', CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END, "
                 + "'partition_bound', CASE WHEN c.relispartition THEN pg_get_expr(c.relpartbound, c.oid) END, "
                 + "'options', to_jsonb(c.reloptions), "
                 + "'acl', " + acl("c.relacl") + ", "
-                + "'comment', obj_description(c.oid, 'pg_class')) "
+                + "'comment', obj_description(c.oid, 'pg_class'))) "
                 + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                 + "WHERE n.nspname = ANY (?) AND c.relkind IN ('r', 'p', 'v', 'm', 'f')";
     }
 
     private static String columnQuery() {
-        return "SELECT 'column/' || n.nspname || '.' || c.relname || '.' || a.attname, jsonb_build_object("
+        return "SELECT 'column/' || n.nspname || '.' || c.relname || '.' || a.attname, jsonb_pretty(jsonb_build_object("
                 + "'type', format_type(a.atttypid, a.atttypmod), "
                 + "'not_null', a.attnotnull, "
                 + "'identity', NULLIF(a.attidentity, ''), "
@@ -269,7 +309,7 @@ public final class CatalogSnapshot {
                 + "'collation', CASE WHEN a.attcollation <> t.typcollation "
                 + "THEN (SELECT col.collname FROM pg_collation col WHERE col.oid = a.attcollation) END, "
                 + "'default', pg_get_expr(ad.adbin, ad.adrelid), "
-                + "'comment', col_description(c.oid, a.attnum)) "
+                + "'comment', col_description(c.oid, a.attnum))) "
                 + "FROM pg_attribute a "
                 + "JOIN pg_class c ON c.oid = a.attrelid "
                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -280,13 +320,14 @@ public final class CatalogSnapshot {
     }
 
     private static String constraintQuery() {
-        return "SELECT 'constraint/' || n.nspname || '.' || c.relname || '.' || con.conname, jsonb_build_object("
+        return "SELECT 'constraint/' || n.nspname || '.' || c.relname || '.' || con.conname, "
+                + "jsonb_pretty(jsonb_build_object("
                 + "'type', con.contype, "
                 + "'definition', pg_get_constraintdef(con.oid, true), "
                 + "'deferrable', con.condeferrable, "
                 + "'deferred', con.condeferred, "
                 + "'validated', con.convalidated, "
-                + "'comment', obj_description(con.oid, 'pg_constraint')) "
+                + "'comment', obj_description(con.oid, 'pg_constraint'))) "
                 + "FROM pg_constraint con "
                 + "JOIN pg_class c ON c.oid = con.conrelid "
                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -294,11 +335,11 @@ public final class CatalogSnapshot {
     }
 
     private static String indexQuery() {
-        return "SELECT 'index/' || n.nspname || '.' || ic.relname, jsonb_build_object("
+        return "SELECT 'index/' || n.nspname || '.' || ic.relname, jsonb_pretty(jsonb_build_object("
                 + "'table', tn.nspname || '.' || tc.relname, "
                 + "'definition', pg_get_indexdef(i.indexrelid), "
                 + "'primary', i.indisprimary, 'unique', i.indisunique, 'valid', i.indisvalid, "
-                + "'comment', obj_description(ic.oid, 'pg_class')) "
+                + "'comment', obj_description(ic.oid, 'pg_class'))) "
                 + "FROM pg_index i "
                 + "JOIN pg_class ic ON ic.oid = i.indexrelid "
                 + "JOIN pg_namespace n ON n.oid = ic.relnamespace "
@@ -308,13 +349,13 @@ public final class CatalogSnapshot {
     }
 
     private static String sequenceQuery() {
-        return "SELECT 'sequence/' || n.nspname || '.' || c.relname, jsonb_build_object("
+        return "SELECT 'sequence/' || n.nspname || '.' || c.relname, jsonb_pretty(jsonb_build_object("
                 + "'data_type', format_type(s.seqtypid, NULL), "
                 + "'start', s.seqstart, 'increment', s.seqincrement, "
                 + "'min', s.seqmin, 'max', s.seqmax, 'cache', s.seqcache, 'cycle', s.seqcycle, "
                 + "'owner', pg_get_userbyid(c.relowner), "
                 + "'acl', " + acl("c.relacl") + ", "
-                + "'comment', obj_description(c.oid, 'pg_class')) "
+                + "'comment', obj_description(c.oid, 'pg_class'))) "
                 + "FROM pg_sequence s "
                 + "JOIN pg_class c ON c.oid = s.seqrelid "
                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -322,7 +363,7 @@ public final class CatalogSnapshot {
     }
 
     private static String domainQuery() {
-        return "SELECT 'domain/' || n.nspname || '.' || t.typname, jsonb_build_object("
+        return "SELECT 'domain/' || n.nspname || '.' || t.typname, jsonb_pretty(jsonb_build_object("
                 + "'base_type', format_type(t.typbasetype, t.typtypmod), "
                 + "'not_null', t.typnotnull, "
                 + "'default', t.typdefault, "
@@ -331,13 +372,13 @@ public final class CatalogSnapshot {
                 + "'comment', obj_description(t.oid, 'pg_type'), "
                 + "'constraints', COALESCE((SELECT jsonb_agg(jsonb_build_object("
                 + "'name', con.conname, 'definition', pg_get_constraintdef(con.oid, true)) ORDER BY con.conname) "
-                + "FROM pg_constraint con WHERE con.contypid = t.oid), '[]'::jsonb)) "
+                + "FROM pg_constraint con WHERE con.contypid = t.oid), '[]'::jsonb))) "
                 + "FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
                 + "WHERE n.nspname = ANY (?) AND t.typtype = 'd'";
     }
 
     private static String typeQuery() {
-        return "SELECT 'type/' || n.nspname || '.' || t.typname, jsonb_build_object("
+        return "SELECT 'type/' || n.nspname || '.' || t.typname, jsonb_pretty(jsonb_build_object("
                 + "'typtype', t.typtype, "
                 + "'owner', pg_get_userbyid(t.typowner), "
                 + "'comment', obj_description(t.oid, 'pg_type'), "
@@ -346,7 +387,7 @@ public final class CatalogSnapshot {
                 + "FROM pg_attribute a WHERE a.attrelid = t.typrelid AND a.attnum > 0 AND NOT a.attisdropped) END, "
                 + "'enum_labels', CASE WHEN t.typtype = 'e' THEN (SELECT jsonb_agg(e.enumlabel ORDER BY e.enumsortorder) "
                 + "FROM pg_enum e WHERE e.enumtypid = t.oid) END, "
-                + "'range_subtype', CASE WHEN t.typtype = 'r' THEN format_type(r.rngsubtype, NULL) END) "
+                + "'range_subtype', CASE WHEN t.typtype = 'r' THEN format_type(r.rngsubtype, NULL) END)) "
                 + "FROM pg_type t "
                 + "JOIN pg_namespace n ON n.oid = t.typnamespace "
                 + "LEFT JOIN pg_class c ON c.oid = t.typrelid "
@@ -363,7 +404,7 @@ public final class CatalogSnapshot {
         return "SELECT 'function/' || n.nspname || '.' || p.proname || '(' "
                 + "|| COALESCE((SELECT string_agg(format_type(t.argtype, NULL), ', ' ORDER BY t.ord) "
                 + "FROM unnest(p.proargtypes) WITH ORDINALITY AS t(argtype, ord)), '') || ')', "
-                + "jsonb_build_object("
+                + "jsonb_pretty(jsonb_build_object("
                 + "'schema', n.nspname, 'name', p.proname, "
                 + "'identity_arguments', pg_get_function_identity_arguments(p.oid), "
                 + "'returns', pg_get_function_result(p.oid), "
@@ -374,7 +415,7 @@ public final class CatalogSnapshot {
                 + "'owner', pg_get_userbyid(p.proowner), "
                 + "'acl', " + acl("p.proacl") + ", "
                 + "'comment', obj_description(p.oid, 'pg_proc'), "
-                + "'definition', pg_get_functiondef(p.oid)) "
+                + "'definition', " + lines("pg_get_functiondef(p.oid)") + ")) "
                 + "FROM pg_proc p "
                 + "JOIN pg_namespace n ON n.oid = p.pronamespace "
                 + "JOIN pg_language l ON l.oid = p.prolang "
@@ -384,10 +425,10 @@ public final class CatalogSnapshot {
     }
 
     private static String triggerQuery() {
-        return "SELECT 'trigger/' || n.nspname || '.' || c.relname || '.' || t.tgname, jsonb_build_object("
+        return "SELECT 'trigger/' || n.nspname || '.' || c.relname || '.' || t.tgname, jsonb_pretty(jsonb_build_object("
                 + "'definition', pg_get_triggerdef(t.oid, true), "
                 + "'enabled', t.tgenabled, "
-                + "'comment', obj_description(t.oid, 'pg_trigger')) "
+                + "'comment', obj_description(t.oid, 'pg_trigger'))) "
                 + "FROM pg_trigger t "
                 + "JOIN pg_class c ON c.oid = t.tgrelid "
                 + "JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -395,10 +436,10 @@ public final class CatalogSnapshot {
     }
 
     private static String extensionQuery() {
-        return "SELECT 'extension/' || e.extname, jsonb_build_object("
+        return "SELECT 'extension/' || e.extname, jsonb_pretty(jsonb_build_object("
                 + "'version', e.extversion, "
                 + "'schema', n.nspname, "
-                + "'comment', obj_description(e.oid, 'pg_extension')) "
+                + "'comment', obj_description(e.oid, 'pg_extension'))) "
                 + "FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
                 + "WHERE n.nspname = ANY (?) AND e.extname <> 'plpgsql'";
     }
@@ -444,6 +485,13 @@ public final class CatalogSnapshot {
                     .forEach(key -> message.append(System.lineSeparator()).append("    ").append(key));
         }
 
+        private static String abbreviate(String document) {
+            if (document.length() <= MAX_DESCRIBED_DOCUMENT_LENGTH) {
+                return document;
+            }
+            return document.substring(0, MAX_DESCRIBED_DOCUMENT_LENGTH) + "...";
+        }
+
         /**
          * Returns whether the two captures describe the same schema.
          *
@@ -474,9 +522,9 @@ public final class CatalogSnapshot {
                 changed.entrySet().stream().limit(limit).forEach(entry -> message
                         .append(System.lineSeparator()).append("    ").append(entry.getKey())
                         .append(System.lineSeparator()).append("      from-scratch: ")
-                        .append(entry.getValue().expected())
+                        .append(abbreviate(entry.getValue().expected()))
                         .append(System.lineSeparator()).append("      upgraded:     ")
-                        .append(entry.getValue().actual()));
+                        .append(abbreviate(entry.getValue().actual())));
             }
             return message.toString();
         }
