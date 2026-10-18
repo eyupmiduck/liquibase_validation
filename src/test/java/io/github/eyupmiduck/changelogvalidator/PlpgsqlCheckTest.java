@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator;
 
+import io.github.eyupmiduck.changelogvalidator.testing.PostgresTestBase;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,35 @@ class PlpgsqlCheckTest {
     private static GenericContainer<?> postgres;
     private static Connection connection;
 
+    /**
+     * The Debian base image to build the plpgsql_check image on: the major of
+     * the {@code postgres.image} the tests run against, which the CI matrix
+     * varies (the {@code -alpine} tag the other tests use has no
+     * {@code plpgsql_check} package, so the base is the matching Debian image).
+     */
+    private static String baseImage() {
+        return "postgres:" + majorVersion();
+    }
+
+    private static String majorVersion() {
+        String image = System.getProperty(
+                PostgresTestBase.POSTGRES_IMAGE_PROPERTY, PostgresTestBase.DEFAULT_POSTGRES_IMAGE);
+        String tag = image.substring(image.lastIndexOf(':') + 1);
+        int end = 0;
+        while (end < tag.length() && Character.isDigit(tag.charAt(end))) {
+            end++;
+        }
+        return tag.substring(0, end);
+    }
+
     @BeforeAll
     static void startDatabase() throws Exception {
         postgres = new GenericContainer<>(new ImageFromDockerfile()
                 .withDockerfileFromBuilder(builder -> builder
-                        .from("postgres:17")
+                        .from(baseImage())
                         .run("apt-get update"
-                                + " && apt-get install -y --no-install-recommends postgresql-17-plpgsql-check"
+                                + " && apt-get install -y --no-install-recommends postgresql-"
+                                + majorVersion() + "-plpgsql-check"
                                 + " && rm -rf /var/lib/apt/lists/*")
                         .build()))
                 .withEnv("POSTGRES_PASSWORD", "test")

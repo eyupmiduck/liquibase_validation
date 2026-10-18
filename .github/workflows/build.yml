@@ -18,8 +18,17 @@ concurrency:
 
 jobs:
   build:
+    name: Build (PostgreSQL ${{ matrix.postgres }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # Report every failing version rather than stopping at the first.
+      fail-fast: false
+      matrix:
+        # The same matrix the consumers run, so the shared test support and the
+        # project's own tests are exercised on every supported major, not only
+        # the default.
+        postgres: ["postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine"]
 
     steps:
       - name: Checkout
@@ -33,7 +42,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: ./mvnw --batch-mode --no-transfer-progress verify
+        run: ./mvnw --batch-mode --no-transfer-progress verify -Dpostgres.image=${{ matrix.postgres }}
 
       - name: Verify the coverage report exists
         # A missing report means the coverage configuration broke; fail here so
@@ -41,6 +50,8 @@ jobs:
         run: test -s target/site/jacoco/jacoco.xml
 
       - name: Upload coverage to Codecov
+        # One upload is enough; the coverage gate itself runs on every leg.
+        if: ${{ matrix.postgres == 'postgres:17-alpine' }}
         # Advisory: a Codecov outage or an unlinked repository must not fail CI.
         # `continue-on-error` is the single suppression; the action's own
         # fail_ci_if_error defaults to false and is intentionally not set twice.
