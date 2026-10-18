@@ -63,6 +63,17 @@ public abstract class PostgresTestBase {
      */
     public static final String LIQUIBASE_SCHEMA = "liquibase";
 
+    /**
+     * The system property naming the PostgreSQL image the tests run against,
+     * set by surefire and by the CI workflow matrix.
+     */
+    public static final String POSTGRES_IMAGE_PROPERTY = "postgres.image";
+
+    /**
+     * The PostgreSQL image the tests run against when the property is unset.
+     */
+    public static final String DEFAULT_POSTGRES_IMAGE = "postgres:17-alpine";
+
     private static PostgreSQLContainer postgres;
 
     /**
@@ -73,12 +84,12 @@ public abstract class PostgresTestBase {
     private Connection connection;
 
     /**
-     * The PostgreSQL image to run, matching the one used for jOOQ codegen.
-     * Defaults to the {@code postgres.image} system property (set by surefire)
-     * or the subclass's {@link #defaultPostgresImage()}.
+     * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
+     * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
+     * the CI matrix set it), otherwise {@link #defaultPostgresImage()}.
      */
-    protected static String postgresImage() {
-        return System.getProperty("postgres.image", "postgres:17-alpine");
+    protected String postgresImage() {
+        return System.getProperty(POSTGRES_IMAGE_PROPERTY, defaultPostgresImage());
     }
 
     private static void execute(Connection connection, String sql) throws SQLException {
@@ -133,7 +144,7 @@ public abstract class PostgresTestBase {
      * @return the default image reference
      */
     protected String defaultPostgresImage() {
-        return "postgres:17-alpine";
+        return DEFAULT_POSTGRES_IMAGE;
     }
 
     /**

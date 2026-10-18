@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator;
 
+import io.github.eyupmiduck.changelogvalidator.testing.PostgresTestBase;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,7 +33,8 @@ class AuditColumnsCheckTest {
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        postgres = new GenericContainer<>(DockerImageName.parse("postgres:17-alpine"))
+        postgres = new GenericContainer<>(DockerImageName.parse(
+                System.getProperty(PostgresTestBase.POSTGRES_IMAGE_PROPERTY, PostgresTestBase.DEFAULT_POSTGRES_IMAGE)))
                 .withEnv("POSTGRES_DB", "test")
                 .withEnv("POSTGRES_USER", "test")
                 .withEnv("POSTGRES_PASSWORD", "test")

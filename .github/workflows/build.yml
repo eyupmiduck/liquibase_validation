@@ -17,9 +17,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  test:
+    name: Build (PostgreSQL ${{ matrix.postgres }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # Report every failing version rather than stopping at the first.
+      fail-fast: false
+      matrix:
+        # The same matrix the consumers run, so the shared test support and the
+        # project's own tests are exercised on every supported major, not only
+        # the default.
+        postgres: ["postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine"]
 
     steps:
       - name: Checkout
@@ -33,7 +42,7 @@ jobs:
           cache: maven
 
       - name: Build and test
-        run: ./mvnw --batch-mode --no-transfer-progress verify
+        run: ./mvnw --batch-mode --no-transfer-progress verify -Dpostgres.image=${{ matrix.postgres }}
 
       - name: Verify the coverage report exists
         # A missing report means the coverage configuration broke; fail here so
@@ -41,6 +50,8 @@ jobs:
         run: test -s target/site/jacoco/jacoco.xml
 
       - name: Upload coverage to Codecov
+        # One upload is enough; the coverage gate itself runs on every leg.
+        if: ${{ matrix.postgres == 'postgres:17-alpine' }}
         # Advisory: a Codecov outage or an unlinked repository must not fail CI.
         # `continue-on-error` is the single suppression; the action's own
         # fail_ci_if_error defaults to false and is intentionally not set twice.
@@ -48,3 +59,21 @@ jobs:
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: target/site/jacoco/jacoco.xml
+
+  # Branch protection requires a status check named exactly "build". A matrix
+  # cannot report that name (each leg reports its own), so this job aggregates
+  # the legs into the single required check.
+  build:
+    name: build
+    needs: test
+    # Run even when a leg failed, so the required check reports a failure rather
+    # than staying "expected" forever.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every PostgreSQL leg to pass
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "::error::the PostgreSQL matrix did not pass: ${{ needs.test.result }}"
+            exit 1
+          fi
