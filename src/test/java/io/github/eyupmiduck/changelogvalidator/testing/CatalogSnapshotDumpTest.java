@@ -27,7 +27,7 @@ class CatalogSnapshotDumpTest {
     void keepsShortNamesReadable(@TempDir Path root) throws IOException {
         CatalogSnapshot.dump(Map.of("function/fixture.bump(integer)", "{}"), root);
 
-        assertTrue(Files.isRegularFile(root.resolve("function/fixture.bump(integer).json")));
+        assertTrue(Files.isRegularFile(root.resolve("function/fixture.bump/(integer).json")));
     }
 
     /**
@@ -48,7 +48,7 @@ class CatalogSnapshotDumpTest {
         assertEquals(1, files.size());
         String fileName = files.get(0).getFileName().toString();
         assertTrue(fileName.endsWith(".json"), fileName);
-        assertTrue(fileName.length() <= 205, () -> "file name too long: " + fileName.length());
+        assertTrue(fileName.length() <= 21, () -> "a long signature should fall back to a hash: " + fileName);
         assertEquals("{\"documented\": true}", Files.readString(files.get(0)).strip());
     }
 
