@@ -202,6 +202,34 @@ class ChangelogModelTest {
     }
 
     /**
+     * A DOCTYPE that declares an external entity is rejected instead of being
+     * resolved, so a crafted changelog cannot be used to read a local file
+     * through the linter.
+     */
+    @Test
+    void rejectsDoctypeWithExternalEntity() throws IOException {
+        Path secret = changelogRoot.resolve("secret.txt");
+        Files.writeString(secret, "TOP SECRET");
+        Path doctypeMaster = changelogRoot.resolve("doctype.xml");
+        Files.writeString(doctypeMaster, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE databaseChangeLog [
+                  <!ENTITY xxe SYSTEM "%s">
+                ]>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+                  <changeSet id="001-probe" author="test">
+                    <sql>&xxe;</sql>
+                  </changeSet>
+                </databaseChangeLog>
+                """.formatted(secret.toUri()));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, doctypeMaster));
+        assertTrue(failure.getMessage().contains("doctype.xml"),
+                () -> "the failure should name the changelog: " + failure.getMessage());
+    }
+
+    /**
      * The model and source records reject missing required components.
      */
     @Test

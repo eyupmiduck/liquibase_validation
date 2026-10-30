@@ -1,14 +1,10 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
+import io.github.eyupmiduck.changelogvalidator.XmlDocuments;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -179,19 +175,11 @@ public record RegistryCredentials(String username, String password) {
 
     private static Document parseSecurely(Path settingsXml) {
         try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            // The settings file is user-controlled; disable DTDs and external
-            // entities so a crafted file cannot reach the network or the disk.
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            return builder.parse(settingsXml.toFile());
-        } catch (ParserConfigurationException | SAXException | IOException e) {
+            // The settings file is user-controlled; XmlDocuments rejects DTDs
+            // and external entities, so a crafted file cannot reach the network
+            // or the disk.
+            return XmlDocuments.parse(settingsXml);
+        } catch (IOException e) {
             throw new IllegalStateException("could not read Maven settings from " + settingsXml, e);
         }
     }

@@ -3,10 +3,7 @@ package io.github.eyupmiduck.changelogvalidator;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,6 +26,10 @@ import java.util.stream.Stream;
  * files under a dedicated directory ({@code functions}, {@code procedures},
  * {@code triggers}, or their {@code -rollback} variants) are exempt from the
  * naming rule while still being checked for references.
+ *
+ * <p>Changelog XML is parsed defensively: a {@code DOCTYPE} declaration and
+ * external entities are rejected, so a crafted changelog cannot read a local
+ * file or reach the network.
  */
 public final class ChangelogValidator {
 
@@ -308,15 +309,7 @@ public final class ChangelogValidator {
     }
 
     private static Document parse(Path changelogFile) throws IOException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        try {
-            return factory.newDocumentBuilder().parse(changelogFile.toFile());
-        } catch (SAXException e) {
-            throw new IOException("failed to parse changelog " + changelogFile, e);
-        } catch (ParserConfigurationException e) {
-            throw new IllegalStateException("failed to configure the XML parser", e);
-        }
+        return XmlDocuments.parse(changelogFile);
     }
 
     /**

@@ -1,13 +1,11 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
 import io.github.eyupmiduck.changelogvalidator.ChangelogValidator;
+import io.github.eyupmiduck.changelogvalidator.XmlDocuments;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
@@ -308,14 +306,6 @@ public final class ChangelogModel {
     }
 
     private static Document parse(Path changelogFile) throws IOException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        try {
-            return factory.newDocumentBuilder().parse(changelogFile.toFile());
-        } catch (SAXException e) {
-            throw new IOException("failed to parse changelog " + changelogFile, e);
-        } catch (ParserConfigurationException e) {
-            throw new IllegalStateException("failed to configure the XML parser", e);
-        }
+        return XmlDocuments.parse(changelogFile);
     }
 }
