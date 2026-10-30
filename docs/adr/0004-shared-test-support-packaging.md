@@ -93,6 +93,46 @@ Negative / risks:
 - A classifier jar is slightly less discoverable than a named module; the README
   must document the snippet.
 
+## Update (1.7.0): contract classes and one configuration value
+
+Sharing the assertion helpers still left each consumer with near-identical
+test classes: the changelog linter test, the naming/orphan checks, the
+tracking-table check, the static-analysis check and the previous-release
+upgrade test. The upgrade test additionally repeated every container accessor,
+which the consumers' own comments flagged as a drift risk, because the regular
+test base and the upgrade test are separate classes.
+
+Decision:
+
+- The `tests` jar also ships abstract **contract** classes in the `testing`
+  package (currently `ChangelogLinterContract`). A contract holds the `@Test`
+  methods; a consumer subclasses it and supplies only the project values
+  through `protected` hooks. Contract classes are named `*Contract`, so the
+  existing `**/*Test.class` / `**/Test*.class` excludes still keep the
+  library's own autotests out of the jar. The library runs each contract
+  against its fixture changelog (`ChangelogLinterContractTest`).
+- `PostgresTestBase` gains a nested `Configuration` record and a
+  `protected Configuration configuration()` accessor. Its default derives the
+  value from the existing accessors, so a subclass that overrides the accessors
+  keeps working; a consumer that also has an `UpgradeTestBase` subclass
+  overrides `configuration()` once with a shared constant instead. All internal
+  uses (template database, connections, changelog resources, tracking-table
+  names) read the configuration, so the two classes cannot disagree.
+
+Consequences:
+
+- A consumer's linter test is one line and always lints with its own
+  `.liquibase-linter.yml` and whitelist, mirroring the verify gate, instead of
+  re-implementing the rule wiring with a hardcoded PostgreSQL version.
+- The contract is versioned with the library: changing a shared test changes
+  what consumer builds enforce on their next dependency bump. This is the same
+  trade-off as the shared base and is why the contracts stay small and each one
+  has a test in the library.
+- `ChangelogLinterContract` reads its config and whitelist relative to the
+  module directory (the surefire working directory), matching the paths the
+  Maven exec plugin passes to the gate. A project that runs tests from another
+  directory overrides `configFile()` / `whitelistFile()`.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

@@ -35,12 +35,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * connects to it as the test role. The private database is dropped after the
  * class finishes.
  *
- * <p>A subclass supplies the project-specific configuration by overriding the
- * {@code protected} accessors: the role/database names, the changelog resource,
- * the optional fixture changelog, the PostgreSQL image default and any
- * extensions the template database needs. The shared helpers assume the test
- * role is a member of the caller role and has {@code CREATE} on the public
- * schema, which the init script must arrange.
+ * <p>A subclass supplies the project-specific configuration by overriding
+ * {@link #configuration()} (preferred, especially when the project also has an
+ * {@link UpgradeTestBase} subclass) or the individual {@code protected}
+ * accessors: the role/database names, the changelog resource, the optional
+ * fixture changelog, the PostgreSQL image default and any extensions the
+ * template database needs. The shared helpers assume the test role is a member
+ * of the caller role and has {@code CREATE} on the public schema, which the init
+ * script must arrange.
  *
  * <p>The consumers must have JUnit, Testcontainers ({@code postgresql}), jOOQ,
  * {@code liquibase-core} and the PostgreSQL driver on the test classpath; a
@@ -73,24 +75,13 @@ public abstract class PostgresTestBase {
      * The PostgreSQL image the tests run against when the property is unset.
      */
     public static final String DEFAULT_POSTGRES_IMAGE = "postgres:17-alpine";
-
     private static PostgreSQLContainer postgres;
-
     /**
      * jOOQ context connected to this test class's private database.
      */
     protected DSLContext dsl;
-    private String databaseName;
+    private String testDatabaseName;
     private Connection connection;
-
-    /**
-     * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
-     * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
-     * the CI matrix set it), otherwise {@link #defaultPostgresImage()}.
-     */
-    protected String postgresImage() {
-        return System.getProperty(POSTGRES_IMAGE_PROPERTY, defaultPostgresImage());
-    }
 
     private static void execute(Connection connection, String sql) throws SQLException {
         try (connection; Statement statement = connection.createStatement()) {
@@ -134,6 +125,35 @@ public abstract class PostgresTestBase {
      */
     public static void assertDomainViolation(Executable call) {
         assertSqlState("23514", call);
+    }
+
+    private static String templateDatabaseName(Configuration configuration) {
+        return configuration.databaseName() + "_template";
+    }
+
+    /**
+     * The container and changelog configuration. The default derives it from the
+     * accessors below, so a subclass may override either this method once or the
+     * individual accessors; a consumer with both a regular base and an
+     * {@link UpgradeTestBase} subclass overrides this method so the two share
+     * one value.
+     *
+     * @return the configuration
+     */
+    protected Configuration configuration() {
+        return new Configuration(
+                databaseName(), ownerUser(), ownerPassword(), testUser(), testPassword(),
+                defaultPostgresImage(), masterResource(), databaseChangeLogTableName(),
+                databaseChangeLogLockTableName(), fixturesResource());
+    }
+
+    /**
+     * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
+     * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
+     * the CI matrix set it), otherwise the configured image.
+     */
+    protected String postgresImage() {
+        return System.getProperty(POSTGRES_IMAGE_PROPERTY, configuration().postgresImage());
     }
 
     /**
@@ -242,91 +262,92 @@ public abstract class PostgresTestBase {
     protected void installExtensions(String templateDatabase) throws SQLException {
     }
 
-    private String templateDatabaseName() {
-        return databaseName() + "_template";
-    }
-
     /**
      * Starts the shared container and prepares the migrated template database
      * once per JVM.
      */
     @BeforeAll
     void startContainerAndCreateTestDatabase() throws Exception {
+        Configuration configuration = configuration();
         synchronized (PostgresTestBase.class) {
             if (postgres == null) {
                 postgres = new PostgreSQLContainer(DockerImageName.parse(postgresImage())
                         .asCompatibleSubstituteFor("postgres"))
-                        .withDatabaseName(databaseName());
+                        .withDatabaseName(configuration.databaseName());
                 try {
                     postgres.start();
-                    prepareTemplateDatabase();
+                    prepareTemplateDatabase(configuration);
                 } catch (Exception e) {
                     throw new IllegalStateException("Failed to start the PostgreSQL test container", e);
                 }
             }
         }
-        createTestDatabase();
+        createTestDatabase(configuration);
     }
 
-    private void prepareTemplateDatabase() {
-        String template = templateDatabaseName();
+    private void prepareTemplateDatabase(Configuration configuration) {
+        String template = templateDatabaseName(configuration);
+        String database = configuration.databaseName();
         try {
             // Tolerate a template left behind by an interrupted earlier run in
             // the same container, so setup is repeatable.
-            execute(adminConnection(databaseName()), "DROP DATABASE IF EXISTS " + template + " WITH (FORCE)");
-            execute(adminConnection(databaseName()), "CREATE DATABASE " + template);
+            execute(adminConnection(database), "DROP DATABASE IF EXISTS " + template + " WITH (FORCE)");
+            execute(adminConnection(database), "CREATE DATABASE " + template);
             // The template is fresh, so grant the owner role the privileges it
             // needs to run Liquibase (as the init script does for the main
             // database): CREATE on the database and on its public schema. The
             // test role may create tables it owns in public too.
-            execute(adminConnection(databaseName()), "GRANT CREATE ON DATABASE " + template + " TO " + ownerUser());
+            execute(adminConnection(database),
+                    "GRANT CREATE ON DATABASE " + template + " TO " + configuration.ownerUser());
             try (Connection admin = adminConnection(template);
                  Statement statement = admin.createStatement()) {
-                statement.execute("GRANT CREATE ON SCHEMA public TO " + ownerUser());
-                statement.execute("GRANT CREATE ON SCHEMA public TO " + testUser());
+                statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.ownerUser());
+                statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.testUser());
             }
             installExtensions(template);
-            try (Connection owner = connection(template, ownerUser(), ownerPassword())) {
+            try (Connection owner = connection(template, configuration.ownerUser(),
+                    configuration.ownerPassword())) {
                 try (Statement statement = owner.createStatement()) {
                     statement.execute("CREATE SCHEMA IF NOT EXISTS " + LIQUIBASE_SCHEMA);
                 }
-                Database database = DatabaseFactory.getInstance()
+                Database liquibaseDatabase = DatabaseFactory.getInstance()
                         .findCorrectDatabaseImplementation(new JdbcConnection(owner));
-                database.setLiquibaseSchemaName(LIQUIBASE_SCHEMA);
-                database.setDatabaseChangeLogTableName(databaseChangeLogTableName());
-                database.setDatabaseChangeLogLockTableName(databaseChangeLogLockTableName());
-                new Liquibase(masterResource(), new ClassLoaderResourceAccessor(), database).update();
-                String fixtures = fixturesResource();
+                liquibaseDatabase.setLiquibaseSchemaName(LIQUIBASE_SCHEMA);
+                liquibaseDatabase.setDatabaseChangeLogTableName(configuration.databaseChangeLogTable());
+                liquibaseDatabase.setDatabaseChangeLogLockTableName(configuration.databaseChangeLogLockTable());
+                new Liquibase(configuration.masterResource(), new ClassLoaderResourceAccessor(), liquibaseDatabase)
+                        .update();
+                String fixtures = configuration.fixturesResource();
                 if (fixtures != null) {
-                    new Liquibase(fixtures, new ClassLoaderResourceAccessor(), database).update();
+                    new Liquibase(fixtures, new ClassLoaderResourceAccessor(), liquibaseDatabase).update();
                 }
             }
             // Mark as a real template and forbid connections, so a leaked session
             // cannot make CREATE DATABASE ... TEMPLATE fail.
-            execute(adminConnection(databaseName()),
+            execute(adminConnection(database),
                     "ALTER DATABASE " + template + " WITH IS_TEMPLATE TRUE ALLOW_CONNECTIONS FALSE");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to prepare template database", e);
         }
     }
 
-    private void createTestDatabase() throws SQLException {
-        String template = templateDatabaseName();
+    private void createTestDatabase(Configuration configuration) throws SQLException {
+        String template = templateDatabaseName(configuration);
         // Bounded and collision-resistant: a hash suffix of the fully qualified
         // name keeps the identifier under PostgreSQL's 63-byte limit and wide
         // enough that two test classes do not collide. Quoted so an unusual
         // class name cannot produce an invalid identifier.
         String suffix = Integer.toUnsignedString(getClass().getName().hashCode(), 16);
-        databaseName = "test_" + suffix;
-        try (Connection admin = adminConnection(databaseName());
+        testDatabaseName = "test_" + suffix;
+        try (Connection admin = adminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("CREATE DATABASE \"" + databaseName + "\" TEMPLATE " + template);
+            statement.execute("CREATE DATABASE \"" + testDatabaseName + "\" TEMPLATE " + template);
         } catch (SQLException e) {
             dropDatabaseQuietly();
             throw e;
         }
         try {
-            connection = connection(databaseName, testUser(), testPassword());
+            connection = connection(testDatabaseName, configuration.testUser(), configuration.testPassword());
             dsl = DSL.using(connection, SQLDialect.POSTGRES);
         } catch (SQLException e) {
             if (connection != null) {
@@ -368,7 +389,8 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the connection cannot be opened
      */
     protected Connection openTestConnection() throws SQLException {
-        return connection(databaseName, testUser(), testPassword());
+        Configuration configuration = configuration();
+        return connection(testDatabaseName, configuration.testUser(), configuration.testPassword());
     }
 
     /**
@@ -380,7 +402,8 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the connection cannot be opened
      */
     protected Connection openOwnerConnection() throws SQLException {
-        return connection(databaseName, ownerUser(), ownerPassword());
+        Configuration configuration = configuration();
+        return connection(testDatabaseName, configuration.ownerUser(), configuration.ownerPassword());
     }
 
     /**
@@ -393,7 +416,8 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the connection cannot be opened
      */
     protected Connection openTestConnection(String database) throws SQLException {
-        return connection(database, testUser(), testPassword());
+        Configuration configuration = configuration();
+        return connection(database, configuration.testUser(), configuration.testPassword());
     }
 
     /**
@@ -406,7 +430,8 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the connection cannot be opened
      */
     protected Connection openOwnerConnection(String database) throws SQLException {
-        return connection(database, ownerUser(), ownerPassword());
+        Configuration configuration = configuration();
+        return connection(database, configuration.ownerUser(), configuration.ownerPassword());
     }
 
     /**
@@ -418,7 +443,7 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the database cannot be created
      */
     protected void createDatabase(String database) throws SQLException {
-        execute(adminConnection(databaseName()), "CREATE DATABASE \"" + database + "\"");
+        execute(adminConnection(configuration().databaseName()), "CREATE DATABASE \"" + database + "\"");
     }
 
     /**
@@ -429,7 +454,7 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the database cannot be dropped
      */
     protected void dropDatabase(String database) throws SQLException {
-        execute(adminConnection(databaseName()),
+        execute(adminConnection(configuration().databaseName()),
                 "DROP DATABASE IF EXISTS \"" + database + "\" WITH (FORCE)");
     }
 
@@ -551,11 +576,11 @@ public abstract class PostgresTestBase {
      * a failed setup does not leak it.
      */
     private void dropDatabaseQuietly() {
-        if (databaseName == null) {
+        if (testDatabaseName == null) {
             return;
         }
         try {
-            dropDatabase(databaseName);
+            dropDatabase(testDatabaseName);
         } catch (SQLException ignored) {
             // Best effort; the @AfterAll cleanup is the backstop.
         }
@@ -588,6 +613,80 @@ public abstract class PostgresTestBase {
             return connection != null && !connection.isClosed();
         } catch (SQLException e) {
             return false;
+        }
+    }
+
+    /**
+     * The container and changelog configuration of a consumer: the database and
+     * role names, the PostgreSQL image, the changelog resources and the
+     * Liquibase tracking-table names.
+     *
+     * <p>A consumer overrides {@link #configuration()} once with a constant of
+     * this type instead of overriding every accessor. Its regular test base and
+     * its {@link UpgradeTestBase} subclass then share one value, so the two
+     * cannot drift.
+     *
+     * @param databaseName               the database the container is created
+     *                                   with and the tests connect to
+     * @param ownerUser                  the owner role, which runs Liquibase and
+     *                                   owns the schema objects
+     * @param ownerPassword              the owner role's password
+     * @param testUser                   the test role, which acts as an
+     *                                   application caller
+     * @param testPassword               the test role's password
+     * @param postgresImage              the default PostgreSQL image, used when
+     *                                   the {@code postgres.image} system
+     *                                   property is unset
+     * @param masterResource             the master changelog classpath resource
+     * @param databaseChangeLogTable     the Liquibase tracking table name
+     * @param databaseChangeLogLockTable the Liquibase tracking lock table name
+     * @param fixturesResource           the optional fixture changelog resource,
+     *                                   or {@code null} when there is none
+     */
+    public record Configuration(String databaseName, String ownerUser, String ownerPassword,
+                                String testUser, String testPassword, String postgresImage,
+                                String masterResource, String databaseChangeLogTable,
+                                String databaseChangeLogLockTable, String fixturesResource) {
+
+        /**
+         * Validates the required values; only the fixture changelog may be absent.
+         */
+        public Configuration {
+            databaseName = requireNonBlank(databaseName, "databaseName");
+            ownerUser = requireNonBlank(ownerUser, "ownerUser");
+            ownerPassword = requireNonBlank(ownerPassword, "ownerPassword");
+            testUser = requireNonBlank(testUser, "testUser");
+            testPassword = requireNonBlank(testPassword, "testPassword");
+            postgresImage = requireNonBlank(postgresImage, "postgresImage");
+            masterResource = requireNonBlank(masterResource, "masterResource");
+            databaseChangeLogTable = requireNonBlank(databaseChangeLogTable, "databaseChangeLogTable");
+            databaseChangeLogLockTable =
+                    requireNonBlank(databaseChangeLogLockTable, "databaseChangeLogLockTable");
+        }
+
+        private static String requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+            return value;
+        }
+
+        /**
+         * Returns the configuration without the passwords, so a failing test
+         * cannot print them.
+         *
+         * @return a description that omits the passwords
+         */
+        @Override
+        public String toString() {
+            return "Configuration[databaseName=" + databaseName
+                    + ", ownerUser=" + ownerUser
+                    + ", testUser=" + testUser
+                    + ", postgresImage=" + postgresImage
+                    + ", masterResource=" + masterResource
+                    + ", databaseChangeLogTable=" + databaseChangeLogTable
+                    + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
+                    + ", fixturesResource=" + fixturesResource + "]";
         }
     }
 }
