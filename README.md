@@ -404,9 +404,10 @@ helpers), `TestResources`, the `ChangelogAssertions`/`RoutineAssertions`
 helpers (including routine/rollback parity), the previous-release
 `UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`,
-`TrackingTablesContract`, `PlpgsqlCheckContract`) that a project subclasses to
-inherit the tests themselves, so a project that builds a Liquibase changelog and
-PostgreSQL routines can share one implementation instead of copying it (see
+`TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
+`UpgradeContract`) that a project subclasses to inherit the tests themselves, so
+a project that builds a Liquibase changelog and PostgreSQL routines can share
+one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
 
 ```xml
@@ -466,11 +467,12 @@ same `FILENAME` for a changeset applied from the released jar and from the
 current classpath, so the second run applies only the delta; a changeset that
 was released and then edited fails Liquibase's checksum validation.
 
-Extend it and supply the coordinates of the project's own artifact and the
-schemas the changelog manages:
+Extend the shared `UpgradeContract` and supply the coordinates of the project's
+own artifact, the schemas the changelog manages, and the project-specific
+assertions for the upgraded database:
 
 ```java
-class LiquibaseUpgradeTest extends UpgradeTestBase {
+class LiquibaseUpgradeTest extends UpgradeContract {
 
     @Override
     protected PublishedRelease.Coordinates releaseCoordinates() {
@@ -482,6 +484,18 @@ class LiquibaseUpgradeTest extends UpgradeTestBase {
     @Override
     protected Collection<String> managedSchemas() {
         return List.of("my_project", "my_project_lib");
+    }
+
+    @Override
+    protected Configuration configuration() {
+        return PostgresTestBase.CONFIGURATION;
+    }
+
+    @Override
+    protected void assertUpgradedDatabase() {
+        assertEquals(2, upgradeDsl().fetchOne(
+                        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'my_project%'")
+                .get(0, Integer.class));
     }
 }
 ```
