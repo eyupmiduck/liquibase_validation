@@ -1,8 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -226,10 +224,7 @@ public final class GrantAssertions {
     }
 
     private static String read(String resource) throws IOException {
-        try (InputStream in = GrantAssertions.class.getClassLoader().getResourceAsStream(resource)) {
-            assertNotNull(in, () -> "resource not found: " + resource);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return TestResources.read(resource);
     }
 
     private static String placeholders(int count) {

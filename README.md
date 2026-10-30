@@ -37,9 +37,10 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   published under the `tests` classifier: a Testcontainers `PostgresTestBase`
   (shared container, migrated template database, per-class clone, introspection
   and SQLSTATE helpers, and a `Configuration` value), a classpath
-  `ChangelogTestSupport`, `ChangelogAssertions`/`RoutineAssertions`, a
-  `ChangelogLinterContract` that runs the project's own linter config and
-  whitelist, and an `UpgradeTestBase` that
+  `ChangelogTestSupport`, `TestResources`, the
+  `ChangelogAssertions`/`RoutineAssertions` helpers, contract classes for the
+  linter, changelog naming, orphaned SQL, tracking tables and `plpgsql_check`,
+  and an `UpgradeTestBase` that
   applies the most recent published release's changelog and then the current one
   (see [Using the library](#using-the-library),
   [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)
@@ -398,12 +399,14 @@ The library is published to GitHub Packages from a `v*` tag (for example
 The same artifact also publishes a `tests` classifier with shared test support
 (`io.github.eyupmiduck.changelogvalidator.testing`): `ChangelogTestSupport`,
 `PostgresTestBase` (with a `Configuration` value so a project's regular test
-base and its upgrade test share one setup), the
-`ChangelogAssertions`/`RoutineAssertions` helpers, the previous-release
-`UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`) that a project subclasses to inherit the
-tests
-themselves, so a project that builds a Liquibase changelog and PostgreSQL
-routines can share one implementation instead of copying it (see
+base and its upgrade test share one setup, plus the generic lock and catalog
+helpers), `TestResources`, the `ChangelogAssertions`/`RoutineAssertions`
+helpers (including routine/rollback parity), the previous-release
+`UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
+`ChangelogNamingContract`, `ChangelogSqlFilesContract`,
+`TrackingTablesContract`, `PlpgsqlCheckContract`) that a project subclasses to
+inherit the tests themselves, so a project that builds a Liquibase changelog and
+PostgreSQL routines can share one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
 
 ```xml
@@ -501,7 +504,10 @@ abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.
             "my-project-postgres:17-alpine",
             "db/changelog/db.changelog-master.xml",
             "my_project_databasechangelog", "my_project_databasechangeloglock",
-            null);
+            null,
+            // Installs the image's extensions and grants into each database
+            // before the changelog runs; null when the project needs none.
+            PostgresTestBase::installProjectExtensions);
 
     @Override
     protected Configuration configuration() {
