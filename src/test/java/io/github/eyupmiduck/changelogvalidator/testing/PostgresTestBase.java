@@ -75,114 +75,13 @@ public abstract class PostgresTestBase {
      * The PostgreSQL image the tests run against when the property is unset.
      */
     public static final String DEFAULT_POSTGRES_IMAGE = "postgres:17-alpine";
-
-    /**
-     * The container and changelog configuration of a consumer: the database and
-     * role names, the PostgreSQL image, the changelog resources and the
-     * Liquibase tracking-table names.
-     *
-     * <p>A consumer overrides {@link #configuration()} once with a constant of
-     * this type instead of overriding every accessor. Its regular test base and
-     * its {@link UpgradeTestBase} subclass then share one value, so the two
-     * cannot drift.
-     *
-     * @param databaseName              the database the container is created
-     *                                  with and the tests connect to
-     * @param ownerUser                 the owner role, which runs Liquibase and
-     *                                  owns the schema objects
-     * @param ownerPassword             the owner role's password
-     * @param testUser                  the test role, which acts as an
-     *                                  application caller
-     * @param testPassword              the test role's password
-     * @param postgresImage             the default PostgreSQL image, used when
-     *                                  the {@code postgres.image} system
-     *                                  property is unset
-     * @param masterResource            the master changelog classpath resource
-     * @param databaseChangeLogTable    the Liquibase tracking table name
-     * @param databaseChangeLogLockTable the Liquibase tracking lock table name
-     * @param fixturesResource          the optional fixture changelog resource,
-     *                                  or {@code null} when there is none
-     */
-    public record Configuration(String databaseName, String ownerUser, String ownerPassword,
-                                String testUser, String testPassword, String postgresImage,
-                                String masterResource, String databaseChangeLogTable,
-                                String databaseChangeLogLockTable, String fixturesResource) {
-
-        /**
-         * Validates the required values; only the fixture changelog may be absent.
-         */
-        public Configuration {
-            databaseName = requireNonBlank(databaseName, "databaseName");
-            ownerUser = requireNonBlank(ownerUser, "ownerUser");
-            ownerPassword = requireNonBlank(ownerPassword, "ownerPassword");
-            testUser = requireNonBlank(testUser, "testUser");
-            testPassword = requireNonBlank(testPassword, "testPassword");
-            postgresImage = requireNonBlank(postgresImage, "postgresImage");
-            masterResource = requireNonBlank(masterResource, "masterResource");
-            databaseChangeLogTable = requireNonBlank(databaseChangeLogTable, "databaseChangeLogTable");
-            databaseChangeLogLockTable =
-                    requireNonBlank(databaseChangeLogLockTable, "databaseChangeLogLockTable");
-        }
-
-        private static String requireNonBlank(String value, String name) {
-            if (value == null || value.isBlank()) {
-                throw new IllegalArgumentException(name + " must not be blank");
-            }
-            return value;
-        }
-
-        /**
-         * Returns the configuration without the passwords, so a failing test
-         * cannot print them.
-         *
-         * @return a description that omits the passwords
-         */
-        @Override
-        public String toString() {
-            return "Configuration[databaseName=" + databaseName
-                    + ", ownerUser=" + ownerUser
-                    + ", testUser=" + testUser
-                    + ", postgresImage=" + postgresImage
-                    + ", masterResource=" + masterResource
-                    + ", databaseChangeLogTable=" + databaseChangeLogTable
-                    + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
-                    + ", fixturesResource=" + fixturesResource + "]";
-        }
-    }
-
     private static PostgreSQLContainer postgres;
-
     /**
      * jOOQ context connected to this test class's private database.
      */
     protected DSLContext dsl;
     private String testDatabaseName;
     private Connection connection;
-
-    /**
-     * The container and changelog configuration. The default derives it from the
-     * accessors below, so a subclass may override either this method once or the
-     * individual accessors; a consumer with both a regular base and an
-     * {@link UpgradeTestBase} subclass overrides this method so the two share
-     * one value.
-     *
-     * @return the configuration
-     */
-    protected Configuration configuration() {
-        return new Configuration(
-                databaseName(), ownerUser(), ownerPassword(), testUser(), testPassword(),
-                defaultPostgresImage(), masterResource(), databaseChangeLogTableName(),
-                databaseChangeLogLockTableName(), fixturesResource());
-    }
-
-    /**
-     * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
-     * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
-     * the CI matrix set it), otherwise the configured image.
-     */
-    protected String postgresImage() {
-        return System.getProperty(POSTGRES_IMAGE_PROPERTY, configuration().postgresImage());
-    }
 
     private static void execute(Connection connection, String sql) throws SQLException {
         try (connection; Statement statement = connection.createStatement()) {
@@ -226,6 +125,35 @@ public abstract class PostgresTestBase {
      */
     public static void assertDomainViolation(Executable call) {
         assertSqlState("23514", call);
+    }
+
+    private static String templateDatabaseName(Configuration configuration) {
+        return configuration.databaseName() + "_template";
+    }
+
+    /**
+     * The container and changelog configuration. The default derives it from the
+     * accessors below, so a subclass may override either this method once or the
+     * individual accessors; a consumer with both a regular base and an
+     * {@link UpgradeTestBase} subclass overrides this method so the two share
+     * one value.
+     *
+     * @return the configuration
+     */
+    protected Configuration configuration() {
+        return new Configuration(
+                databaseName(), ownerUser(), ownerPassword(), testUser(), testPassword(),
+                defaultPostgresImage(), masterResource(), databaseChangeLogTableName(),
+                databaseChangeLogLockTableName(), fixturesResource());
+    }
+
+    /**
+     * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
+     * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
+     * the CI matrix set it), otherwise the configured image.
+     */
+    protected String postgresImage() {
+        return System.getProperty(POSTGRES_IMAGE_PROPERTY, configuration().postgresImage());
     }
 
     /**
@@ -332,10 +260,6 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the bootstrap fails
      */
     protected void installExtensions(String templateDatabase) throws SQLException {
-    }
-
-    private static String templateDatabaseName(Configuration configuration) {
-        return configuration.databaseName() + "_template";
     }
 
     /**
@@ -689,6 +613,80 @@ public abstract class PostgresTestBase {
             return connection != null && !connection.isClosed();
         } catch (SQLException e) {
             return false;
+        }
+    }
+
+    /**
+     * The container and changelog configuration of a consumer: the database and
+     * role names, the PostgreSQL image, the changelog resources and the
+     * Liquibase tracking-table names.
+     *
+     * <p>A consumer overrides {@link #configuration()} once with a constant of
+     * this type instead of overriding every accessor. Its regular test base and
+     * its {@link UpgradeTestBase} subclass then share one value, so the two
+     * cannot drift.
+     *
+     * @param databaseName               the database the container is created
+     *                                   with and the tests connect to
+     * @param ownerUser                  the owner role, which runs Liquibase and
+     *                                   owns the schema objects
+     * @param ownerPassword              the owner role's password
+     * @param testUser                   the test role, which acts as an
+     *                                   application caller
+     * @param testPassword               the test role's password
+     * @param postgresImage              the default PostgreSQL image, used when
+     *                                   the {@code postgres.image} system
+     *                                   property is unset
+     * @param masterResource             the master changelog classpath resource
+     * @param databaseChangeLogTable     the Liquibase tracking table name
+     * @param databaseChangeLogLockTable the Liquibase tracking lock table name
+     * @param fixturesResource           the optional fixture changelog resource,
+     *                                   or {@code null} when there is none
+     */
+    public record Configuration(String databaseName, String ownerUser, String ownerPassword,
+                                String testUser, String testPassword, String postgresImage,
+                                String masterResource, String databaseChangeLogTable,
+                                String databaseChangeLogLockTable, String fixturesResource) {
+
+        /**
+         * Validates the required values; only the fixture changelog may be absent.
+         */
+        public Configuration {
+            databaseName = requireNonBlank(databaseName, "databaseName");
+            ownerUser = requireNonBlank(ownerUser, "ownerUser");
+            ownerPassword = requireNonBlank(ownerPassword, "ownerPassword");
+            testUser = requireNonBlank(testUser, "testUser");
+            testPassword = requireNonBlank(testPassword, "testPassword");
+            postgresImage = requireNonBlank(postgresImage, "postgresImage");
+            masterResource = requireNonBlank(masterResource, "masterResource");
+            databaseChangeLogTable = requireNonBlank(databaseChangeLogTable, "databaseChangeLogTable");
+            databaseChangeLogLockTable =
+                    requireNonBlank(databaseChangeLogLockTable, "databaseChangeLogLockTable");
+        }
+
+        private static String requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+            return value;
+        }
+
+        /**
+         * Returns the configuration without the passwords, so a failing test
+         * cannot print them.
+         *
+         * @return a description that omits the passwords
+         */
+        @Override
+        public String toString() {
+            return "Configuration[databaseName=" + databaseName
+                    + ", ownerUser=" + ownerUser
+                    + ", testUser=" + testUser
+                    + ", postgresImage=" + postgresImage
+                    + ", masterResource=" + masterResource
+                    + ", databaseChangeLogTable=" + databaseChangeLogTable
+                    + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
+                    + ", fixturesResource=" + fixturesResource + "]";
         }
     }
 }

@@ -17,9 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Contract for a consuming project's changelog-linter test.
@@ -60,6 +58,14 @@ public abstract class ChangelogLinterContract {
      * relative to the module directory.
      */
     public static final String WHITELIST_FILE = ".liquibase-linter-whitelist.yml";
+
+    private static Whitelist whitelist(String yaml) throws IOException {
+        return Whitelist.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String describe(List<String> lines) {
+        return String.join("\n", lines);
+    }
 
     /**
      * The changelog root directory.
@@ -216,13 +222,5 @@ public abstract class ChangelogLinterContract {
                 List.of(forward),
                 false,
                 List.of());
-    }
-
-    private static Whitelist whitelist(String yaml) throws IOException {
-        return Whitelist.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private static String describe(List<String> lines) {
-        return String.join("\n", lines);
     }
 }

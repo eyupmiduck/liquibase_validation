@@ -400,8 +400,8 @@ The same artifact also publishes a `tests` classifier with shared test support
 `PostgresTestBase` (with a `Configuration` value so a project's regular test
 base and its upgrade test share one setup), the
 `ChangelogAssertions`/`RoutineAssertions` helpers, the previous-release
-`UpgradeTestBase`, and abstract contract classes
-(`ChangelogLinterContract`) that a project subclasses to inherit the tests
+`UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`) that a project subclasses to inherit the
+tests
 themselves, so a project that builds a Liquibase changelog and PostgreSQL
 routines can share one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):

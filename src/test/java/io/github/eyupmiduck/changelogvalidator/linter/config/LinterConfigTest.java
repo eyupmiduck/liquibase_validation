@@ -6,15 +6,17 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies {@link LinterConfig}, in particular the parsing of the configured
  * PostgreSQL version for the version-gated rules.
  */
 class LinterConfigTest {
+
+    private static LinterConfig config(String pgVersion) {
+        return new LinterConfig(pgVersion, Severity.ERROR, List.of(), List.of(), Map.of());
+    }
 
     /**
      * A blank or absent version yields no major version, so the rules run
@@ -46,9 +48,5 @@ class LinterConfigTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> config("latest").postgresMajorVersion());
         assertEquals("invalid pgVersion: latest", error.getMessage());
-    }
-
-    private static LinterConfig config(String pgVersion) {
-        return new LinterConfig(pgVersion, Severity.ERROR, List.of(), List.of(), Map.of());
     }
 }
