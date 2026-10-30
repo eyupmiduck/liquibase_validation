@@ -28,7 +28,7 @@ jobs:
         # The same matrix the consumers run, so the shared test support and the
         # project's own tests are exercised on every supported major, not only
         # the default.
-        postgres: ["postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine"]
+        postgres: [ "postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine" ]
 
     steps:
       - name: Checkout

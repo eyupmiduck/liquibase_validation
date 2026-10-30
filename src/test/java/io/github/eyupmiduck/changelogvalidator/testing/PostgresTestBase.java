@@ -17,11 +17,7 @@ import org.junit.jupiter.api.function.Executable;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -78,111 +74,6 @@ public abstract class PostgresTestBase {
      * The PostgreSQL image the tests run against when the property is unset.
      */
     public static final String DEFAULT_POSTGRES_IMAGE = "postgres:17-alpine";
-
-    /**
-     * The container and changelog configuration of a consumer: the database and
-     * role names, the PostgreSQL image, the changelog resources and the
-     * Liquibase tracking-table names.
-     *
-     * <p>A consumer overrides {@link #configuration()} once with a constant of
-     * this type instead of overriding every accessor. Its regular test base and
-     * its {@link UpgradeTestBase} subclass then share one value, so the two
-     * cannot drift.
-     *
-     * @param databaseName               the database the container is created
-     *                                   with and the tests connect to
-     * @param ownerUser                  the owner role, which runs Liquibase and
-     *                                   owns the schema objects
-     * @param ownerPassword              the owner role's password
-     * @param testUser                   the test role, which acts as an
-     *                                   application caller
-     * @param testPassword               the test role's password
-     * @param postgresImage              the default PostgreSQL image, used when
-     *                                   the {@code postgres.image} system
-     *                                   property is unset
-     * @param masterResource             the master changelog classpath resource
-     * @param databaseChangeLogTable     the Liquibase tracking table name
-     * @param databaseChangeLogLockTable the Liquibase tracking lock table name
-     * @param fixturesResource           the optional fixture changelog resource,
-     *                                   or {@code null} when there is none
-     * @param extensionInstaller         installs the project's extensions and
-     *                                   grants into a database, or {@code null}
-     *                                   when the project needs none
-     */
-    public record Configuration(String databaseName, String ownerUser, String ownerPassword,
-                                String testUser, String testPassword, String postgresImage,
-                                String masterResource, String databaseChangeLogTable,
-                                String databaseChangeLogLockTable, String fixturesResource,
-                                ExtensionInstaller extensionInstaller) {
-
-        /**
-         * Installs the extensions and grants a project's image provides into a
-         * database before the changelog runs. It receives a superuser connection
-         * to the target database and must close nothing.
-         */
-        @FunctionalInterface
-        public interface ExtensionInstaller {
-
-            /**
-             * Installs the extensions and grants.
-             *
-             * @param adminConnection a superuser connection to the target database
-             * @throws SQLException if the installation fails
-             */
-            void install(Connection adminConnection) throws SQLException;
-        }
-
-        /**
-         * The library's own defaults, used by its tests of the shared contracts:
-         * a stock image, the conventional changelog fixture, the generic
-         * Liquibase tracking-table names and no extensions.
-         */
-        public static final Configuration DEFAULT = new Configuration(
-                "test", "test", "test", "test", "test", DEFAULT_POSTGRES_IMAGE,
-                ChangelogTestSupport.MASTER_RESOURCE, "databasechangelog", "databasechangeloglock", null, null);
-
-        /**
-         * Validates the required values; only the fixture changelog may be absent.
-         */
-        public Configuration {
-            databaseName = requireNonBlank(databaseName, "databaseName");
-            ownerUser = requireNonBlank(ownerUser, "ownerUser");
-            ownerPassword = requireNonBlank(ownerPassword, "ownerPassword");
-            testUser = requireNonBlank(testUser, "testUser");
-            testPassword = requireNonBlank(testPassword, "testPassword");
-            postgresImage = requireNonBlank(postgresImage, "postgresImage");
-            masterResource = requireNonBlank(masterResource, "masterResource");
-            databaseChangeLogTable = requireNonBlank(databaseChangeLogTable, "databaseChangeLogTable");
-            databaseChangeLogLockTable =
-                    requireNonBlank(databaseChangeLogLockTable, "databaseChangeLogLockTable");
-        }
-
-        private static String requireNonBlank(String value, String name) {
-            if (value == null || value.isBlank()) {
-                throw new IllegalArgumentException(name + " must not be blank");
-            }
-            return value;
-        }
-
-        /**
-         * Returns the configuration without the passwords, so a failing test
-         * cannot print them.
-         *
-         * @return a description that omits the passwords
-         */
-        @Override
-        public String toString() {
-            return "Configuration[databaseName=" + databaseName
-                    + ", ownerUser=" + ownerUser
-                    + ", testUser=" + testUser
-                    + ", postgresImage=" + postgresImage
-                    + ", masterResource=" + masterResource
-                    + ", databaseChangeLogTable=" + databaseChangeLogTable
-                    + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
-                    + ", fixturesResource=" + fixturesResource
-                    + ", extensionInstaller=" + (extensionInstaller != null) + "]";
-        }
-    }
     private static PostgreSQLContainer postgres;
     /**
      * jOOQ context connected to this test class's private database.
@@ -237,6 +128,23 @@ public abstract class PostgresTestBase {
 
     private static String templateDatabaseName(Configuration configuration) {
         return configuration.databaseName() + "_template";
+    }
+
+    /**
+     * Returns the {@code pg_locks.mode} spelling of a lock mode written the way
+     * {@code LOCK TABLE} expects it, for example {@code ACCESS SHARE} to
+     * {@code AccessShareLock}.
+     *
+     * @param mode the lock mode as written in SQL
+     * @return the lock mode as reported by {@code pg_locks}
+     */
+    private static String lockModeName(String mode) {
+        StringBuilder name = new StringBuilder();
+        for (String word : mode.trim().split("\\s+")) {
+            name.append(Character.toUpperCase(word.charAt(0)))
+                    .append(word.substring(1).toLowerCase());
+        }
+        return name.append("Lock").toString();
     }
 
     /**
@@ -685,23 +593,6 @@ public abstract class PostgresTestBase {
                         )
                         """,
                 schema, table, trigger));
-    }
-
-    /**
-     * Returns the {@code pg_locks.mode} spelling of a lock mode written the way
-     * {@code LOCK TABLE} expects it, for example {@code ACCESS SHARE} to
-     * {@code AccessShareLock}.
-     *
-     * @param mode the lock mode as written in SQL
-     * @return the lock mode as reported by {@code pg_locks}
-     */
-    private static String lockModeName(String mode) {
-        StringBuilder name = new StringBuilder();
-        for (String word : mode.trim().split("\\s+")) {
-            name.append(Character.toUpperCase(word.charAt(0)))
-                    .append(word.substring(1).toLowerCase());
-        }
-        return name.append("Lock").toString();
     }
 
     /**
@@ -1219,6 +1110,111 @@ public abstract class PostgresTestBase {
             return connection != null && !connection.isClosed();
         } catch (SQLException e) {
             return false;
+        }
+    }
+
+    /**
+     * The container and changelog configuration of a consumer: the database and
+     * role names, the PostgreSQL image, the changelog resources and the
+     * Liquibase tracking-table names.
+     *
+     * <p>A consumer overrides {@link #configuration()} once with a constant of
+     * this type instead of overriding every accessor. Its regular test base and
+     * its {@link UpgradeTestBase} subclass then share one value, so the two
+     * cannot drift.
+     *
+     * @param databaseName               the database the container is created
+     *                                   with and the tests connect to
+     * @param ownerUser                  the owner role, which runs Liquibase and
+     *                                   owns the schema objects
+     * @param ownerPassword              the owner role's password
+     * @param testUser                   the test role, which acts as an
+     *                                   application caller
+     * @param testPassword               the test role's password
+     * @param postgresImage              the default PostgreSQL image, used when
+     *                                   the {@code postgres.image} system
+     *                                   property is unset
+     * @param masterResource             the master changelog classpath resource
+     * @param databaseChangeLogTable     the Liquibase tracking table name
+     * @param databaseChangeLogLockTable the Liquibase tracking lock table name
+     * @param fixturesResource           the optional fixture changelog resource,
+     *                                   or {@code null} when there is none
+     * @param extensionInstaller         installs the project's extensions and
+     *                                   grants into a database, or {@code null}
+     *                                   when the project needs none
+     */
+    public record Configuration(String databaseName, String ownerUser, String ownerPassword,
+                                String testUser, String testPassword, String postgresImage,
+                                String masterResource, String databaseChangeLogTable,
+                                String databaseChangeLogLockTable, String fixturesResource,
+                                ExtensionInstaller extensionInstaller) {
+
+        /**
+         * The library's own defaults, used by its tests of the shared contracts:
+         * a stock image, the conventional changelog fixture, the generic
+         * Liquibase tracking-table names and no extensions.
+         */
+        public static final Configuration DEFAULT = new Configuration(
+                "test", "test", "test", "test", "test", DEFAULT_POSTGRES_IMAGE,
+                ChangelogTestSupport.MASTER_RESOURCE, "databasechangelog", "databasechangeloglock", null, null);
+
+        /**
+         * Validates the required values; only the fixture changelog may be absent.
+         */
+        public Configuration {
+            databaseName = requireNonBlank(databaseName, "databaseName");
+            ownerUser = requireNonBlank(ownerUser, "ownerUser");
+            ownerPassword = requireNonBlank(ownerPassword, "ownerPassword");
+            testUser = requireNonBlank(testUser, "testUser");
+            testPassword = requireNonBlank(testPassword, "testPassword");
+            postgresImage = requireNonBlank(postgresImage, "postgresImage");
+            masterResource = requireNonBlank(masterResource, "masterResource");
+            databaseChangeLogTable = requireNonBlank(databaseChangeLogTable, "databaseChangeLogTable");
+            databaseChangeLogLockTable =
+                    requireNonBlank(databaseChangeLogLockTable, "databaseChangeLogLockTable");
+        }
+
+        private static String requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+            return value;
+        }
+
+        /**
+         * Returns the configuration without the passwords, so a failing test
+         * cannot print them.
+         *
+         * @return a description that omits the passwords
+         */
+        @Override
+        public String toString() {
+            return "Configuration[databaseName=" + databaseName
+                    + ", ownerUser=" + ownerUser
+                    + ", testUser=" + testUser
+                    + ", postgresImage=" + postgresImage
+                    + ", masterResource=" + masterResource
+                    + ", databaseChangeLogTable=" + databaseChangeLogTable
+                    + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
+                    + ", fixturesResource=" + fixturesResource
+                    + ", extensionInstaller=" + (extensionInstaller != null) + "]";
+        }
+
+        /**
+         * Installs the extensions and grants a project's image provides into a
+         * database before the changelog runs. It receives a superuser connection
+         * to the target database and must close nothing.
+         */
+        @FunctionalInterface
+        public interface ExtensionInstaller {
+
+            /**
+             * Installs the extensions and grants.
+             *
+             * @param adminConnection a superuser connection to the target database
+             * @throws SQLException if the installation fails
+             */
+            void install(Connection adminConnection) throws SQLException;
         }
     }
 }
