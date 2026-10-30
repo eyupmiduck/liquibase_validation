@@ -108,9 +108,11 @@ Decision:
   package (currently `ChangelogLinterContract`). A contract holds the `@Test`
   methods; a consumer subclasses it and supplies only the project values
   through `protected` hooks. Contract classes are named `*Contract`, so the
-  existing `**/*Test.class` / `**/Test*.class` excludes still keep the
-  library's own autotests out of the jar. The library runs each contract
-  against its fixture changelog (`ChangelogLinterContractTest`).
+  `**/*Test.class` / `**/*Tests.class` / `**/*Test$*.class` excludes keep the
+  library's own autotests and their nested probes out of the jar without
+  catching a support class such as `TestResources` (the old, broader
+  `**/Test*.class` pattern did). The library runs each contract against its
+  fixture changelog (`ChangelogLinterContractTest`).
 - `PostgresTestBase` gains a nested `Configuration` record and a
   `protected Configuration configuration()` accessor. Its default derives the
   value from the existing accessors, so a subclass that overrides the accessors
@@ -132,6 +134,58 @@ Consequences:
   module directory (the surefire working directory), matching the paths the
   Maven exec plugin passes to the gate. A project that runs tests from another
   directory overrides `configFile()` / `whitelistFile()`.
+
+## Update (1.8.0): the remaining duplicated tests and generic helpers
+
+The 1.7.0 contracts covered the linter test and the upgrade-test accessors. The
+remaining duplication was structural rather than incidental:
+
+- four near-identical test classes (`ChangelogNamingTest`,
+  `ChangelogSqlFilesTest`, `LiquibaseTrackingTablesTest`, `PlpgsqlCheckTest`);
+- the ddl-side routine/rollback signature check, which dml only approximated
+  with a hand-maintained list of files;
+- a private classpath resource reader in each consumer;
+- roughly 400 lines of generic PostgreSQL helpers (lock plumbing, catalog
+  introspection, table create/drop) stranded in ddl_utils' local
+  `PostgresTestBase`, although nothing about them is ddl-specific.
+
+Decision:
+
+- Add four contracts in the `testing` package:
+  `ChangelogNamingContract`, `ChangelogSqlFilesContract`,
+  `TrackingTablesContract` and `PlpgsqlCheckContract`. The last two extend
+  `PostgresTestBase`; their hooks supply the application or routine schemas.
+  Because the contract, not the consumer's own test base, is the direct
+  superclass of the consumer's test class, those two contracts also require the
+  consumer's `configuration()` explicitly, so the custom roles, image and
+  changelog cannot silently fall back to the shared defaults.
+- Add `Configuration.extensionInstaller`, a hook that installs the image's
+  extensions and grants into a database before the changelog runs. The default
+  `PostgresTestBase.installExtensions` runs it, so a consumer that shares one
+  configuration (its test base, its contract tests and its upgrade test) also
+  shares its extension setup, and the upgrade test's scratch database gets the
+  same extensions as the template.
+- Add `TestResources` for classpath reads (`read`, `readSqlFiles`), used by
+  `GrantAssertions` and by the consumer tests that execute a rollback script. It
+  reads an exploded classpath and a jar, like the old ddl-side reader.
+- Add `RoutineAssertions.assertRollbackDropsMatchRoutines`: it collects every
+  rollback `DROP ... IF EXISTS <signature>` from the given classpath
+  directories, rejects duplicate signatures, resolves each signature against
+  `pg_proc`, and asserts the resolved set equals the routines in the given
+  schemas. Both consumers run it.
+- Move the generic lock and catalog helpers into `PostgresTestBase`. The
+  ddl_utils-specific helpers (lock-settings rows, the temporary NOT NULL proof
+  constraint name and its simulated states) stay in the consumer.
+
+Consequences:
+
+- `PlpgsqlCheckContract` cannot run in the library's own build: its stock
+  PostgreSQL image has no `plpgsql_check` extension. The library tests the
+  contract's defaults; the consumer images, which compile the extension, run the
+  inherited analyser test. This is documented on the contract.
+- The dml project gains the routine/rollback parity check it lacked, and the
+  generic lock helpers are now available to both consumers instead of being
+  copied on demand.
 
 ## Revisit triggers
 

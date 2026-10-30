@@ -1,8 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -13,7 +11,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Reusable assertions over the caller grants of a migrated database and over the
@@ -226,10 +225,7 @@ public final class GrantAssertions {
     }
 
     private static String read(String resource) throws IOException {
-        try (InputStream in = GrantAssertions.class.getClassLoader().getResourceAsStream(resource)) {
-            assertNotNull(in, () -> "resource not found: " + resource);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        return TestResources.read(resource);
     }
 
     private static String placeholders(int count) {

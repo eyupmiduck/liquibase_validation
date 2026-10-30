@@ -292,10 +292,10 @@
                  classifier so projects building a Liquibase changelog can share
                  one implementation: the PostgreSQL test base, the assertion
                  helpers and the abstract `*Contract` classes a consumer
-                 subclasses. Only that package is included, and the
-                 `**/*Test.class` excludes drop the library's own tests, so the
-                 contract classes ship but their autotests do not. The runtime
-                 dependency set is unchanged. See
+                 subclasses. Only that package is included, and the excludes
+                 drop the library's own tests (including their nested probes),
+                 so the contract classes ship but their autotests do not. The
+                 runtime dependency set is unchanged. See
                  docs/adr/0004-shared-test-support-packaging.md. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -311,12 +311,14 @@
                                 <include>io/github/eyupmiduck/changelogvalidator/testing/**</include>
                             </includes>
                             <!-- Ship only the support classes, not their tests:
-                                 consumers should not receive the autotests in
-                                 the tests classifier. -->
+                                 the patterns drop the library's autotests and
+                                 their nested probes while keeping a support
+                                 class whose name starts with "Test" (for
+                                 example TestResources). -->
                             <excludes>
                                 <exclude>**/*Test.class</exclude>
                                 <exclude>**/*Tests.class</exclude>
-                                <exclude>**/Test*.class</exclude>
+                                <exclude>**/*Test$*.class</exclude>
                             </excludes>
                         </configuration>
                     </execution>

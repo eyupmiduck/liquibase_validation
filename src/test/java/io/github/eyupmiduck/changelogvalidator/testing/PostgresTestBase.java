@@ -17,10 +17,9 @@ import org.junit.jupiter.api.function.Executable;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -132,6 +131,23 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Returns the {@code pg_locks.mode} spelling of a lock mode written the way
+     * {@code LOCK TABLE} expects it, for example {@code ACCESS SHARE} to
+     * {@code AccessShareLock}.
+     *
+     * @param mode the lock mode as written in SQL
+     * @return the lock mode as reported by {@code pg_locks}
+     */
+    private static String lockModeName(String mode) {
+        StringBuilder name = new StringBuilder();
+        for (String word : mode.trim().split("\\s+")) {
+            name.append(Character.toUpperCase(word.charAt(0)))
+                    .append(word.substring(1).toLowerCase());
+        }
+        return name.append("Lock").toString();
+    }
+
+    /**
      * The container and changelog configuration. The default derives it from the
      * accessors below, so a subclass may override either this method once or the
      * individual accessors; a consumer with both a regular base and an
@@ -144,7 +160,7 @@ public abstract class PostgresTestBase {
         return new Configuration(
                 databaseName(), ownerUser(), ownerPassword(), testUser(), testPassword(),
                 defaultPostgresImage(), masterResource(), databaseChangeLogTableName(),
-                databaseChangeLogLockTableName(), fixturesResource());
+                databaseChangeLogLockTableName(), fixturesResource(), null);
     }
 
     /**
@@ -251,15 +267,23 @@ public abstract class PostgresTestBase {
     }
 
     /**
-     * Hook to install extensions and grant roles in the template database
-     * before the changelog runs (for example {@code plpgsql_check} or
-     * {@code pg_background}). Runs with the container's superuser connection to
-     * the template database. The default installs nothing.
+     * Installs extensions and grants in a database before the changelog runs
+     * (for example {@code plpgsql_check} or {@code pg_background}). The default
+     * runs the configured {@link Configuration.ExtensionInstaller}, so a project
+     * that shares one configuration also shares its extension setup; a subclass
+     * may override this method instead.
      *
-     * @param templateDatabase the template database name
+     * @param templateDatabase the database name
      * @throws SQLException if the bootstrap fails
      */
     protected void installExtensions(String templateDatabase) throws SQLException {
+        Configuration.ExtensionInstaller installer = configuration().extensionInstaller();
+        if (installer == null) {
+            return;
+        }
+        try (Connection admin = adminConnection(templateDatabase)) {
+            installer.install(admin);
+        }
     }
 
     /**
@@ -572,6 +596,479 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Holds an ACCESS SHARE lock on a table on a second connection, which
+     * conflicts with the ACCESS EXCLUSIVE lock an {@code ALTER TABLE} needs.
+     * The caller owns the connection and must close it to release the lock.
+     *
+     * @param connection a connection to this test class's private database
+     * @param table      the table to lock
+     * @return the backend PID holding the lock
+     * @throws SQLException if the lock cannot be taken
+     */
+    protected int holdAccessShareLock(Connection connection, String table) throws SQLException {
+        return holdTableLock(connection, table, "ACCESS SHARE");
+    }
+
+    /**
+     * Holds a table lock in the given mode on a second connection, so a test
+     * can make a routine wait for it. The caller owns the connection and must
+     * close it to release the lock.
+     *
+     * @param connection a connection to this test class's private database
+     * @param table      the table to lock
+     * @param mode       the PostgreSQL lock mode, for example {@code ACCESS SHARE}
+     * @return the backend PID holding the lock, so a wait can be scoped to this
+     * exact session rather than any session holding the same lock
+     * @throws SQLException if the lock cannot be taken
+     */
+    protected int holdTableLock(Connection connection, String table, String mode) throws SQLException {
+        connection.setAutoCommit(false);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("LOCK TABLE " + table + " IN " + mode + " MODE");
+        }
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("SELECT pg_backend_pid()")) {
+            result.next();
+            return result.getInt(1);
+        }
+    }
+
+    /**
+     * Waits until the given competing session holds an ACCESS SHARE lock on the
+     * table, so a test can be sure its own blocker is in place before calling a
+     * routine that must wait for it.
+     *
+     * @param table     the table to check
+     * @param holderPid the backend PID expected to hold the lock
+     * @throws InterruptedException if waiting for the lock is interrupted
+     */
+    protected void awaitAccessShareLockHeld(String table, int holderPid) throws InterruptedException {
+        awaitTableLockHeld(table, "AccessShareLock", holderPid);
+    }
+
+    /**
+     * Waits until the given competing session holds a lock in the given mode on
+     * the table, so a test can be sure its own blocker is in place before
+     * calling a routine that must wait for it. Scoping the lookup to the holder
+     * PID prevents an unrelated session's lock from satisfying the wait.
+     *
+     * @param table     the table to check
+     * @param mode      the PostgreSQL lock mode as reported by {@code pg_locks},
+     *                  for example {@code AccessExclusiveLock}
+     * @param holderPid the backend PID expected to hold the lock
+     * @throws InterruptedException if waiting for the lock is interrupted
+     */
+    protected void awaitTableLockHeld(String table, String mode, int holderPid) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            Object held = dsl.fetchValue(
+                    """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM pg_locks l
+                                JOIN pg_class c ON c.oid = l.relation
+                                JOIN pg_namespace n ON n.oid = c.relnamespace
+                                WHERE c.relname = ?
+                                    AND n.nspname = current_schema()
+                                    AND l.mode = ?
+                                    AND l.granted
+                                    AND l.pid = ?
+                            )
+                            """,
+                    table, mode, holderPid);
+            if (Boolean.TRUE.equals(held)) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        fail("the competing session did not acquire its " + mode + " lock on " + table);
+    }
+
+    /**
+     * Rolls back a connection after a delay on a dedicated daemon thread, so a
+     * test can release a held lock while the test thread is blocked in a call.
+     * The returned future completes once the rollback has run, or fails with
+     * the rollback error.
+     *
+     * @param connection  the connection to roll back
+     * @param delayMillis how long to hold before rolling back
+     * @return a future that completes when the rollback has run
+     */
+    protected CompletableFuture<Void> rollbackAfter(Connection connection, long delayMillis) {
+        CompletableFuture<Void> completed = new CompletableFuture<>();
+        Thread thread = new Thread(() -> {
+            try {
+                Thread.sleep(delayMillis);
+                connection.rollback();
+                completed.complete(null);
+            } catch (Throwable e) {
+                completed.completeExceptionally(e);
+            }
+        }, "lock-holder-rollback");
+        thread.setDaemon(true);
+        thread.start();
+        return completed;
+    }
+
+    /**
+     * Runs {@code call} while another session holds an ACCESS SHARE lock on
+     * {@code table}, and asserts it gives up with SQLSTATE {@code 55P03} within
+     * {@code maxMillis}. The settings passed to the call must make the budget
+     * short, so the bound distinguishes giving up from retrying for seconds.
+     *
+     * @param table     the locked table
+     * @param maxMillis the maximum expected time to give up
+     * @param call      the call expected to fail
+     * @throws SQLException         if the competing connection cannot be opened
+     * @throws InterruptedException if waiting for the lock is interrupted
+     */
+    protected void assertGivesUpWhileTableLocked(String table, long maxMillis, Executable call)
+            throws SQLException, InterruptedException {
+        assertGivesUpWhileTableLocked(table, "ACCESS SHARE", maxMillis, call);
+    }
+
+    /**
+     * Runs {@code call} while another session holds a lock in the given mode on
+     * {@code table}, and asserts it gives up with SQLSTATE {@code 55P03} within
+     * {@code maxMillis}. The settings passed to the call must make the budget
+     * short, so the bound distinguishes giving up from retrying for seconds.
+     * Use {@code ACCESS EXCLUSIVE} for routines whose final statement takes only
+     * SHARE UPDATE EXCLUSIVE, which an ACCESS SHARE lock does not block.
+     *
+     * @param table     the locked table
+     * @param mode      the PostgreSQL lock mode, for example {@code ACCESS SHARE}
+     * @param maxMillis the maximum expected time to give up
+     * @param call      the call expected to fail
+     * @throws SQLException         if the competing connection cannot be opened
+     * @throws InterruptedException if waiting for the lock is interrupted
+     */
+    protected void assertGivesUpWhileTableLocked(String table, String mode, long maxMillis, Executable call)
+            throws SQLException, InterruptedException {
+        try (Connection other = openTestConnection()) {
+            int holderPid = holdTableLock(other, table, mode);
+            awaitTableLockHeld(table, lockModeName(mode), holderPid);
+
+            long startedAt = System.nanoTime();
+            assertSqlState("55P03", call);
+            long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+            assertTrue(elapsedMillis < maxMillis,
+                    () -> "the call did not give up within " + maxMillis + " ms; took " + elapsedMillis + " ms");
+        }
+    }
+
+    /**
+     * Runs {@code call} while another session holds an ACCESS SHARE lock on
+     * {@code table}, releasing the lock after {@code releaseDelayMillis}.
+     *
+     * @param table              the locked table
+     * @param releaseDelayMillis how long to hold the lock before releasing it
+     * @param call               the call to run
+     */
+    protected void runWhileTableLocked(String table, long releaseDelayMillis, Runnable call) {
+        try (Connection other = openTestConnection()) {
+            int holderPid = holdAccessShareLock(other, table);
+            awaitAccessShareLockHeld(table, holderPid);
+
+            CompletableFuture<Void> release = rollbackAfter(other, releaseDelayMillis);
+            Throwable failure = null;
+            try {
+                call.run();
+            } catch (Throwable e) {
+                failure = e;
+                throw e;
+            } finally {
+                // Do not let a rollback failure hide the primary failure.
+                try {
+                    release.join();
+                } catch (CompletionException e) {
+                    if (failure != null) {
+                        failure.addSuppressed(e);
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } catch (SQLException | InterruptedException e) {
+            throw new IllegalStateException("failed while running under a table lock", e);
+        }
+    }
+
+    /**
+     * Creates a table owned by the test role, so SECURITY INVOKER routines that
+     * require ownership can operate on it.
+     *
+     * @param table   the table name
+     * @param columns the column definitions, without the surrounding
+     *                parentheses
+     */
+    protected void createTestTable(String table, String columns) {
+        dsl.execute("CREATE TABLE " + table + " (" + columns + ")");
+    }
+
+    /**
+     * Drops a table created by {@link #createTestTable}, if it exists.
+     *
+     * @param table the table name
+     */
+    protected void dropTestTable(String table) {
+        dsl.execute("DROP TABLE IF EXISTS " + table);
+    }
+
+    /**
+     * Returns a column's {@code pg_attribute} row, failing when the column does
+     * not exist. Used for attributes that {@code information_schema.columns}
+     * does not expose ({@code attidentity}, {@code attstorage},
+     * {@code attcompression}, {@code attgenerated}).
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     * @return the column's pg_attribute row
+     */
+    private Record pgAttribute(String schema, String table, String column) {
+        Record record = dsl.fetchOne(
+                """
+                        SELECT a.attidentity::text AS attidentity,
+                               a.attstorage::text AS attstorage,
+                               a.attcompression::text AS attcompression,
+                               (a.attgenerated <> '') AS attgenerated
+                        FROM pg_attribute a
+                        JOIN pg_class c ON c.oid = a.attrelid
+                        JOIN pg_namespace n ON n.oid = c.relnamespace
+                        WHERE n.nspname = ? AND c.relname = ? AND a.attname = ?
+                        """,
+                schema, table, column);
+        assertNotNull(record, () -> "column not found: " + schema + "." + table + "." + column);
+        return record;
+    }
+
+    /**
+     * Returns a column's identity code: {@code 'a'} for ALWAYS, {@code 'd'} for
+     * BY DEFAULT, {@code ''} for no identity.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     * @return the identity code
+     */
+    protected String columnIdentity(String schema, String table, String column) {
+        return pgAttribute(schema, table, column).get("attidentity", String.class);
+    }
+
+    /**
+     * Returns a column's storage mode name ({@code plain}, {@code external},
+     * {@code main} or {@code extended}).
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     * @return the storage mode name
+     */
+    protected String columnStorage(String schema, String table, String column) {
+        // attstorage is a single code: p=plain, e=external, m=main, x=extended.
+        String code = pgAttribute(schema, table, column).get("attstorage", String.class);
+        return switch (code) {
+            case "p" -> "plain";
+            case "e" -> "external";
+            case "m" -> "main";
+            case "x" -> "extended";
+            default -> code;
+        };
+    }
+
+    /**
+     * Returns a column's compression method name ({@code pglz}, {@code lz4} or
+     * {@code default}).
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     * @return the compression method name
+     */
+    protected String columnCompression(String schema, String table, String column) {
+        // attcompression is a single code: p=pglz, l=lz4, empty=default.
+        String code = pgAttribute(schema, table, column).get("attcompression", String.class);
+        return switch (code) {
+            case "p" -> "pglz";
+            case "l" -> "lz4";
+            case "" -> "default";
+            default -> code;
+        };
+    }
+
+    /**
+     * Returns whether a column is generated.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     * @return {@code true} when the column is generated
+     */
+    protected boolean isGenerated(String schema, String table, String column) {
+        return Boolean.TRUE.equals(pgAttribute(schema, table, column).get("attgenerated", Boolean.class));
+    }
+
+    /**
+     * Returns whether the named constraint on a table is validated, failing when
+     * no such constraint exists on that table. The lookup is scoped to the
+     * {@code (schema, table, name)} triple because constraint names are only
+     * unique per table.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param name   the constraint name
+     * @return {@code true} when the constraint is validated
+     */
+    protected boolean constraintValidated(String schema, String table, String name) {
+        Record record = dsl.fetchOne(
+                """
+                        SELECT convalidated
+                        FROM pg_constraint
+                        WHERE conname = ?
+                            AND conrelid = (SELECT oid FROM pg_class WHERE relname = ?
+                                              AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = ?))
+                        """,
+                name, table, schema);
+        assertNotNull(record, () -> "constraint not found: " + schema + "." + table + "." + name);
+        return Boolean.TRUE.equals(record.get("convalidated", Boolean.class));
+    }
+
+    /**
+     * Asserts that a column is nullable.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     */
+    protected void assertNullable(String schema, String table, String column) {
+        assertEquals("YES", columnAttribute(schema, table, column, "is_nullable"),
+                () -> column + " should be nullable");
+    }
+
+    /**
+     * Asserts that a column is not nullable.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     */
+    protected void assertNotNullable(String schema, String table, String column) {
+        assertEquals("NO", columnAttribute(schema, table, column, "is_nullable"),
+                () -> column + " should not be nullable");
+    }
+
+    /**
+     * Asserts that a column has a default expression containing the given text.
+     *
+     * @param schema            the table schema
+     * @param table             the table name
+     * @param column            the column name
+     * @param expectedSubstring a substring the default expression must contain
+     */
+    protected void assertColumnDefault(String schema, String table, String column, String expectedSubstring) {
+        String defaultExpression = columnAttribute(schema, table, column, "column_default");
+        assertNotNull(defaultExpression, () -> column + " should have a default");
+        assertTrue(defaultExpression.contains(expectedSubstring),
+                () -> "default " + defaultExpression + " should contain " + expectedSubstring);
+    }
+
+    /**
+     * Asserts that a column has no default expression.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param column the column name
+     */
+    protected void assertNoColumnDefault(String schema, String table, String column) {
+        assertNull(columnAttribute(schema, table, column, "column_default"),
+                () -> column + " should have no default");
+    }
+
+    /**
+     * Asserts that the named constraint on a table is validated.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param name   the constraint name
+     */
+    protected void assertValidated(String schema, String table, String name) {
+        assertTrue(constraintValidated(schema, table, name), () -> name + " should be validated");
+    }
+
+    /**
+     * Asserts that the named constraint on a table is not validated.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param name   the constraint name
+     */
+    protected void assertNotValidated(String schema, String table, String name) {
+        assertFalse(constraintValidated(schema, table, name), () -> name + " should not be validated");
+    }
+
+    /**
+     * Returns whether the named constraint exists on a table.
+     *
+     * @param schema the table schema
+     * @param table  the table name
+     * @param name   the constraint name
+     * @return {@code true} when the constraint exists on that table
+     */
+    protected boolean constraintExists(String schema, String table, String name) {
+        return Boolean.TRUE.equals(dsl.fetchValue(
+                """
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = ?
+                                AND conrelid = (SELECT oid FROM pg_class WHERE relname = ?
+                                                  AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = ?))
+                        )
+                        """,
+                name, table, schema));
+    }
+
+    /**
+     * Returns whether any constraint with the given name exists in a schema.
+     * Constraint names are unique per table, not per schema, so this matches a
+     * name on any table in the schema.
+     *
+     * @param schema the schema name
+     * @param name   the constraint name
+     * @return {@code true} when a constraint with that name exists in the schema
+     */
+    protected boolean constraintExists(String schema, String name) {
+        return Boolean.TRUE.equals(dsl.fetchValue(
+                """
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = ?
+                                AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = ?)
+                        )
+                        """,
+                name, schema));
+    }
+
+    /**
+     * Returns the {@code contype} of the named constraint in a schema
+     * ({@code p} primary key, {@code u} unique, {@code f} foreign key,
+     * {@code c} check).
+     *
+     * @param schema the schema name
+     * @param name   the constraint name
+     * @return the constraint type code
+     */
+    protected String constraintType(String schema, String name) {
+        Record record = dsl.fetchOne(
+                """
+                        SELECT contype::text FROM pg_constraint
+                        WHERE conname = ? AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = ?)
+                        """,
+                name, schema);
+        assertNotNull(record, () -> "constraint not found: " + schema + "." + name);
+        return record.get(0, String.class);
+    }
+
+    /**
      * Drops this class's private database, ignoring an already-gone database, so
      * a failed setup does not leak it.
      */
@@ -642,11 +1139,24 @@ public abstract class PostgresTestBase {
      * @param databaseChangeLogLockTable the Liquibase tracking lock table name
      * @param fixturesResource           the optional fixture changelog resource,
      *                                   or {@code null} when there is none
+     * @param extensionInstaller         installs the project's extensions and
+     *                                   grants into a database, or {@code null}
+     *                                   when the project needs none
      */
     public record Configuration(String databaseName, String ownerUser, String ownerPassword,
                                 String testUser, String testPassword, String postgresImage,
                                 String masterResource, String databaseChangeLogTable,
-                                String databaseChangeLogLockTable, String fixturesResource) {
+                                String databaseChangeLogLockTable, String fixturesResource,
+                                ExtensionInstaller extensionInstaller) {
+
+        /**
+         * The library's own defaults, used by its tests of the shared contracts:
+         * a stock image, the conventional changelog fixture, the generic
+         * Liquibase tracking-table names and no extensions.
+         */
+        public static final Configuration DEFAULT = new Configuration(
+                "test", "test", "test", "test", "test", DEFAULT_POSTGRES_IMAGE,
+                ChangelogTestSupport.MASTER_RESOURCE, "databasechangelog", "databasechangeloglock", null, null);
 
         /**
          * Validates the required values; only the fixture changelog may be absent.
@@ -686,7 +1196,25 @@ public abstract class PostgresTestBase {
                     + ", masterResource=" + masterResource
                     + ", databaseChangeLogTable=" + databaseChangeLogTable
                     + ", databaseChangeLogLockTable=" + databaseChangeLogLockTable
-                    + ", fixturesResource=" + fixturesResource + "]";
+                    + ", fixturesResource=" + fixturesResource
+                    + ", extensionInstaller=" + (extensionInstaller != null) + "]";
+        }
+
+        /**
+         * Installs the extensions and grants a project's image provides into a
+         * database before the changelog runs. It receives a superuser connection
+         * to the target database and must close nothing.
+         */
+        @FunctionalInterface
+        public interface ExtensionInstaller {
+
+            /**
+             * Installs the extensions and grants.
+             *
+             * @param adminConnection a superuser connection to the target database
+             * @throws SQLException if the installation fails
+             */
+            void install(Connection adminConnection) throws SQLException;
         }
     }
 }
