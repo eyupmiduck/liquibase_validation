@@ -16,4 +16,4 @@ permissions:
 
 jobs:
   auto-merge:
-    uses: eyupmiduck/workflow_library/.github/workflows/dependabot-automerge.yml@93e83bc32b1372fa3c961d9ede6d6d036df5dfd8 # main
+    uses: eyupmiduck/workflow_library/.github/workflows/dependabot-automerge.yml@2499e14a4533396c8318abecaa35dd2477be1f41 # main
