@@ -28,7 +28,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <json-schema-validator.version>3.0.8</json-schema-validator.version>
-        <jackson.version>3.2.3</jackson.version>
+        <jackson.version>3.2.4</jackson.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <slf4j.version>2.0.20</slf4j.version>
         <postgresql.version>42.7.14</postgresql.version>
@@ -198,7 +198,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.6.0</version>
+                    <version>3.6.1</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
