@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies the behaviour of {@link ChangelogValidator} against temporary
@@ -331,6 +332,34 @@ class ChangelogValidatorTest {
         Files.writeString(changes.resolve("broken.xml"), "<databaseChangeLog>");
 
         assertThrows(IOException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+    }
+
+    /**
+     * A DOCTYPE that declares an external entity is rejected instead of being
+     * resolved, so a crafted changelog cannot read a local file.
+     */
+    @Test
+    void rejectsDoctypeWithExternalEntity() throws IOException {
+        Path secret = tempDir.resolve("secret.txt");
+        Files.writeString(secret, "TOP SECRET");
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE databaseChangeLog [
+                  <!ENTITY xxe SYSTEM "%s">
+                ]>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+                  <changeSet id="001-probe" author="test">
+                    <sql>&xxe;</sql>
+                  </changeSet>
+                </databaseChangeLog>
+                """.formatted(secret.toUri()));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertTrue(failure.getMessage().contains("master.xml"),
+                () -> "the failure should name the changelog: " + failure.getMessage());
     }
 
     /**
