@@ -187,6 +187,28 @@ Consequences:
   generic lock helpers are now available to both consumers instead of being
   copied on demand.
 
+## Update (1.9.0): upgrade and rollback contracts
+
+Two more test methods had the same shape in both consumers beyond their project
+values:
+
+- the previous-release upgrade test, which always asserts that the published
+  release contributed changesets and then checks the project's own end state;
+- the routine/rollback signature test, which always lints the same two classpath
+  directory lists against the project's routine schemas.
+
+Add `UpgradeContract` (extends `UpgradeTestBase`, adds the common assertion and
+an `assertUpgradedDatabase()` hook) and `RollbackSignatureContract` (extends
+`PostgresTestBase`, takes the routine schemas and rollback directories). As with
+the other container contracts, both require the consumer's `configuration()`
+explicitly, because the contract is the direct superclass of the consumer's test
+class.
+
+`UpgradeContract` is exercised by the consumers' upgrade tests against a real
+published release; the library's own tests cover `UpgradeTestBase` and the
+rollback machinery. `RollbackSignatureContract` has a library test that creates
+a probe routine and points the contract at a rollback fixture.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the
