@@ -28,10 +28,9 @@ class SarifSampleChangelogTest {
     void sampleProducesExactlyOneIndexCreationFinding() throws Exception {
         Path sarif = Path.of(getClass().getClassLoader().getResource("sarif").toURI());
         LinterConfig config = LinterConfigLoader.load(sarif.resolve("sample-changelog-linter.yml"));
-        Integer pgVersion = Integer.valueOf(config.pgVersion().split("\\.")[0]);
 
         List<ChangeSet> changeSets = ChangelogModel.changesets(sarif, sarif.resolve("sample-changelog.xml"));
-        List<Finding> findings = new Linter(Rules.all(pgVersion), config).lint(changeSets);
+        List<Finding> findings = new Linter(Rules.all(config.postgresMajorVersion()), config).lint(changeSets);
 
         assertEquals(1, findings.size(), () -> "unexpected findings: " + findings);
         assertEquals(RequireConcurrentIndexCreationRule.ID, findings.get(0).ruleId());

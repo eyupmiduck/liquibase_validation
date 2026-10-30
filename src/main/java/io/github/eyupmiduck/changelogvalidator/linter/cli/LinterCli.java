@@ -86,7 +86,7 @@ public final class LinterCli {
                 config = config.withFailOn(options.failOn());
             }
             List<ChangeSet> changeSets = ChangelogModel.changesets(options.changelogRoot(), options.master());
-            Linter linter = new Linter(Rules.all(majorVersion(config.pgVersion())), config);
+            Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), config);
             List<Finding> findings = linter.lint(changeSets);
             Whitelist.Report report = Whitelist.load(options.whitelist()).apply(findings);
             options.reporter().report(report.unmatched(), out);
@@ -106,17 +106,6 @@ public final class LinterCli {
     private static String describe(Throwable error) {
         String message = error.getMessage();
         return message == null || message.isBlank() ? error.toString() : message;
-    }
-
-    private static Integer majorVersion(String pgVersion) {
-        if (pgVersion == null || pgVersion.isBlank()) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(pgVersion.strip().split("\\.")[0]);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
-        }
     }
 
     /**

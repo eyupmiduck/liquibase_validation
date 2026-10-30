@@ -37,7 +37,8 @@ import java.util.Optional;
  *
  * <p>A subclass supplies {@link #releaseCoordinates()} and
  * {@link #managedSchemas()}; the roles, image, tracking table names and changelog
- * resource come from the inherited accessors.
+ * resource come from {@link #configuration()}, so a consumer returns the same
+ * value from its regular test base and this one.
  *
  * <p>The test skips (rather than fails) when there is no published release below
  * the current version, so a project's first release does not break its build. It
@@ -99,8 +100,10 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      * @return the tracking settings
      */
     protected LiquibaseUpgrade.TrackingSettings trackingSettings() {
+        Configuration configuration = configuration();
         return new LiquibaseUpgrade.TrackingSettings(
-                LIQUIBASE_SCHEMA, databaseChangeLogTableName(), databaseChangeLogLockTableName());
+                LIQUIBASE_SCHEMA, configuration.databaseChangeLogTable(),
+                configuration.databaseChangeLogLockTable());
     }
 
     /**
@@ -141,7 +144,8 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         createDatabase(upgradeDatabase);
         prepareDatabase(upgradeDatabase);
         try (Connection owner = openOwnerConnection(upgradeDatabase)) {
-            report = LiquibaseUpgrade.apply(owner, trackingSettings(), previousJar.get(), masterResource());
+            report = LiquibaseUpgrade.apply(owner, trackingSettings(), previousJar.get(),
+                    configuration().masterResource());
         }
         upgradeConnection = openTestConnection(upgradeDatabase);
         upgradeDsl = DSL.using(upgradeConnection, SQLDialect.POSTGRES);
@@ -160,7 +164,7 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         createDatabase(freshDatabase);
         prepareDatabase(freshDatabase);
         try (Connection owner = openOwnerConnection(freshDatabase)) {
-            LiquibaseUpgrade.applyCurrent(owner, trackingSettings(), masterResource());
+            LiquibaseUpgrade.applyCurrent(owner, trackingSettings(), configuration().masterResource());
         }
 
         Map<String, String> fresh;
@@ -194,6 +198,7 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     }
 
     private void prepareDatabase(String database) throws SQLException {
+        Configuration configuration = configuration();
         // The scratch database is fresh, so the consumer's extension hook (for
         // example plpgsql_check or pg_background, which the changelog's routines
         // reference) must run here too, not only for the template.
@@ -201,16 +206,16 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         // The owner creates the changelog's schemas and objects, so grant it
         // what a real deployment would have (the init script does this for the
         // project's main database only).
-        try (Connection admin = openAdminConnection(databaseName());
+        try (Connection admin = openAdminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON DATABASE \"" + database + "\" TO " + ownerUser());
+            statement.execute("GRANT CREATE ON DATABASE \"" + database + "\" TO " + configuration.ownerUser());
         }
         try (Connection admin = openAdminConnection(database);
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + ownerUser());
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + testUser());
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.ownerUser());
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.testUser());
             statement.execute("CREATE SCHEMA IF NOT EXISTS "
-                    + trackingSettings().liquibaseSchema() + " AUTHORIZATION " + ownerUser());
+                    + trackingSettings().liquibaseSchema() + " AUTHORIZATION " + configuration.ownerUser());
         }
     }
 

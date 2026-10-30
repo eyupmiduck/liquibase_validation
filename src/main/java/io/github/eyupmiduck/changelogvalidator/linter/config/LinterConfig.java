@@ -79,6 +79,24 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
     }
 
     /**
+     * Returns the PostgreSQL major version for the version-gated rules, parsed
+     * from {@link #pgVersion()}.
+     *
+     * @return the major version, or {@code null} when no version is configured
+     * @throws IllegalArgumentException if the configured version is not a number
+     */
+    public Integer postgresMajorVersion() {
+        if (pgVersion == null || pgVersion.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(pgVersion.strip().split("\\.")[0]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
+        }
+    }
+
+    /**
      * Returns every rule id referenced by this configuration, so the engine can
      * reject typos.
      *
