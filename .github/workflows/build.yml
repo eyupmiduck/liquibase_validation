@@ -27,8 +27,9 @@ jobs:
       matrix:
         # The same matrix the consumers run, so the shared test support and the
         # project's own tests are exercised on every supported major, not only
-        # the default.
-        postgres: [ "postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine" ]
+        # the default. PostgreSQL 19 is a release candidate until its scheduled
+        # GA on 2026-11-19; the tag is explicit so the leg tests that pre-release.
+        postgres: [ "postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine", "postgres:19rc1-alpine" ]
 
     steps:
       - name: Checkout

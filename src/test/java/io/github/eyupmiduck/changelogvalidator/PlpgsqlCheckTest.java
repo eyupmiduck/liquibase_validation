@@ -29,19 +29,30 @@ class PlpgsqlCheckTest {
     private static Connection connection;
 
     /**
-     * The Debian base image to build the plpgsql_check image on: the major of
-     * the {@code postgres.image} the tests run against, which the CI matrix
-     * varies (the {@code -alpine} tag the other tests use has no
-     * {@code plpgsql_check} package, so the base is the matching Debian image).
+     * The Debian base image to build the plpgsql_check image on: the tag of the
+     * {@code postgres.image} the tests run against, with any variant suffix
+     * removed (for example {@code 19rc1-alpine} to {@code 19rc1}). The
+     * {@code -alpine} tag the other tests use has no {@code plpgsql_check}
+     * package, so the base is the matching Debian image.
      */
     private static String baseImage() {
-        return "postgres:" + majorVersion();
+        return "postgres:" + baseTag();
     }
 
-    private static String majorVersion() {
+    private static String baseTag() {
         String image = System.getProperty(
                 PostgresTestBase.POSTGRES_IMAGE_PROPERTY, PostgresTestBase.DEFAULT_POSTGRES_IMAGE);
         String tag = image.substring(image.lastIndexOf(':') + 1);
+        int suffix = tag.indexOf('-');
+        return suffix < 0 ? tag : tag.substring(0, suffix);
+    }
+
+    /**
+     * The major version, used for the Debian package name; a pre-release tag
+     * such as {@code 19rc1} yields {@code 19}.
+     */
+    private static String majorVersion() {
+        String tag = baseTag();
         int end = 0;
         while (end < tag.length() && Character.isDigit(tag.charAt(end))) {
             end++;
