@@ -237,6 +237,80 @@ class AuditColumnsCheckTest {
     }
 
     /**
+     * Column-restricted and WHEN-clause triggers do not refresh every update and
+     * must not satisfy the convention.
+     */
+    @Test
+    void rejectsRestrictedTriggers() throws Exception {
+        execute("CREATE OR REPLACE FUNCTION unaudited.noop() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$");
+        for (String table : List.of("column_only", "when_only")) {
+            execute("""
+                    CREATE TABLE unaudited.%s (
+                        id integer PRIMARY KEY,
+                        created_at timestamptz NOT NULL DEFAULT now(),
+                        updated_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """.formatted(table));
+        }
+        execute("CREATE TRIGGER column_only_trigger BEFORE UPDATE OF updated_at ON unaudited.column_only"
+                + " FOR EACH ROW EXECUTE FUNCTION unaudited.noop()");
+        execute("CREATE TRIGGER when_only_trigger BEFORE UPDATE ON unaudited.when_only"
+                + " FOR EACH ROW WHEN (OLD.id IS DISTINCT FROM NEW.id) EXECUTE FUNCTION unaudited.noop()");
+
+        List<String> problems = problems(AuditColumnsCheck.findViolations(connection, List.of("unaudited")));
+
+        assertTrue(problems.stream().anyMatch(problem -> problem.startsWith("unaudited.column_only")),
+                () -> "column-restricted trigger must not count; got: " + problems);
+        assertTrue(problems.stream().anyMatch(problem -> problem.startsWith("unaudited.when_only")),
+                () -> "WHEN-clause trigger must not count; got: " + problems);
+    }
+
+    /**
+     * A trigger that returns NULL suppresses the probe update; the probe reports a
+     * failure instead of pretending the table was empty.
+     */
+    @Test
+    void probeReportsASuppressedUpdate() throws Exception {
+        execute("CREATE OR REPLACE FUNCTION unaudited.suppress() RETURNS trigger LANGUAGE plpgsql AS $$"
+                + " BEGIN RETURN NULL; END; $$");
+        execute("""
+                CREATE TABLE unaudited.suppressed (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """);
+        execute("CREATE TRIGGER suppress BEFORE UPDATE ON unaudited.suppressed"
+                + " FOR EACH ROW EXECUTE FUNCTION unaudited.suppress()");
+        execute("INSERT INTO unaudited.suppressed (id) VALUES (1)");
+
+        Optional<AuditColumnsCheck.Probe> probe =
+                AuditColumnsCheck.probeUpdate(connection, "unaudited", "suppressed");
+
+        assertTrue(probe.isPresent());
+        assertFalse(probe.get().passed(), () -> probe.get().describe());
+    }
+
+    /**
+     * A partitioned table has no safe cross-partition ctid, so the probe skips it
+     * rather than updating an arbitrary partition row.
+     */
+    @Test
+    void probeSkipsPartitionedTables() throws Exception {
+        execute("""
+                CREATE TABLE unaudited.parted (
+                    id integer,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                ) PARTITION BY RANGE (id)
+                """);
+        execute("CREATE TABLE unaudited.parted_low PARTITION OF unaudited.parted FOR VALUES FROM (0) TO (100)");
+        execute("INSERT INTO unaudited.parted (id) VALUES (1)");
+
+        assertTrue(AuditColumnsCheck.probeUpdate(connection, "unaudited", "parted").isEmpty());
+    }
+
+    /**
      * Equivalent spellings of now() (CURRENT_TIMESTAMP, transaction_timestamp,
      * a precision specifier and a redundant cast) are accepted as defaults.
      */

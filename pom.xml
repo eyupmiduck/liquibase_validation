@@ -56,11 +56,24 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!-- Testcontainers depends on slf4j-api but no binding is on the
                  test classpath, so SLF4J warns and falls back to NOP. Bridge it
                  to java.util.logging so the logs have a real backend. Must
                  match the slf4j-api version Testcontainers pulls (a 2.x binding
                  cannot load under 1.7). -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+                <scope>test</scope>
+            </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-jdk14</artifactId>
@@ -319,6 +332,13 @@
                                 <exclude>**/*Test.class</exclude>
                                 <exclude>**/*Tests.class</exclude>
                                 <exclude>**/*Test$*.class</exclude>
+                                <exclude>**/*Tests$*.class</exclude>
+                                <exclude>**/*IT.class</exclude>
+                                <exclude>**/*IT$*.class</exclude>
+                                <exclude>**/*Spec.class</exclude>
+                                <exclude>**/*Spec$*.class</exclude>
+                                <exclude>**/*TestCase.class</exclude>
+                                <exclude>**/*TestCase$*.class</exclude>
                             </excludes>
                         </configuration>
                     </execution>
@@ -361,6 +381,8 @@
                                         implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>io.github.eyupmiduck.changelogvalidator.linter.cli.LinterCli</mainClass>
                                 </transformer>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                         </configuration>
                     </execution>

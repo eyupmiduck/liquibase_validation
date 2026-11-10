@@ -328,6 +328,20 @@ class SqlLexerTest {
     }
 
     /**
+     * A token must have a coherent offset span and one-based location.
+     */
+    @Test
+    void rejectsInvalidSpansAndLocations() {
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", -1, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 1, 0, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "xy", 0, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 0, 1, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 0, 1, 1, 0));
+        assertThrows(NullPointerException.class,
+                () -> new Token(TokenType.WORD, "x", 0, 1, 1, 1).matchesKeyword(null));
+    }
+
+    /**
      * Keyword matching is case-insensitive and only applies to bare words.
      */
     @Test

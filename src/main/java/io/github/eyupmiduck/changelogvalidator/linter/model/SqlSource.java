@@ -57,6 +57,7 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
                     throw new IllegalArgumentException("ROUTINE_BODY must set exactly one of path or text");
                 }
             }
+            default -> throw new IllegalArgumentException("unsupported kind: " + kind);
         }
     }
 

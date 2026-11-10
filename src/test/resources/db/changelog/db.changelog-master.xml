@@ -3,6 +3,7 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
-                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
-    <include file="changes/001-placeholder.xml" relativeToChangelogFile="true"/>
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-5.0.xsd">
+    <!-- Keep this fixture on an exploded classpath; see ChangelogTestSupport. -->
+    <include file="changes/001-placeholder.xml" relativeToChangelogFile="true" errorIfMissing="true"/>
 </databaseChangeLog>

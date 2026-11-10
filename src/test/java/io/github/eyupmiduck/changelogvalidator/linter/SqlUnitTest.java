@@ -39,7 +39,7 @@ class SqlUnitTest {
      */
     @Test
     void honoursTheEndDelimiterWhenResplitting() {
-        SqlUnit unit = unit(false, "GO", "SELECT 1 GO SELECT 2 go");
+        SqlUnit unit = unit(false, "GO", "SELECT 1 GO\nSELECT 2 go");
 
         assertEquals(2, unit.commands().size());
     }
@@ -53,5 +53,17 @@ class SqlUnitTest {
         SqlUnit unit = unit(true, ";", "SELECT 1; SELECT 2;");
 
         assertEquals(unit.statements(), unit.commands());
+    }
+
+    /**
+     * An explicitly empty delimiter disables splitting, so command analysis must
+     * not fabricate semicolon-separated commands.
+     */
+    @Test
+    void doesNotFabricateCommandsForAnEmptyDelimiter() {
+        SqlUnit unit = unit(false, "", "SELECT 1; SELECT 2;");
+
+        assertEquals(1, unit.statements().size());
+        assertEquals(1, unit.commands().size());
     }
 }

@@ -31,7 +31,7 @@ public final class LinterConfigLoader {
      * @throws IOException if the file cannot be read
      */
     public static LinterConfig load(Path configFile) throws IOException {
-        if (!Files.exists(configFile)) {
+        if (Files.notExists(configFile)) {
             return LinterConfig.defaults();
         }
         try (Reader reader = Files.newBufferedReader(configFile)) {

@@ -12,6 +12,8 @@
 
 # Package Files #
 *.jar
+# The Maven wrapper may need its bootstrap jar in layouts that ship one.
+!.mvn/wrapper/maven-wrapper.jar
 *.war
 *.nar
 *.ear
@@ -24,12 +26,24 @@ hs_err_pid*
 replay_pid*
 
 # Maven build output
-target/
+/target/
+/build/
+/out/
+/dist/
 
-# IDEs
+# IDEs and OS/editor noise
 .idea/
 *.iml
-.vscode/
+.classpath
+.project
+.settings/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+*~
 
 # Beads / Dolt files
 .beads/
@@ -39,6 +53,14 @@ target/
 # Local secret material
 .env
 .env.*
+!.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.envrc
 application-local.properties
+application-*-local.properties
+!application-local.properties.example

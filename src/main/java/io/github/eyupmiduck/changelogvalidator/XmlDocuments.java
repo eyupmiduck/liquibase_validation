@@ -2,8 +2,10 @@ package io.github.eyupmiduck.changelogvalidator;
 
 import org.w3c.dom.Document;
 import org.xml.sax.Attributes;
+import org.xml.sax.InputSource;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
 import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.XMLConstants;
@@ -11,6 +13,8 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -58,6 +62,8 @@ public final class XmlDocuments {
             return factory.newDocumentBuilder().parse(documentFile.toFile());
         } catch (SAXException e) {
             throw new IOException("failed to parse XML " + documentFile, e);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("failed to configure the XML parser", e);
         } catch (ParserConfigurationException e) {
             throw new IllegalStateException("failed to configure the XML parser", e);
         }
@@ -76,15 +82,28 @@ public final class XmlDocuments {
         SAXParserFactory factory = SAXParserFactory.newInstance();
         factory.setNamespaceAware(true);
         try {
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            // Supply the qualified name for prefixed elements, matching DOM's
+            // Element#getTagName().
+            factory.setFeature("http://xml.org/sax/features/namespace-prefixes", true);
             TagLineHandler handler = new TagLineHandler();
-            factory.newSAXParser().parse(documentFile.toFile(), handler);
+            XMLReader reader = factory.newSAXParser().getXMLReader();
+            reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            reader.setContentHandler(handler);
+            try (InputStream input = Files.newInputStream(documentFile)) {
+                reader.parse(new InputSource(input));
+            }
             return handler.lines();
         } catch (SAXException e) {
             throw new IOException("failed to parse XML " + documentFile, e);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("failed to configure the XML parser", e);
         } catch (ParserConfigurationException e) {
             throw new IllegalStateException("failed to configure the XML parser", e);
         }
@@ -104,9 +123,14 @@ public final class XmlDocuments {
         }
 
         @Override
-        public void startElement(String uri, String localName, String qName, Attributes attributes) {
+        public void startElement(String uri, String localName, String qName, Attributes attributes)
+                throws SAXException {
+            if (locator == null) {
+                throw new SAXException("the SAX parser did not supply a locator");
+            }
             String name = qName == null || qName.isEmpty() ? localName : qName;
-            lines.computeIfAbsent(name, ignored -> new ArrayDeque<>()).add(locator.getLineNumber());
+            int line = locator.getLineNumber();
+            lines.computeIfAbsent(name, ignored -> new ArrayDeque<>()).add(line < 1 ? 1 : line);
         }
 
         private Map<String, Deque<Integer>> lines() {

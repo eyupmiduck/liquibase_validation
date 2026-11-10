@@ -5,7 +5,6 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
 import java.util.ArrayList;
@@ -51,55 +50,61 @@ public final class DynamicSqlRule implements Rule {
     /**
      * Returns the one-based line and column of {@code offset} in the unit's SQL,
      * relative to the body token that contains it, so the finding points at the
-     * {@code EXECUTE} rather than the top of the file.
+     * {@code EXECUTE} rather than the top of the file. The walk uses the lexer's
+     * own rules: a bare {@code \r} is a line break, a CRLF is one break, and a
+     * surrogate pair counts as one column.
      */
     private static int[] position(SqlUnit unit, int offset) {
         for (Token token : unit.tokens()) {
             if (token.startOffset() <= offset && offset < token.endOffset()) {
-                String before = unit.sql().substring(token.startOffset(), offset);
-                int newlines = 0;
-                int lastBreak = -1;
-                for (int i = 0; i < before.length(); i++) {
-                    if (before.charAt(i) == '\n') {
-                        newlines++;
-                        lastBreak = i;
+                String sql = unit.sql();
+                int line = token.line();
+                int column = token.column();
+                for (int i = token.startOffset(); i < offset; i++) {
+                    char consumed = sql.charAt(i);
+                    if (consumed == '\n') {
+                        line++;
+                        column = 1;
+                    } else if (consumed == '\r' && (i + 1 >= sql.length() || sql.charAt(i + 1) != '\n')) {
+                        line++;
+                        column = 1;
+                    } else {
+                        column++;
+                        if (Character.isHighSurrogate(consumed) && i + 1 < offset
+                                && Character.isLowSurrogate(sql.charAt(i + 1))) {
+                            i++;
+                        }
                     }
                 }
-                int line = token.line() + newlines;
-                int column = newlines == 0 ? token.column() + before.length() : before.length() - lastBreak;
                 return new int[]{line, column};
             }
         }
-        return new int[]{1, 1};
+        // The offset is inconsistent with the lexed tokens; report at the first
+        // meaningful token instead of the top of the file.
+        Token anchor = unit.tokens().stream().filter(token -> !token.isTrivia()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("routine body has no token to locate"));
+        return new int[]{anchor.line(), anchor.column()};
     }
 
     /**
-     * Returns the text to scan for {@code EXECUTE} and its offset in the unit.
-     * For a {@code CREATE FUNCTION}/{@code CREATE PROCEDURE} declaration the
-     * body is the string literal after {@code AS}, so a routine or parameter
-     * named {@code execute} in the header is not mistaken for dynamic SQL. A bare
+     * Returns every body to scan and each body's offset in the unit.
+     *
+     * <p>For a {@code CREATE FUNCTION}/{@code CREATE PROCEDURE} declaration a
+     * body is any string literal introduced by {@code AS}, so a routine or
+     * parameter named {@code execute} in the header is not mistaken for dynamic
+     * SQL, and a file declaring several routines contributes every body. A bare
      * routine body has no declaration and is scanned whole.
      */
-    private static Body body(SqlUnit unit) {
+    private static List<Body> bodies(SqlUnit unit) {
+        List<Body> bodies = new ArrayList<>();
         List<Token> tokens = unit.tokens().stream().filter(token -> !token.isTrivia()).toList();
-        if (!TokenWords.startsWith(tokens, "CREATE")) {
-            return new Body(unit.sql(), 0);
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("AS") && tokens.get(i + 1).isStringLiteral()) {
+                Token body = tokens.get(i + 1);
+                bodies.add(new Body(body.text(), body.startOffset()));
+            }
         }
-        int routine = TokenWords.indexOf(tokens, "FUNCTION", 1);
-        if (routine < 0) {
-            routine = TokenWords.indexOf(tokens, "PROCEDURE", 1);
-        }
-        if (routine < 0) {
-            return new Body(unit.sql(), 0);
-        }
-        int as = TokenWords.indexOf(tokens, "AS", routine + 1);
-        if (as < 0 || as + 1 >= tokens.size()) {
-            return new Body(unit.sql(), 0);
-        }
-        Token body = tokens.get(as + 1);
-        return body.isStringLiteral()
-                ? new Body(body.text(), body.startOffset())
-                : new Body(unit.sql(), 0);
+        return bodies.isEmpty() ? List.of(new Body(unit.sql(), 0)) : bodies;
     }
 
     @Override
@@ -133,17 +138,17 @@ public final class DynamicSqlRule implements Rule {
             if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY || !RuleSupport.appliesToPostgres(unit)) {
                 continue;
             }
-            Body body = body(unit);
-            Matcher matcher = EXECUTE.matcher(body.text());
-            if (!matcher.find()) {
-                continue;
+            for (Body body : bodies(unit)) {
+                Matcher matcher = EXECUTE.matcher(body.text());
+                while (matcher.find()) {
+                    int[] position = position(unit, body.sourceOffset() + matcher.start());
+                    violations.add(new Violation(
+                            "EXECUTE",
+                            "routine body builds SQL dynamically; static rules cannot see the statements it runs",
+                            "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
+                            unit.file(), position[0], position[1]));
+                }
             }
-            int[] position = position(unit, body.sourceOffset() + matcher.start());
-            violations.add(new Violation(
-                    "EXECUTE",
-                    "routine body builds SQL dynamically; static rules cannot see the statements it runs",
-                    "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
-                    unit.file(), position[0], position[1]));
         }
     }
 

@@ -50,6 +50,8 @@ public final class SqlNormalizer {
      * @param normalisation the changeset's properties and modifications
      * @param rollback      whether {@code sql} is rollback SQL
      * @return the SQL Liquibase would run
+     * @throws IllegalStateException if property substitution cycles, does not
+     *                               converge, or exceeds the output safety bound
      */
     public static String normalise(String sql, Normalisation normalisation, boolean rollback) {
         String result = substituteProperties(sql, normalisation.properties());

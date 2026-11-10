@@ -81,7 +81,11 @@ public final class PlpgsqlCheck {
                 }
             }
         } finally {
-            schemaArray.free();
+            try {
+                schemaArray.free();
+            } catch (SQLException ignored) {
+                // A cleanup failure must not mask the analyser or validation error.
+            }
         }
         return findings;
     }
@@ -122,6 +126,9 @@ public final class PlpgsqlCheck {
     public static Report check(Connection connection, Collection<String> schemas, List<AllowedFinding> allowed)
             throws SQLException {
         Objects.requireNonNull(allowed, "allowed");
+        for (AllowedFinding entry : allowed) {
+            Objects.requireNonNull(entry, "allowed element");
+        }
         List<Finding> findings = findFindings(connection, schemas);
 
         List<Finding> unexpected = new ArrayList<>();
@@ -175,15 +182,16 @@ public final class PlpgsqlCheck {
         }
 
         List<AllowedFinding> allowed = new ArrayList<>();
-        for (Object item : entries) {
+        for (int index = 0; index < entries.size(); index++) {
+            Object item = entries.get(index);
             if (!(item instanceof Map<?, ?> entry)) {
                 throw new IOException("plpgsql_check whitelist entries must be mappings");
             }
-            String schema = asString(entry.get("schema"));
-            String function = asString(entry.get("function"));
-            String level = asString(entry.get("level"));
-            String statement = asString(entry.get("statement"));
-            String message = asString(entry.get("message"));
+            String schema = asString(index, "schema", entry.get("schema"));
+            String function = asString(index, "function", entry.get("function"));
+            String level = asString(index, "level", entry.get("level"));
+            String statement = asString(index, "statement", entry.get("statement"));
+            String message = asString(index, "message", entry.get("message"));
             if (schema == null && function == null && level == null && statement == null && message == null) {
                 throw new IOException("plpgsql_check whitelist entries must set at least one of "
                         + "schema, function, level, statement or message");
@@ -193,14 +201,26 @@ public final class PlpgsqlCheck {
         return allowed;
     }
 
-    private static String asString(Object value) {
-        return value == null ? null : value.toString();
+    private static String asString(int index, String key, Object value) throws IOException {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Map<?, ?> || value instanceof Collection<?> || value.getClass().isArray()) {
+            throw new IOException("plpgsql_check whitelist entry " + index + " field " + key
+                    + " must be a scalar, got: " + value);
+        }
+        return value.toString();
     }
 
     private static String[] schemaNames(Collection<String> schemas) {
         Objects.requireNonNull(schemas, "schemas");
         if (schemas.isEmpty()) {
             throw new IllegalArgumentException("at least one schema is required");
+        }
+        for (String schema : schemas) {
+            if (schema == null || schema.isBlank()) {
+                throw new IllegalArgumentException("schema names must not be null or blank");
+            }
         }
         return schemas.toArray(String[]::new);
     }

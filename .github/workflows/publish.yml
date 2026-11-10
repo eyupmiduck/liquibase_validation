@@ -13,6 +13,10 @@ concurrency:
 
 jobs:
   publish:
+    # Route the irreversible deploy through a protected environment so a
+    # mistyped tag cannot publish without the required reviewers configured on
+    # that environment.
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -37,13 +41,15 @@ jobs:
       # pom.xml (e.g. tag v0.1.0 for version 0.1.0).
       - name: Verify tag matches project version
         run: |
+          # Do not swallow a Maven failure: a failure here is a broken release
+          # toolchain, not an unknown version.
           raw="$(./mvnw --batch-mode --no-transfer-progress help:evaluate \
-            -Dexpression=project.version -q -DforceStdout || true)"
-          # help:evaluate can emit extra lines (e.g. bootstrap output); take the
-          # last non-blank one and strip whitespace.
-          version="$(printf '%s\n' "${raw}" | sed -n '/[^[:space:]]/p' | tail -n 1 | tr -d '[:space:]')"
+            -Dexpression=project.version -q -DforceStdout)"
+          # help:evaluate can emit extra lines (e.g. bootstrap output); select a
+          # line that looks like a version rather than blindly taking the last.
+          version="$(printf '%s\n' "${raw}" | sed -nE 's/^[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*)[[:space:]]*$/\1/p' | tail -n 1)"
           if [ -z "${version}" ]; then
-            echo "Could not determine project.version from the Maven output" >&2
+            echo "Could not determine project.version from the Maven output: ${raw}" >&2
             exit 1
           fi
           if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then

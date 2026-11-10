@@ -122,12 +122,78 @@ class RequireDbmsPostgresqlRuleTest {
     @Test
     void reportsPostgresOperators() {
         assertEquals(1, check(null, "SELECT '1'::int;").size());
-        assertEquals(1, check(null, "SELECT data -> 'k' FROM t;").size());
+        assertEquals(1, check(null, "SELECT data #> '{k}' FROM t;").size());
         assertEquals(1, check(null, "SELECT tags @> ARRAY['a'] FROM t;").size());
 
         assertTrue(check(null, "CREATE TABLE t (c int);").isEmpty());
         assertTrue(check(null, "SELECT 1;").isEmpty());
         assertTrue(check("oracle", "CREATE TABLE t (c int);").isEmpty());
+    }
+
+    /**
+     * {@code ->}, {@code ->>} and a bare {@code ?} are also valid outside
+     * PostgreSQL, so they do not trigger the rule.
+     */
+    @Test
+    void acceptsPortableJsonOperators() {
+        assertTrue(check(null, "SELECT data -> 'k' FROM t;").isEmpty());
+        assertTrue(check(null, "SELECT data ->> 'k' FROM t;").isEmpty());
+        assertTrue(check(null, "SELECT * FROM t WHERE c = ?;").isEmpty());
+    }
+
+    /**
+     * A dbms expression that excludes another database still runs only on
+     * PostgreSQL, while one that merely excludes MySQL runs elsewhere too.
+     */
+    @Test
+    void understandsNegatedDbmsEntries() {
+        String sql = "CREATE INDEX CONCURRENTLY idx ON t (c);";
+
+        assertTrue(check("postgresql,!mysql", sql).isEmpty());
+        assertTrue(check("PostgreSQL, !mysql, !oracle", sql).isEmpty());
+        assertFalse(check("!mysql", sql).isEmpty());
+        assertFalse(check("postgresql,!all", sql).isEmpty());
+        // Excluding PostgreSQL means the changeset never runs there, so there is
+        // nothing for this rule to report.
+        assertTrue(check("postgresql,!postgresql", sql).isEmpty());
+        assertFalse(check("all,!mysql", sql).isEmpty());
+    }
+
+    /**
+     * Only a real routine declaration treats {@code LANGUAGE plpgsql} as
+     * PostgreSQL-only syntax; a table or view naming those words is portable.
+     */
+    @Test
+    void requiresRoutineContextForLanguagePlpgsql() {
+        assertTrue(check(null, "CREATE TABLE t (language plpgsql);").isEmpty());
+        assertTrue(check(null, "CREATE VIEW v AS SELECT language plpgsql FROM t;").isEmpty());
+        assertFalse(check(null, "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE plpgsql;").isEmpty());
+        assertFalse(check(null, "CREATE OR REPLACE PROCEDURE p() LANGUAGE plpgsql AS $$ BEGIN END; $$").isEmpty());
+        assertFalse(check(null, "ALTER FUNCTION f() LANGUAGE plpgsql;").isEmpty());
+    }
+
+    /**
+     * {@code CONCURRENTLY} only counts for a real {@code CREATE [UNIQUE] INDEX},
+     * not for an object that merely names it.
+     */
+    @Test
+    void requiresAnIndexStatementForConcurrently() {
+        assertTrue(check(null, "CREATE TABLE t (index concurrently);").isEmpty());
+        assertTrue(check(null, "CREATE VIEW v AS SELECT index concurrently FROM t;").isEmpty());
+        assertFalse(check(null, "CREATE UNIQUE INDEX CONCURRENTLY idx ON t (c);").isEmpty());
+    }
+
+    /**
+     * The finding points at the offending statement, not always at line 1.
+     */
+    @Test
+    void reportsTheOffendingStatementLocation() {
+        List<Rule.Violation> violations = check(null,
+                "SELECT 1;\nCREATE INDEX CONCURRENTLY idx ON t (c);");
+
+        assertEquals(1, violations.size());
+        assertEquals(2, violations.get(0).line());
+        assertEquals(1, violations.get(0).column());
     }
 
     /**
@@ -182,7 +248,7 @@ class RequireDbmsPostgresqlRuleTest {
 
     /**
      * An ordinary identifier named {@code concurrently} is not PostgreSQL-only
-     * syntax, while a real concurrent index build and the lone {@code ?} and
+     * syntax, while a real concurrent index build and the {@code ?|} and
      * {@code #>>} operators are recognised.
      */
     @Test
@@ -190,7 +256,7 @@ class RequireDbmsPostgresqlRuleTest {
         assertTrue(check(null, "SELECT concurrently FROM t;").isEmpty());
         assertTrue(check(null, "CREATE INDEX idx ON t (concurrently);").isEmpty());
 
-        assertEquals(1, check(null, "SELECT data ? 'k' FROM t;").size());
+        assertEquals(1, check(null, "SELECT data ?| ARRAY['k'] FROM t;").size());
         assertTrue(check(null, "SELECT data #>> '{a}' FROM t;").get(0).message().contains("#>>"));
     }
 

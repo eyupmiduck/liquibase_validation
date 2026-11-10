@@ -12,8 +12,9 @@ import java.util.List;
  * Advises dropping indexes with {@code DROP INDEX CONCURRENTLY}, mirroring
  * Squawk's {@code require-concurrent-index-deletion}.
  *
- * <p>A plain {@code DROP INDEX} takes an exclusive lock on the index, blocking
- * queries that would use it; {@code CONCURRENTLY} avoids it.
+ * <p>A plain {@code DROP INDEX} takes an {@code ACCESS EXCLUSIVE} lock on the
+ * index's parent table, blocking all reads and writes on that table (not only
+ * queries that would use the index); {@code CONCURRENTLY} avoids it.
  *
  * <p>The rule is opt-in and advisory. Like the creation rule, it is a token-level
  * heuristic. The structured {@code <dropIndex>} change type is rendered into a
@@ -60,7 +61,8 @@ public final class RequireConcurrentIndexDeletionRule implements Rule {
             }
             violations.add(new Violation(
                     "DROP INDEX",
-                    "DROP INDEX without CONCURRENTLY blocks queries that use the index while it is dropped",
+                    "DROP INDEX without CONCURRENTLY takes an ACCESS EXCLUSIVE lock on the table, "
+                            + "blocking reads and writes",
                     "Drop the index with DROP INDEX CONCURRENTLY in a runInTransaction=\"false\" changeset.",
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }

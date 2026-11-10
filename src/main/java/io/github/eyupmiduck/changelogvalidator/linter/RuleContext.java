@@ -22,6 +22,12 @@ public record RuleContext(ChangeSet changeSet, List<SqlUnit> forward, List<SqlUn
         Objects.requireNonNull(changeSet, "changeSet");
         Objects.requireNonNull(forward, "forward");
         Objects.requireNonNull(rollback, "rollback");
+        for (SqlUnit unit : forward) {
+            Objects.requireNonNull(unit, "forward element");
+        }
+        for (SqlUnit unit : rollback) {
+            Objects.requireNonNull(unit, "rollback element");
+        }
         forward = List.copyOf(forward);
         rollback = List.copyOf(rollback);
     }

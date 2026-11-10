@@ -16,4 +16,13 @@ permissions:
 
 jobs:
   auto-merge:
+    # Defense in depth: the shared workflow also checks the actor/update type,
+    # but only Dependabot PRs targeting main should reach a write-capable run.
+    # The pin was audited as a reusable workflow that never checks out PR code.
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'main'
+    concurrency:
+      group: dependabot-automerge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     uses: eyupmiduck/workflow_library/.github/workflows/dependabot-automerge.yml@2499e14a4533396c8318abecaa35dd2477be1f41 # main

@@ -50,6 +50,24 @@ class ChangelogModelRollbackAndRoutineTest {
     }
 
     /**
+     * A text-only {@code <rollback>DROP TABLE t;</rollback>} body is captured,
+     * not just nested rollback elements.
+     */
+    @Test
+    void capturesTextOnlyRollback() throws IOException {
+        ChangeSet changeSet = load("""
+                <changeSet id="001" author="a">
+                    <sql>CREATE TABLE t (c int);</sql>
+                    <rollback>DROP TABLE t;</rollback>
+                </changeSet>
+                """);
+
+        assertEquals(1, changeSet.rollbackSources().size());
+        assertEquals(SqlSource.Kind.INLINE_SQL, changeSet.rollbackSources().get(0).kind());
+        assertTrue(changeSet.rollbackSources().get(0).text().contains("DROP TABLE t"));
+    }
+
+    /**
      * A routine body given as element text (no {@code path}) is captured as an
      * inline routine source.
      */

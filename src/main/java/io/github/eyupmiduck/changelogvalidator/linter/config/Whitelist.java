@@ -48,7 +48,7 @@ public final class Whitelist {
      * @throws IOException if the file cannot be read or is malformed
      */
     public static Whitelist load(Path file) throws IOException {
-        if (!Files.exists(file)) {
+        if (Files.notExists(file)) {
             return empty();
         }
         try (InputStream input = Files.newInputStream(file)) {
@@ -59,9 +59,10 @@ public final class Whitelist {
     /**
      * Loads a whitelist from a YAML document: a list of mappings with
      * {@code rule}, {@code file}, {@code changeset}, {@code statement} and
-     * {@code reason} keys. The reason is required and non-empty; unknown keys,
-     * an entry that sets none of the selector keys, and an ambiguous entry
-     * fail fast.
+     * {@code reason} keys. The reason is required and non-empty; unknown keys and
+     * an entry that sets none of the selector keys fail fast. Ambiguity is
+     * detected when the whitelist is applied to findings, because overlap
+     * depends on the finding values.
      *
      * @param input the YAML document; an empty document yields the empty whitelist
      * @return the whitelist
@@ -223,11 +224,22 @@ public final class Whitelist {
             if (file == null) {
                 return true;
             }
+            String candidate = normalizePath(actual.toString());
+            String expected = normalizePath(file);
+            return !expected.isEmpty() && (candidate.equals(expected) || candidate.endsWith("/" + expected));
+        }
+
+        private static String normalizePath(String path) {
+            String normalized = path.replace('\\', '/');
+            while (normalized.startsWith("./")) {
+                normalized = normalized.substring(2);
+            }
+            while (normalized.endsWith("/") && !normalized.isEmpty()) {
+                normalized = normalized.substring(0, normalized.length() - 1);
+            }
             // Compare case-insensitively so a path that differs only in case (a
             // case-insensitive filesystem) is not reported as a stale entry.
-            String candidate = actual.toString().replace('\\', '/').toLowerCase(Locale.ROOT);
-            String expected = file.replace('\\', '/').toLowerCase(Locale.ROOT);
-            return candidate.equals(expected) || candidate.endsWith("/" + expected);
+            return normalized.toLowerCase(Locale.ROOT);
         }
 
         /**

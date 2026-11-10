@@ -9,8 +9,8 @@ body:
       value: |
         Thanks for helping improve liquibase-validation. Please fill in as much detail as you can.
 
-        If this is a security issue, do **not** open a public issue — see
-        [SECURITY.md](https://github.com/eyupmiduck/liquibase_validation/blob/main/SECURITY.md)
+        If this is a security issue, do **not** open a public issue — see the
+        [security policy](https://github.com/eyupmiduck/liquibase_validation/security/policy)
         for private reporting.
   - type: checkboxes
     id: preflight
@@ -58,6 +58,8 @@ body:
       placeholder: |
         OS: Ubuntu 24.04
         JDK: Temurin 25
+    validations:
+      required: true
   - type: textarea
     id: logs
     attributes:

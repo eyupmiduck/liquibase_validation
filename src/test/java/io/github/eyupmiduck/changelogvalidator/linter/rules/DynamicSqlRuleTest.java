@@ -67,6 +67,42 @@ class DynamicSqlRuleTest {
     }
 
     /**
+     * A source that declares several routines contributes every body, and every
+     * EXECUTE in a body is reported.
+     */
+    @Test
+    void reportsEveryBodyAndEveryExecute() {
+        String sql = "CREATE FUNCTION a() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE a'; END; $$ LANGUAGE plpgsql;"
+                + " CREATE FUNCTION b() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE b'; EXECUTE 'DROP TABLE c'; END; $$"
+                + " LANGUAGE plpgsql;";
+
+        List<Rule.Violation> violations = new DynamicSqlRule()
+                .check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, sql)));
+
+        assertEquals(3, violations.size());
+    }
+
+    /**
+     * The reported position uses the lexer's line rules (a bare CR is a line
+     * break) and counts a surrogate pair as one column.
+     */
+    @Test
+    void reportsLexerCompatiblePositions() {
+        Rule.Violation carriageReturn = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION f() RETURNS void AS $$\rBEGIN\r  EXECUTE 'x';\rEND; $$ LANGUAGE plpgsql;")))
+                .get(0);
+        assertEquals(3, carriageReturn.line());
+        assertEquals(3, carriageReturn.column());
+
+        Rule.Violation astral = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION f() RETURNS void AS $$😀 EXECUTE 'x';$$ LANGUAGE plpgsql;"))).get(0);
+        assertEquals(1, astral.line());
+        assertEquals(41, astral.column());
+    }
+
+    /**
      * A routine or parameter named execute in the declaration header is not
      * dynamic SQL; only the body after AS is scanned.
      */

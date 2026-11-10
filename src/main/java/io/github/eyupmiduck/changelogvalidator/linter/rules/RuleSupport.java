@@ -109,11 +109,12 @@ final class RuleSupport {
      * by dots are consumed, so following keywords are not appended to the name.
      *
      * @param tokens the tokens
-     * @param start  the index of the first identifier
-     * @return the normalized qualified name, or null
+     * @param start  the index of the first identifier; may be negative
+     * @return the normalized qualified name, or null when {@code start} is out
+     *         of range or does not point at an identifier
      */
     static String qualifiedName(List<Token> tokens, int start) {
-        if (start >= tokens.size()) {
+        if (start < 0 || start >= tokens.size()) {
             return null;
         }
         String first = identifier(tokens.get(start));
@@ -122,8 +123,12 @@ final class RuleSupport {
         }
         StringBuilder name = new StringBuilder(first);
         int i = start + 1;
-        while (i + 1 < tokens.size() && isDot(tokens.get(i)) && identifier(tokens.get(i + 1)) != null) {
-            name.append('.').append(identifier(tokens.get(i + 1)));
+        while (i + 1 < tokens.size() && isDot(tokens.get(i))) {
+            String next = identifier(tokens.get(i + 1));
+            if (next == null) {
+                break;
+            }
+            name.append('.').append(next);
             i += 2;
         }
         return name.toString();
@@ -143,12 +148,15 @@ final class RuleSupport {
     /**
      * Returns the first token within a statement's span, for a finding location.
      * The search is bounded by {@code statement.endOffset()}; a statement with no
-     * token in its span falls back to the unit's first token rather than reading
-     * a later statement's token or throwing.
+     * token in its span falls back to the unit's first non-trivia token rather
+     * than reading a later statement's token or pointing at leading whitespace.
      *
      * @param unit      the SQL unit
      * @param statement the statement
-     * @return the first token in the span, or the unit's first token as a fallback
+     * @return the first token in the span, or the unit's first non-trivia token
+     *         as a fallback
+     * @throws IllegalStateException when the unit has no non-trivia token, so no
+     *                               location can be produced
      */
     static Token firstToken(SqlUnit unit, SqlStatement statement) {
         for (Token token : unit.tokens()) {
@@ -156,7 +164,8 @@ final class RuleSupport {
                 return token;
             }
         }
-        return unit.tokens().get(0);
+        return unit.tokens().stream().filter(token -> !token.isTrivia()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("no token to report for the statement"));
     }
 
     /**
@@ -183,7 +192,9 @@ final class RuleSupport {
             case CREATE_INDEX_CONCURRENTLY -> "CREATE INDEX CONCURRENTLY";
             case DROP_INDEX_CONCURRENTLY -> "DROP INDEX CONCURRENTLY";
             case REINDEX_CONCURRENTLY -> "REINDEX CONCURRENTLY";
+            case REINDEX -> "REINDEX DATABASE/SYSTEM/SCHEMA";
             case DETACH_PARTITION_CONCURRENTLY -> "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";
+            case DETACH_PARTITION_FINALIZE -> "ALTER TABLE ... DETACH PARTITION FINALIZE";
             case CREATE_DATABASE -> "CREATE DATABASE";
             case DROP_DATABASE -> "DROP DATABASE";
             case ALTER_SYSTEM -> "ALTER SYSTEM";

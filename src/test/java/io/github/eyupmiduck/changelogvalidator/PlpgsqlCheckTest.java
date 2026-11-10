@@ -309,6 +309,12 @@ class PlpgsqlCheckTest {
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- just-a-string")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- schemas: misspelled")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("not: [valid")));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("""
+                - message: {a: b}
+                """)));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("""
+                - message: [a]
+                """)));
     }
 
     /**
@@ -350,7 +356,14 @@ class PlpgsqlCheckTest {
         assertThrows(IllegalArgumentException.class, () -> PlpgsqlCheck.findFindings(null, List.of()));
         assertThrows(IllegalArgumentException.class,
                 () -> PlpgsqlCheck.findFindings(connection, List.of("missing_schema")));
+        assertThrows(IllegalArgumentException.class,
+                () -> PlpgsqlCheck.findFindings(connection, List.of(" ")));
+        assertThrows(IllegalArgumentException.class,
+                () -> PlpgsqlCheck.findFindings(connection, java.util.Arrays.asList((String) null)));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.findFindings(null, null));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.check(null, List.of("public"), null));
+        assertThrows(NullPointerException.class,
+                () -> PlpgsqlCheck.check(connection, List.of("checked"),
+                        java.util.Arrays.asList((PlpgsqlCheck.AllowedFinding) null)));
     }
 }

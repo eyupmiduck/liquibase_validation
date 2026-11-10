@@ -40,6 +40,16 @@ class LinterConfigTest {
     }
 
     /**
+     * A rule cannot be both excluded and included, because the silent precedence
+     * would be surprising.
+     */
+    @Test
+    void rejectsExcludeIncludeOverlap() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new LinterConfig(null, Severity.ERROR, List.of("a"), List.of("a"), Map.of()));
+    }
+
+    /**
      * A non-numeric version is rejected with a message naming the setting, so a
      * typo cannot silently disable version gating.
      */

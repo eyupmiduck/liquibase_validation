@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,10 +54,13 @@ public final class SarifReporter implements Reporter {
     private static String uri(Path file) throws IOException {
         Path absolute = file.toAbsolutePath().normalize();
         Path workingDirectory = Path.of("").toAbsolutePath().normalize();
-        String path = absolute.startsWith(workingDirectory)
-                ? workingDirectory.relativize(absolute).toString()
-                : file.toString();
-        path = path.replace('\\', '/');
+        if (!absolute.startsWith(workingDirectory)) {
+            // toUri() already authorises and percent-encodes the absolute path
+            // (and keeps the drive letter on Windows); re-encoding it would turn
+            // %20 into %2520.
+            return absolute.toUri().getRawPath();
+        }
+        String path = workingDirectory.relativize(absolute).toString().replace('\\', '/');
         try {
             return new URI(null, null, path, null).getRawPath();
         } catch (URISyntaxException e) {
@@ -73,6 +77,12 @@ public final class SarifReporter implements Reporter {
                 throw new IllegalArgumentException(
                         "rule " + finding.ruleId() + " reported findings at different severities");
             }
+        }
+        // Resolve every URI before writing, so a bad path cannot leave a
+        // truncated SARIF document on the destination.
+        List<String> uris = new ArrayList<>(findings.size());
+        for (Finding finding : findings) {
+            uris.add(uri(finding.file()));
         }
         out.append('{')
                 .append("\"$schema\":").append(Json.quote(SCHEMA)).append(',')
@@ -100,7 +110,7 @@ public final class SarifReporter implements Reporter {
                     .append(",\"message\":{\"text\":").append(Json.quote(finding.message()))
                     .append(",\"markdown\":").append(Json.quote(markdown(finding))).append('}')
                     .append(",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":")
-                    .append(Json.quote(uri(finding.file())))
+                    .append(Json.quote(uris.get(i)))
                     .append("},\"region\":{\"startLine\":").append(Integer.toString(finding.line()))
                     .append(",\"startColumn\":").append(Integer.toString(finding.column()))
                     .append("}}}]}");

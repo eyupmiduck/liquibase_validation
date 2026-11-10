@@ -1,7 +1,8 @@
 name: CodeQL
 
-# Static analysis for Java. Runs on every change to main and on a weekly
-# schedule so newly added CodeQL queries are applied to unchanged code.
+# Static analysis for Java. Runs on every pull request and change to main, and
+# on a weekly schedule so newly added CodeQL queries are applied to unchanged
+# code.
 on:
   push:
     branches:
@@ -49,6 +50,10 @@ jobs:
           build-mode: autobuild
 
       - name: Analyze
+        # Fork pull requests get a read-only token, so the SARIF upload cannot
+        # succeed. Keep the analysis result green there; same-repo PRs, pushes
+        # and scheduled runs still publish results.
+        continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: "/language:java-kotlin"

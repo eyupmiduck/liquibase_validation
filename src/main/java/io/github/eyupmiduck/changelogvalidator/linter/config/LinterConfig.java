@@ -26,14 +26,22 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
     private static final Pattern PG_VERSION = Pattern.compile("\\d+(?:\\.\\d+)*");
 
     /**
-     * Validates the configuration and copies its collections.
+     * Validates the required collections and copies them. A rule cannot be both
+     * excluded and included.
      */
     public LinterConfig {
         Objects.requireNonNull(exclude, "exclude");
         Objects.requireNonNull(include, "include");
         Objects.requireNonNull(rules, "rules");
-        exclude = List.copyOf(exclude);
-        include = List.copyOf(include);
+        List<String> excluded = List.copyOf(exclude);
+        List<String> included = List.copyOf(include);
+        Set<String> overlap = new HashSet<>(excluded);
+        overlap.retainAll(included);
+        if (!overlap.isEmpty()) {
+            throw new IllegalArgumentException("rules cannot be both excluded and included: " + overlap);
+        }
+        exclude = excluded;
+        include = included;
         rules = Map.copyOf(rules);
     }
 
@@ -129,7 +137,8 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * Per-rule settings.
      *
      * @param severity the severity override, or null to use the rule default
-     * @param options  free-form rule options
+     * @param options  free-form rule options, in declaration order; the map is a
+     *                 shallow unmodifiable copy
      */
     public record RuleSettings(Severity severity, Map<String, Object> options) {
 
@@ -138,7 +147,9 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
          */
         public RuleSettings {
             Objects.requireNonNull(options, "options");
-            options = Map.copyOf(options);
+            // Preserve the loader's insertion order while making the map
+            // unmodifiable; nested values remain shallow.
+            options = Collections.unmodifiableMap(new LinkedHashMap<>(options));
         }
     }
 }

@@ -18,10 +18,13 @@ import java.util.List;
  * no rollback statements at all, or far fewer than the forward side (for example
  * a multi-statement changeset whose rollback only reverses the last one).
  *
- * <p>The rule is opt-in. It only runs when a rollback with statements is defined;
- * a missing rollback is {@link RequireRollbackRule}'s concern, and a rollback
- * that references another changeset ({@code <rollback changeSetId="..."/>}) has
- * no statements to compare. Routine bodies are opaque and are not counted.
+ * <p>The rule is opt-in. It only runs when a rollback is defined and is not an
+ * empty {@code <rollback/>} block; a missing rollback is
+ * {@link RequireRollbackRule}'s concern. A defined rollback that contributes no
+ * executable statement (blank or comment-only SQL) is reported, because it
+ * reverses nothing. A rollback that references another changeset
+ * ({@code <rollback changeSetId="..."/>}), contains a routine body, or has no
+ * source applicable to PostgreSQL is opaque and is not counted.
  */
 public final class RequireRollbackParityRule implements Rule {
 
@@ -62,12 +65,25 @@ public final class RequireRollbackParityRule implements Rule {
             return List.of();
         }
         int forward = statements(context.forward());
-        int rollback = statements(context.rollback());
-        if (forward == 0 || rollback == 0) {
+        if (forward == 0) {
             return List.of();
         }
+        int rollback = statements(context.rollback());
+        if (rollback == 0) {
+            boolean opaque = context.rollback().stream()
+                    .anyMatch(unit -> unit.source().kind() == SqlSource.Kind.ROUTINE_BODY);
+            if (opaque || RuleSupport.applicableToPostgres(context.rollback()).isEmpty()) {
+                return List.of();
+            }
+            return List.of(new Violation(
+                    "rollback has no executable statement for " + forward + " forward statement"
+                            + (forward == 1 ? "" : "s"),
+                    "Make the rollback invert the whole forward change, not only part of it.",
+                    context.changeSet().changelogFile(), context.changeSet().line(), 1));
+        }
         if (rollback >= (forward + 1) / 2) {
-            // About half or more; tolerate a one-to-many inversion.
+            // At least half, rounded up, so an odd forward count needs one more
+            // than half.
             return List.of();
         }
         return List.of(new Violation(

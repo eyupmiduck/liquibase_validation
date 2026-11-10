@@ -34,8 +34,12 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
     public SqlModification {
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(value, "value");
-        if ((kind == Kind.REPLACE || kind == Kind.REGEXP_REPLACE) && with == null) {
-            throw new IllegalArgumentException("a " + kind + " modification needs a with value");
+        if (kind == Kind.REPLACE || kind == Kind.REGEXP_REPLACE) {
+            if (with == null) {
+                throw new IllegalArgumentException("a " + kind + " modification needs a with value");
+            }
+        } else if (with != null) {
+            throw new IllegalArgumentException("a " + kind + " modification does not accept a with value");
         }
     }
 

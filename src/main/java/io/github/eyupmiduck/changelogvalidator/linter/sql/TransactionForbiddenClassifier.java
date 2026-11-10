@@ -36,9 +36,18 @@ public final class TransactionForbiddenClassifier {
      * @return the classifications, in statement order
      */
     public static List<Classification> classify(List<Token> tokens, List<SqlStatement> statements, Integer pgVersion) {
+        List<Token> words = tokens.stream().filter(token -> !token.isTrivia()).toList();
         List<Classification> classifications = new ArrayList<>();
+        int from = 0;
         for (SqlStatement statement : statements) {
-            familyOf(TokenWords.within(tokens, statement.startOffset(), statement.endOffset()), pgVersion)
+            while (from < words.size() && words.get(from).endOffset() <= statement.startOffset()) {
+                from++;
+            }
+            int to = from;
+            while (to < words.size() && words.get(to).endOffset() <= statement.endOffset()) {
+                to++;
+            }
+            familyOf(words.subList(from, to), pgVersion)
                     .ifPresent(family -> classifications.add(new Classification(family, statement)));
         }
         return List.copyOf(classifications);
@@ -76,12 +85,13 @@ public final class TransactionForbiddenClassifier {
         if (isIndexConcurrently(words, "DROP")) {
             return Optional.of(Family.DROP_INDEX_CONCURRENTLY);
         }
-        if (TokenWords.startsWith(words, "REINDEX") && TokenWords.contains(words, "CONCURRENTLY")) {
-            return Optional.of(Family.REINDEX_CONCURRENTLY);
+        Optional<Family> reindex = reindexFamily(words);
+        if (reindex.isPresent()) {
+            return reindex;
         }
-        if (TokenWords.startsWith(words, "ALTER", "TABLE") && TokenWords.adjacent(words, "DETACH", "PARTITION")
-                && TokenWords.contains(words, "CONCURRENTLY")) {
-            return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
+        Optional<Family> detach = detachPartitionFamily(words);
+        if (detach.isPresent()) {
+            return detach;
         }
         if (isAlterTypeAddValue(words) && pgVersion != null && pgVersion < ALTER_TYPE_ADD_VALUE_ALLOWED_FROM) {
             return Optional.of(Family.ALTER_TYPE_ADD_VALUE);
@@ -103,6 +113,65 @@ public final class TransactionForbiddenClassifier {
         return index + 1 < words.size()
                 && words.get(index).matchesKeyword("INDEX")
                 && words.get(index + 1).matchesKeyword("CONCURRENTLY");
+    }
+
+    /**
+     * Classifies {@code REINDEX} by the object kind immediately before the
+     * optional {@code CONCURRENTLY}. A bare object named {@code concurrently} is
+     * not the option.
+     */
+    private static Optional<Family> reindexFamily(List<Token> words) {
+        if (!TokenWords.startsWith(words, "REINDEX")) {
+            return Optional.empty();
+        }
+        int kind = -1;
+        for (int i = 1; i < words.size(); i++) {
+            Token word = words.get(i);
+            if (word.matchesKeyword("INDEX")
+                    || word.matchesKeyword("TABLE")
+                    || word.matchesKeyword("SCHEMA")
+                    || word.matchesKeyword("DATABASE")
+                    || word.matchesKeyword("SYSTEM")) {
+                kind = i;
+                break;
+            }
+        }
+        if (kind < 0) {
+            return Optional.empty();
+        }
+        if (kind + 1 < words.size() && words.get(kind + 1).matchesKeyword("CONCURRENTLY")) {
+            return Optional.of(Family.REINDEX_CONCURRENTLY);
+        }
+        return switch (words.get(kind).text().toUpperCase(java.util.Locale.ROOT)) {
+            case "SCHEMA", "DATABASE", "SYSTEM" -> Optional.of(Family.REINDEX);
+            default -> Optional.empty();
+        };
+    }
+
+    /**
+     * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY} and
+     * its {@code FINALIZE} variant, ignoring an object merely named
+     * {@code concurrently}.
+     */
+    private static Optional<Family> detachPartitionFamily(List<Token> words) {
+        if (!TokenWords.startsWith(words, "ALTER", "TABLE")) {
+            return Optional.empty();
+        }
+        for (int i = 2; i + 2 < words.size(); i++) {
+            if (words.get(i).matchesKeyword("DETACH") && words.get(i + 1).matchesKeyword("PARTITION")) {
+                if (i + 3 >= words.size()) {
+                    return Optional.empty();
+                }
+                if (words.get(i + 3).matchesKeyword("CONCURRENTLY")) {
+                    return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
+                }
+                if (words.get(i + 3).matchesKeyword("FINALIZE")) {
+                    return Optional.of(Family.DETACH_PARTITION_FINALIZE);
+                }
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     private static boolean isAlterTypeAddValue(List<Token> words) {
@@ -131,9 +200,19 @@ public final class TransactionForbiddenClassifier {
         REINDEX_CONCURRENTLY,
 
         /**
+         * {@code REINDEX DATABASE/SYSTEM/SCHEMA} without {@code CONCURRENTLY}.
+         */
+        REINDEX,
+
+        /**
          * {@code ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY}.
          */
         DETACH_PARTITION_CONCURRENTLY,
+
+        /**
+         * {@code ALTER TABLE ... DETACH PARTITION ... FINALIZE}.
+         */
+        DETACH_PARTITION_FINALIZE,
 
         /**
          * {@code CREATE DATABASE}.

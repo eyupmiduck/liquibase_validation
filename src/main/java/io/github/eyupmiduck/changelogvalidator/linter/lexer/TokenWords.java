@@ -3,12 +3,15 @@ package io.github.eyupmiduck.changelogvalidator.linter.lexer;
 import java.util.List;
 
 /**
- * Keyword matching over an ordered list of a statement's word tokens, shared by
- * the rules and the transaction-forbidden classifier so their keyword logic
- * cannot drift.
+ * Keyword matching over an ordered list of a statement's non-trivia tokens,
+ * shared by the rules and the transaction-forbidden classifier so their keyword
+ * logic cannot drift.
  *
  * <p>Matching is case-insensitive via {@link Token#matchesKeyword(String)}, so a
  * keyword inside a string or comment (which is not a word token) is not matched.
+ * Callers must pass the unfiltered, in-order non-trivia token sequence (for
+ * example from {@link #within}); filtering to WORD tokens only would make
+ * {@link #adjacent} treat punctuation-separated words as adjacent.
  */
 public final class TokenWords {
 
@@ -39,7 +42,7 @@ public final class TokenWords {
      * @return {@code true} when the sequence matches the start
      */
     public static boolean startsWith(List<Token> words, String... keywords) {
-        if (words.size() < keywords.length) {
+        if (keywords.length == 0 || words.size() < keywords.length) {
             return false;
         }
         for (int i = 0; i < keywords.length; i++) {
@@ -99,10 +102,14 @@ public final class TokenWords {
      *
      * @param words   the word tokens
      * @param keyword the keyword
-     * @param from    the index to start at
+     * @param from    the index to start at; must be non-negative
      * @return the index, or {@code -1} when the keyword is absent
+     * @throws IllegalArgumentException when {@code from} is negative
      */
     public static int indexOf(List<Token> words, String keyword, int from) {
+        if (from < 0) {
+            throw new IllegalArgumentException("from must be non-negative, was " + from);
+        }
         for (int i = from; i < words.size(); i++) {
             if (words.get(i).matchesKeyword(keyword)) {
                 return i;

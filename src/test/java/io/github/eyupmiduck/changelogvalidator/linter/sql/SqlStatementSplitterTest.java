@@ -105,11 +105,12 @@ class SqlStatementSplitterTest {
     }
 
     /**
-     * An explicit delimiter replaces the default.
+     * An explicit delimiter replaces the default. A word delimiter is honoured
+     * only at the end of its line, matching Liquibase.
      */
     @Test
     void honoursCustomEndDelimiter() {
-        List<SqlStatement> statements = SqlStatementSplitter.split("SELECT 1 GO SELECT 2 go", true, "GO", true);
+        List<SqlStatement> statements = SqlStatementSplitter.split("SELECT 1 GO\nSELECT 2 go", true, "GO", true);
 
         assertEquals(2, statements.size());
         assertEquals("SELECT 1", statements.get(0).text());
@@ -159,6 +160,28 @@ class SqlStatementSplitterTest {
 
         assertEquals(1, statements.size());
         assertEquals("CREATE INDEX CONCURRENTLY idx ON t (c)", statements.get(0).text());
+    }
+
+    /**
+     * A delimited statement's end offset is its last non-trivia token, not the
+     * delimiter or any trailing comment.
+     */
+    @Test
+    void usesTheLastTokenForDelimitedOffsets() {
+        SqlStatement statement = SqlStatementSplitter.split("SELECT 1 /*c*/;", true, ";", false).get(0);
+
+        assertEquals("SELECT 1", statement.text());
+        assertEquals(8, statement.endOffset());
+    }
+
+    /**
+     * A word delimiter only splits when it ends its line; an identifier named GO
+     * inside a statement is not a delimiter.
+     */
+    @Test
+    void requiresWordDelimitersAtEndOfLine() {
+        assertEquals(1, SqlStatementSplitter.split("SELECT go FROM t", true, "GO", true).size());
+        assertEquals(2, SqlStatementSplitter.split("SELECT 1 GO\nSELECT 2", true, "GO", true).size());
     }
 
     /**

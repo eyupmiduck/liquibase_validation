@@ -216,14 +216,14 @@ public final class GrantAssertions {
     public static void assertGrantRollbackMirrors(String forwardResource, String callerRole,
                                                   String rollbackResource) throws IOException {
         assertMirrors(forwardResource,
-                "GRANT EXECUTE ON FUNCTION\\s+(.*?)\\s+TO " + callerRole + ";",
+                "GRANT EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+TO " + callerRole + ";",
                 rollbackResource,
-                "REVOKE EXECUTE ON FUNCTION\\s+(.*?)\\s+FROM " + callerRole + ";",
+                "REVOKE EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+FROM " + callerRole + ";",
                 "every function granted to " + callerRole + " should be revoked in the rollback");
         assertMirrors(forwardResource,
-                "REVOKE EXECUTE ON FUNCTION\\s+(.*?)\\s+FROM public;",
+                "REVOKE EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+FROM public;",
                 rollbackResource,
-                "GRANT EXECUTE ON FUNCTION\\s+(.*?)\\s+TO public;",
+                "GRANT EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+TO public;",
                 "every function revoked from PUBLIC should have its PUBLIC grant restored");
     }
 
@@ -241,7 +241,7 @@ public final class GrantAssertions {
 
     private static Set<String> extract(String resource, String regex) throws IOException {
         Set<String> signatures = new LinkedHashSet<>();
-        Matcher matcher = Pattern.compile(regex, Pattern.DOTALL).matcher(read(resource));
+        Matcher matcher = Pattern.compile(regex, Pattern.DOTALL | Pattern.CASE_INSENSITIVE).matcher(read(resource));
         while (matcher.find()) {
             signatures.add(matcher.group(1).replaceAll("\\s+", " ").trim());
         }

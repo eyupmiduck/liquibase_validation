@@ -8,20 +8,21 @@ import java.util.Locale;
 
 /**
  * Renders findings as one line per finding in a compiler-like format:
- * {@code file:line:column: severity: message [rule-id]}. Newlines in the message
- * and help are collapsed so each finding stays on one parseable line, and the
- * line terminator is always {@code \n} regardless of the host OS.
+ * {@code file:line:column: severity: message [rule-id]}, followed by an
+ * optional indented {@code help:} line. Newlines in every field are collapsed
+ * so each finding's record stays parseable, and the line terminator is always
+ * {@code \n} regardless of the host OS.
  */
 public final class TtyReporter implements Reporter {
 
     private static String oneLine(String value) {
-        return value.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ');
+        return value.replaceAll("\\R", " ");
     }
 
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         for (Finding finding : findings) {
-            out.append(finding.file().toString())
+            out.append(oneLine(finding.file().toString()))
                     .append(':')
                     .append(Integer.toString(finding.line()))
                     .append(':')
@@ -31,9 +32,9 @@ public final class TtyReporter implements Reporter {
                     .append(": ")
                     .append(oneLine(finding.message()))
                     .append(" [")
-                    .append(finding.ruleId())
+                    .append(oneLine(finding.ruleId()))
                     .append(']');
-            if (finding.help() != null) {
+            if (finding.help() != null && !finding.help().isBlank()) {
                 out.append('\n').append("  help: ").append(oneLine(finding.help()));
             }
             out.append('\n');

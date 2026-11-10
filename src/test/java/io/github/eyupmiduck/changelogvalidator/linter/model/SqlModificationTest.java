@@ -44,5 +44,7 @@ class SqlModificationTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> new SqlModification(SqlModification.Kind.REPLACE, "x", null, false, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> new SqlModification(SqlModification.Kind.APPEND, "x", "ignored", false, null));
     }
 }
