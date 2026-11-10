@@ -128,6 +128,20 @@ class LinterCliTest {
     }
 
     /**
+     * A configuration file can set {@code failOn: none}, matching the documented
+     * threshold even though it is not a finding severity.
+     */
+    @Test
+    void honoursFailOnNoneFromConfiguration() throws IOException {
+        Path root = changelog("bad", FORBIDDEN);
+        Path config = config("failOn: none");
+
+        Result result = run("--changelog-root", root.toString(), "--config", config.toString());
+
+        assertEquals(0, result.code());
+    }
+
+    /**
      * A configuration file can exclude a rule.
      */
     @Test
@@ -191,6 +205,11 @@ class LinterCliTest {
                 "--fail-on", "none");
 
         assertEquals(0, result.code());
+
+        Result configured = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString(),
+                "--config", config("failOn: none").toString());
+
+        assertEquals(0, configured.code());
     }
 
     /**

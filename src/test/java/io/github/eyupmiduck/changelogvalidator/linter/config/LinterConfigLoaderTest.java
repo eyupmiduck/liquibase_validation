@@ -71,6 +71,16 @@ class LinterConfigLoaderTest {
     }
 
     /**
+     * A {@code failOn} value of {@code none} is accepted and represented by a
+     * null threshold, so no finding fails the run.
+     */
+    @Test
+    void acceptsNoneAsTheFailureThreshold() throws IOException {
+        assertNull(load("failOn: none").failOn());
+        assertNull(load("failOn: NONE").failOn());
+    }
+
+    /**
      * Unknown top-level keys and unknown per-rule keys are rejected.
      */
     @Test

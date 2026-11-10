@@ -151,6 +151,17 @@ class LinterTest {
     }
 
     /**
+     * A null threshold ({@code failOn: none}) never fails, even for errors.
+     */
+    @Test
+    void neverFailsWithoutAFailureThreshold() {
+        LinterConfig config = new LinterConfig(null, null, List.of(), List.of(), Map.of());
+        Linter linter = new Linter(List.of(new ForbiddenWordRule()), config);
+
+        assertFalse(linter.fails(List.of(findingWith(Severity.ERROR))));
+    }
+
+    /**
      * A rule that flags the word {@code bad} in forward SQL.
      */
     private static final class ForbiddenWordRule implements Rule {

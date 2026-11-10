@@ -265,10 +265,12 @@ equivalent — `CONCURRENTLY` (index and partition operations), `CREATE DOMAIN`,
 the casts and operators common in `<sql>` bodies (`::`, `->`, `->>`, `@>`, ...).
 
 The gate can be on the changeset or, as Liquibase applies it too, on an
-individual SQL source (`dbms` is case-insensitive and may be a comma-separated
-list). Structured change types are exempt, and a mention in a string or comment
-does not count. It is a token-level heuristic — an unlisted PostgreSQL-only
-construct is a false negative — and an error on by default.
+individual SQL source (`dbms` is case-insensitive). The gate must restrict
+execution to PostgreSQL: a comma-separated list that also names another database
+does not satisfy it, because the SQL would still run on that target. Structured
+change types are exempt, and a mention in a string or comment does not count. It
+is a token-level heuristic — an unlisted PostgreSQL-only construct is a false
+negative — and an error on by default.
 
 ```xml
 <!-- Reported: CREATE INDEX CONCURRENTLY is PostgreSQL-only. -->

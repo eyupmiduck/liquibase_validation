@@ -92,13 +92,15 @@ public final class Linter {
 
     /**
      * Returns whether {@code findings} should fail the run under the configured
-     * {@code failOn} threshold.
+     * {@code failOn} threshold. A null threshold ({@code failOn: none}) never
+     * fails.
      *
      * @param findings the findings
      * @return {@code true} when at least one finding is at or above the threshold
      */
     public boolean fails(List<Finding> findings) {
-        return findings.stream().anyMatch(finding -> finding.severity().atLeast(config.failOn()));
+        return config.failOn() != null
+                && findings.stream().anyMatch(finding -> finding.severity().atLeast(config.failOn()));
     }
 
     private RuleContext context(ChangeSet changeSet) throws IOException {

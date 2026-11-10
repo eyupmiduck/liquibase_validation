@@ -53,10 +53,22 @@ public final class LinterConfigLoader {
         }
         return new LinterConfig(
                 optionalString(map, "pgVersion"),
-                map.containsKey("failOn") ? Severity.from(requireString(map, "failOn")) : Severity.ERROR,
+                map.containsKey("failOn") ? failOn(requireString(map, "failOn")) : Severity.ERROR,
                 stringList(map, "exclude"),
                 stringList(map, "include"),
                 rules(map));
+    }
+
+    /**
+     * Parses the {@code failOn} threshold. {@code none} is a valid value even
+     * though it is not a finding severity: it means no finding fails the run, so
+     * the threshold is represented by {@code null}.
+     */
+    private static Severity failOn(String value) {
+        if ("none".equalsIgnoreCase(value.strip())) {
+            return null;
+        }
+        return Severity.from(value);
     }
 
     private static Map<String, LinterConfig.RuleSettings> rules(Map<?, ?> map) {

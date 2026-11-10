@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -49,8 +50,9 @@ class RequireDbmsPostgresqlRuleTest {
 
     /**
      * Each PostgreSQL-only construct is reported when ungated and accepted when
-     * the changeset sets {@code dbms="postgresql"} (case-insensitive or in a
-     * list).
+     * the changeset gates execution to PostgreSQL only (case-insensitive). A
+     * mixed database list is still reported, because the SQL would run on the
+     * other target too.
      */
     @Test
     void reportsEachConstructAndAcceptsTheGate() {
@@ -63,11 +65,44 @@ class RequireDbmsPostgresqlRuleTest {
                 "CREATE INDEX CONCURRENTLY idx ON t (c);",
                 "CREATE DOMAIN positive_int AS int CHECK (VALUE > 0);",
                 "CREATE EXTENSION pg_trgm;",
-                "CREATE FUNCTION f() RETURNS void AS $$ BEGIN END; $$ LANGUAGE plpgsql;")) {
+                "CREATE FUNCTION f() RETURNS void AS $$ BEGIN END; $$ LANGUAGE plpgsql;",
+                "CREATE INDEX idx ON t USING gin (tags);")) {
             assertTrue(check("postgresql", sql).isEmpty(), () -> "gated but reported: " + sql);
             assertTrue(check("PostgreSQL", sql).isEmpty());
-            assertTrue(check("mysql, postgresql", sql).isEmpty());
+            assertFalse(check("mysql, postgresql", sql).isEmpty(), () -> "mixed gate accepted: " + sql);
+            assertFalse(check("postgresql, mysql", sql).isEmpty(), () -> "mixed gate accepted: " + sql);
         }
+    }
+
+    /**
+     * A partition detach with {@code CONCURRENTLY} is PostgreSQL-only and must be
+     * reported without a PostgreSQL-only gate.
+     */
+    @Test
+    void reportsPartitionDetachConcurrently() {
+        String sql = "ALTER TABLE t DETACH PARTITION p CONCURRENTLY;";
+
+        List<Rule.Violation> violations = check(null, sql);
+
+        assertEquals(1, violations.size());
+        assertEquals("ALTER TABLE ... DETACH PARTITION CONCURRENTLY", violations.get(0).statement());
+        assertTrue(check("postgresql", sql).isEmpty());
+    }
+
+    /**
+     * The index-method check only considers the token immediately after
+     * {@code USING}; an identifier named gin or gist elsewhere in the statement
+     * is not a PostgreSQL-only access method.
+     */
+    @Test
+    void ignoresIndexMethodNamesOutsideTheUsingPosition() {
+        assertTrue(check(null, "SELECT * FROM a JOIN gin USING (id);").isEmpty());
+        assertTrue(check(null, "CREATE INDEX idx ON t USING btree (gist);").isEmpty());
+        assertTrue(check(null, "CREATE TABLE t (gin text);").isEmpty());
+
+        assertFalse(check(null, "CREATE INDEX idx ON t USING gin (tags);").isEmpty());
+        assertFalse(check(null, "CREATE UNIQUE INDEX idx ON t USING gist (tags);").isEmpty());
+        assertFalse(check(null, "CREATE INDEX idx ON t USING \"gin\" (tags);").isEmpty());
     }
 
     /**
@@ -107,6 +142,31 @@ class RequireDbmsPostgresqlRuleTest {
                 null, null, null, List.of(), true, List.of());
 
         assertTrue(new RequireDbmsPostgresqlRule().check(new RuleContext(changeSet, List.of(unit), List.of())).isEmpty());
+    }
+
+    /**
+     * A source-level gate that also names another database is not PostgreSQL-only,
+     * while a PostgreSQL-only source gate accepts the SQL even when the changeset
+     * itself lists another database.
+     */
+    @Test
+    void requiresAPostgresOnlySourceGate() {
+        String sql = "CREATE INDEX CONCURRENTLY idx ON t (c);";
+        SqlUnit mixed = new SqlUnit(
+                new SqlSource(SqlSource.Kind.SQL_FILE, FILE, null, true, ";", true, "mysql, postgresql"),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
+        SqlUnit postgresOnly = new SqlUnit(
+                new SqlSource(SqlSource.Kind.SQL_FILE, FILE, null, true, ";", true, "postgresql"),
+                FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
+        ChangeSet ungated = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(), true, List.of());
+        ChangeSet mixedChangeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                "mysql, postgresql", null, null, List.of(), true, List.of());
+
+        assertFalse(new RequireDbmsPostgresqlRule()
+                .check(new RuleContext(ungated, List.of(mixed), List.of())).isEmpty());
+        assertTrue(new RequireDbmsPostgresqlRule()
+                .check(new RuleContext(mixedChangeSet, List.of(postgresOnly), List.of())).isEmpty());
     }
 
     /**

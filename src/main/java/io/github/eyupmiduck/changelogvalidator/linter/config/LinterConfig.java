@@ -13,7 +13,8 @@ import java.util.*;
  * default. {@code failOn} is the least severity that fails the run.
  *
  * @param pgVersion the PostgreSQL version for version-gated rules, or null
- * @param failOn    the least severity that fails the run
+ * @param failOn    the least severity that fails the run, or null when no
+ *                  severity fails the run
  * @param exclude   rule ids to disable
  * @param include   rule ids to enable even when they are opt-in
  * @param rules     per-rule settings
@@ -25,7 +26,6 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * Validates the configuration and copies its collections.
      */
     public LinterConfig {
-        Objects.requireNonNull(failOn, "failOn");
         exclude = List.copyOf(exclude);
         include = List.copyOf(include);
         rules = Map.copyOf(rules);
