@@ -74,6 +74,6 @@ public final class RequireRollbackParityRule implements Rule {
                 "rollback has " + rollback + " statement" + (rollback == 1 ? "" : "s")
                         + " for " + forward + " forward statement" + (forward == 1 ? "" : "s"),
                 "Make the rollback invert the whole forward change, not only part of it.",
-                context.changeSet().changelogFile(), 1, 1));
+                context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
 }

@@ -66,6 +66,6 @@ public final class RequireRollbackRule implements Rule {
         return List.of(new Violation(
                 "changeset has no rollback",
                 "Add a <rollback> block that reverses the change, or an empty <rollback/> when the change needs none.",
-                context.changeSet().changelogFile(), 1, 1));
+                context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
 }

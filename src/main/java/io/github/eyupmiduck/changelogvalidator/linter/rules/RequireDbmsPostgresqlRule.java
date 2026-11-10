@@ -210,7 +210,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
                     "changeset uses PostgreSQL-only syntax (" + construct
                             + ") without dbms=\"postgresql\"; on another database it fails at deploy",
                     "Add dbms=\"postgresql\" to the changeset, or make the SQL portable.",
-                    unit.file(), 1, 1));
+                    unit.file(), unit.source().isInline() ? unit.source().line() : 1, 1));
         }
     }
 }

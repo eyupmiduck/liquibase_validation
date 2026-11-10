@@ -1,13 +1,21 @@
 package io.github.eyupmiduck.changelogvalidator;
 
 import org.w3c.dom.Document;
+import org.xml.sax.Attributes;
+import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
+import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Parses changelog XML defensively.
@@ -52,6 +60,57 @@ public final class XmlDocuments {
             throw new IOException("failed to parse XML " + documentFile, e);
         } catch (ParserConfigurationException e) {
             throw new IllegalStateException("failed to configure the XML parser", e);
+        }
+    }
+
+    /**
+     * Returns the one-based start-tag line of each element name, in document
+     * order. A namespace-prefixed name is keyed by its qualified name, matching
+     * {@link org.w3c.dom.Element#getTagName()}.
+     *
+     * @param documentFile the XML file
+     * @return the line numbers by element name, in document order
+     * @throws IOException if the file cannot be read or parsed
+     */
+    public static Map<String, Deque<Integer>> startTagLines(Path documentFile) throws IOException {
+        SAXParserFactory factory = SAXParserFactory.newInstance();
+        factory.setNamespaceAware(true);
+        try {
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            TagLineHandler handler = new TagLineHandler();
+            factory.newSAXParser().parse(documentFile.toFile(), handler);
+            return handler.lines();
+        } catch (SAXException e) {
+            throw new IOException("failed to parse XML " + documentFile, e);
+        } catch (ParserConfigurationException e) {
+            throw new IllegalStateException("failed to configure the XML parser", e);
+        }
+    }
+
+    /**
+     * Collects start-tag lines from a SAX parse.
+     */
+    private static final class TagLineHandler extends DefaultHandler {
+
+        private final Map<String, Deque<Integer>> lines = new HashMap<>();
+        private Locator locator;
+
+        @Override
+        public void setDocumentLocator(Locator locator) {
+            this.locator = locator;
+        }
+
+        @Override
+        public void startElement(String uri, String localName, String qName, Attributes attributes) {
+            String name = qName == null || qName.isEmpty() ? localName : qName;
+            lines.computeIfAbsent(name, ignored -> new ArrayDeque<>()).add(locator.getLineNumber());
+        }
+
+        private Map<String, Deque<Integer>> lines() {
+            return lines;
         }
     }
 }

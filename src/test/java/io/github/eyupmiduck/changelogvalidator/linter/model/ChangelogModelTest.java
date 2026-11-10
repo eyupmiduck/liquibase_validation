@@ -96,6 +96,37 @@ class ChangelogModelTest {
     }
 
     /**
+     * A changeset and its inline/structured source carry the line of their XML
+     * element.
+     */
+    @Test
+    void recordsElementLines() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-index" author="a">
+                    <createIndex indexName="idx" tableName="t">
+                        <column name="c"/>
+                    </createIndex>
+                </changeSet>
+                """));
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(
+                ChangelogModel.changesets(changelogRoot, master), "001-index");
+
+        assertEquals(lineOf("changes.xml", "<changeSet"), changeSet.line());
+        assertEquals(lineOf("changes.xml", "<createIndex"), changeSet.sqlSources().get(0).line());
+    }
+
+    private int lineOf(String file, String marker) throws IOException {
+        List<String> lines = Files.readAllLines(changelogRoot.resolve(file));
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(marker)) {
+                return i + 1;
+            }
+        }
+        throw new AssertionError("no " + marker + " in " + file);
+    }
+
+    /**
      * A {@code <sqlFile>} source and its rollback resolve to absolute paths.
      */
     @Test

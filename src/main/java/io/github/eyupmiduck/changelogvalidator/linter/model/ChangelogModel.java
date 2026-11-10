@@ -81,6 +81,7 @@ public final class ChangelogModel {
         }
         Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
         Document document = parse(normalized);
+        Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
         for (Element child : childElements(document.getDocumentElement())) {
             switch (child.getTagName()) {
                 case "property" -> addProperty(globals, locals, child);
@@ -95,7 +96,8 @@ public final class ChangelogModel {
                     visit(root, resolveWithin(root, base, file, "include"), globals, locals,
                             changesets, visited);
                 }
-                case "changeSet" -> changesets.add(changeSet(root, normalized, child, snapshot(globals, locals)));
+                case "changeSet" -> changesets.add(changeSet(root, normalized, child, snapshot(globals, locals),
+                        lines));
                 case "includeAll" -> throw new IOException(
                         "includeAll is not supported by the linter; list the included changelogs explicitly: "
                                 + child.getAttribute("path"));
@@ -104,6 +106,29 @@ public final class ChangelogModel {
                     // changeset or property this model needs.
                 }
             }
+        }
+    }
+
+    /**
+     * Maps each DOM element to the line of its start tag. The SAX parse and the
+     * DOM recursion both visit elements in document order, so each tag name's
+     * line queue supplies the matching element.
+     */
+    private static Map<Element, Integer> elementLines(Document document,
+                                                       Map<String, Deque<Integer>> linesByTag) {
+        Map<Element, Integer> lines = new IdentityHashMap<>();
+        assignLines(document.getDocumentElement(), linesByTag, lines);
+        return lines;
+    }
+
+    private static void assignLines(Element element, Map<String, Deque<Integer>> linesByTag,
+                                    Map<Element, Integer> lines) {
+        Deque<Integer> tagLines = linesByTag.get(element.getTagName());
+        if (tagLines != null && !tagLines.isEmpty()) {
+            lines.put(element, tagLines.removeFirst());
+        }
+        for (Element child : childElements(element)) {
+            assignLines(child, linesByTag, lines);
         }
     }
 
@@ -138,7 +163,8 @@ public final class ChangelogModel {
     }
 
     private static ChangeSet changeSet(Path root, Path changelogFile, Element element,
-                                       Map<String, String> properties) throws IOException {
+                                       Map<String, String> properties,
+                                       Map<Element, Integer> lines) throws IOException {
         List<SqlSource> sqlSources = new ArrayList<>();
         List<SqlSource> rollbackSources = new ArrayList<>();
         List<SqlModification> modifySql = new ArrayList<>();
@@ -148,11 +174,13 @@ public final class ChangelogModel {
                 case "rollback" -> {
                     rollbackDefined = true;
                     for (Element rollbackChild : childElements(child)) {
-                        rollbackSources.addAll(sourcesFor(root, changelogFile, rollbackChild));
+                        rollbackSources.addAll(sourcesFor(root, changelogFile, rollbackChild,
+                                lines.getOrDefault(rollbackChild, 1)));
                     }
                 }
                 case "modifySql" -> modifySql.addAll(modifications(child));
-                default -> sqlSources.addAll(sourcesFor(root, changelogFile, child));
+                default -> sqlSources.addAll(sourcesFor(root, changelogFile, child,
+                        lines.getOrDefault(child, 1)));
             }
         }
         return new ChangeSet(
@@ -167,7 +195,8 @@ public final class ChangelogModel {
                 sqlSources,
                 rollbackDefined,
                 rollbackSources,
-                new Normalisation(properties, modifySql));
+                new Normalisation(properties, modifySql),
+                lines.getOrDefault(element, 1));
     }
 
     /**
@@ -175,12 +204,13 @@ public final class ChangelogModel {
      * for a structured change type the model renders, a synthetic inline source.
      * The same resolution is used for forward and rollback children.
      */
-    private static List<SqlSource> sourcesFor(Path root, Path changelogFile, Element child) throws IOException {
-        List<SqlSource> sources = sqlSources(root, changelogFile, child);
+    private static List<SqlSource> sourcesFor(Path root, Path changelogFile, Element child, int line)
+            throws IOException {
+        List<SqlSource> sources = sqlSources(root, changelogFile, child, line);
         if (sources.isEmpty()) {
             String structured = structuredSql(child);
             if (structured != null) {
-                sources = List.of(inlineSql(structured));
+                sources = List.of(inlineSql(structured, line));
             }
         }
         return sources;
@@ -211,8 +241,8 @@ public final class ChangelogModel {
         return modifications;
     }
 
-    private static SqlSource inlineSql(String sql) {
-        return new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, DEFAULT_END_DELIMITER, false, null);
+    private static SqlSource inlineSql(String sql, int line) {
+        return new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, DEFAULT_END_DELIMITER, false, null, line);
     }
 
     private static String structuredSql(Element change) {
@@ -273,7 +303,8 @@ public final class ChangelogModel {
         return schema == null || schema.isBlank() ? name : schema + "." + name;
     }
 
-    private static List<SqlSource> sqlSources(Path root, Path changelogFile, Element element) throws IOException {
+    private static List<SqlSource> sqlSources(Path root, Path changelogFile, Element element, int line)
+            throws IOException {
         return switch (element.getTagName()) {
             case "sql" -> List.of(new SqlSource(
                     SqlSource.Kind.INLINE_SQL,
@@ -282,9 +313,10 @@ public final class ChangelogModel {
                     booleanAttribute(element, "splitStatements", true),
                     delimiterAttribute(element),
                     booleanAttribute(element, "stripComments", false),
-                    optionalAttribute(element, "dbms")));
-            case "sqlFile" -> fileSource(SqlSource.Kind.SQL_FILE, root, changelogFile, element);
-            case "createProcedure", "createFunction" -> routineSource(root, changelogFile, element);
+                    optionalAttribute(element, "dbms"),
+                    line));
+            case "sqlFile" -> fileSource(SqlSource.Kind.SQL_FILE, root, changelogFile, element, line);
+            case "createProcedure", "createFunction" -> routineSource(root, changelogFile, element, line);
             default -> List.of();
         };
     }
@@ -294,9 +326,10 @@ public final class ChangelogModel {
      * {@code path} attribute when present, otherwise from the element's inline
      * text (Liquibase also allows the routine body as the element's content).
      */
-    private static List<SqlSource> routineSource(Path root, Path changelogFile, Element element) throws IOException {
+    private static List<SqlSource> routineSource(Path root, Path changelogFile, Element element, int line)
+            throws IOException {
         if (!element.getAttribute("path").isBlank()) {
-            return fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
+            return fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element, line);
         }
         String text = element.getTextContent();
         if (text == null || text.isBlank()) {
@@ -309,11 +342,12 @@ public final class ChangelogModel {
                 booleanAttribute(element, "splitStatements", true),
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
-                optionalAttribute(element, "dbms")));
+                optionalAttribute(element, "dbms"),
+                line));
     }
 
-    private static List<SqlSource> fileSource(SqlSource.Kind kind, Path root, Path changelogFile, Element element)
-            throws IOException {
+    private static List<SqlSource> fileSource(SqlSource.Kind kind, Path root, Path changelogFile, Element element,
+                                              int line) throws IOException {
         String path = element.getAttribute("path");
         if (path.isBlank()) {
             return List.of();
@@ -327,7 +361,8 @@ public final class ChangelogModel {
                 booleanAttribute(element, "splitStatements", true),
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
-                optionalAttribute(element, "dbms")));
+                optionalAttribute(element, "dbms"),
+                line));
     }
 
     /**

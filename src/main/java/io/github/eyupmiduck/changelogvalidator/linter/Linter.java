@@ -115,6 +115,11 @@ public final class Linter {
             Path file = source.isInline() ? changeSet.changelogFile() : source.path();
             String raw = source.isInline() ? source.text() : Files.readString(file);
             String sql = SqlNormalizer.normalise(raw, changeSet.normalisation(), rollback);
+            if (source.isInline() && source.line() > 1) {
+                // Inline SQL is reported against the changelog file; shift token
+                // lines to the declaring XML element instead of starting at 1.
+                sql = "\n".repeat(source.line() - 1) + sql;
+            }
             List<Token> tokens = SqlLexer.tokenize(sql);
             List<SqlStatement> statements = SqlStatementSplitter.split(sql, source.splitStatements(),
                     source.endDelimiter(), source.stripComments());

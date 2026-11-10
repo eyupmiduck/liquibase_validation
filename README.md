@@ -564,6 +564,15 @@ signature. Both captures are written one file per object under
 `diff -r` and uploaded as a build artifact. The comparison covers
 `managedSchemas()` and can be turned off with `catalogComparisonEnabled()`.
 
+The capture covers schemas, relations (tables, partitioned tables, views,
+materialized views and foreign tables), columns, constraints, indexes,
+sequences, domains, composite/enum/range types, functions and procedures,
+triggers, extensions, ACLs and comments. It deliberately does not cover
+aggregates and window functions, row-level security policies, rules, sequence
+ownership (`OWNED BY`), column storage/compression/statistics, inheritance,
+tablespaces, or user-defined base and multirange types; a difference in one of
+those is not detected by the catalog comparison.
+
 When there is no published release below the current version it skips (so a
 project's first release does not break its build), and it can be disabled for an
 offline run with `-Dskip.upgrade-test=true`. See
