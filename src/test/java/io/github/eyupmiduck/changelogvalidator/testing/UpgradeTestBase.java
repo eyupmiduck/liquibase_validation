@@ -213,14 +213,16 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         // project's main database only).
         try (Connection admin = openAdminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON DATABASE \"" + database + "\" TO " + configuration.ownerUser());
+            statement.execute("GRANT CREATE ON DATABASE " + quoteIdentifier(database)
+                    + " TO " + quoteIdentifier(configuration.ownerUser()));
         }
         try (Connection admin = openAdminConnection(database);
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.ownerUser());
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.testUser());
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.ownerUser()));
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.testUser()));
             statement.execute("CREATE SCHEMA IF NOT EXISTS "
-                    + trackingSettings().liquibaseSchema() + " AUTHORIZATION " + configuration.ownerUser());
+                    + quoteIdentifier(trackingSettings().liquibaseSchema())
+                    + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
         }
     }
 

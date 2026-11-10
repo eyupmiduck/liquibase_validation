@@ -68,7 +68,7 @@ final class MavenVersion {
         boolean leftNumeric = isNumeric(left);
         boolean rightNumeric = isNumeric(right);
         if (leftNumeric && rightNumeric) {
-            return Long.compare(Long.parseLong(left), Long.parseLong(right));
+            return compareNumeric(left, right);
         }
         // A numeric token outranks a qualifier: 1.5.2 > 1.5.2-RC1.
         if (leftNumeric) {
@@ -78,6 +78,27 @@ final class MavenVersion {
             return -1;
         }
         return left.compareTo(right);
+    }
+
+    /**
+     * Compares arbitrary-length numeric tokens without overflow, ignoring
+     * leading zeros.
+     */
+    private static int compareNumeric(String left, String right) {
+        String normalizedLeft = stripLeadingZeros(left);
+        String normalizedRight = stripLeadingZeros(right);
+        if (normalizedLeft.length() != normalizedRight.length()) {
+            return Integer.compare(normalizedLeft.length(), normalizedRight.length());
+        }
+        return normalizedLeft.compareTo(normalizedRight);
+    }
+
+    private static String stripLeadingZeros(String token) {
+        int first = 0;
+        while (first < token.length() - 1 && token.charAt(first) == '0') {
+            first++;
+        }
+        return token.substring(first);
     }
 
     private static boolean isNumeric(String token) {

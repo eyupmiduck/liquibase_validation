@@ -189,12 +189,13 @@ blocking queries that use it; `CONCURRENTLY` avoids it. The rule reports a
 
 #### changeset-rollback-required
 
-A changeset with no rollback cannot be reverted cleanly. The rule reports a
-changeset that declares no `<rollback>`. It is accepted when a `<rollback>` block
-is present (including an empty one, or `<rollback changeSetId="..."/>` that
-references another changeset) and when the changeset is `runOnChange` with a
-stored-routine body (re-running the body replaces it). It is a warning and
-opt-in.
+A changeset with no explicit rollback cannot be reverted cleanly. The rule
+requires an explicit `<rollback>`, including for structured change types that
+Liquibase can invert automatically, so an empty `<rollback/>` accepts a change
+that needs no reversal. It is accepted when a `<rollback>` block is present
+(including an empty one, or `<rollback changeSetId="..."/>` that references
+another changeset) and when the changeset is `runOnChange` with a stored-routine
+body (re-running the body replaces it). It is a warning and opt-in.
 
 ```xml
 <!-- Reported: no rollback. -->
@@ -352,8 +353,9 @@ lexer understands the PostgreSQL lexical forms the changelog files use:
 - dollar-quoted strings (`$$...$$` and `$tag$...$tag$`), which is how routine
   bodies appear — a whole body is one token;
 - quoted identifiers (`"..."` with doubled double quotes);
-- numeric literals (including the `0x`, `0o`, `0b`, `L` and `_` forms) and
-  positional parameters (`$1`);
+- numeric literals (including the `0x`, `0o`, `0b` and underscore-separator
+  forms) and positional parameters (`$1`); the `L` suffix is not a PostgreSQL
+  numeric form and is not recognised;
 - operators and punctuation, and bare words (keywords are matched by rules with
   `Token.matchesKeyword`, so identifier/keyword classification is not baked in);
 - Liquibase formatted-SQL directives (`--liquibase`, `--changeset`,

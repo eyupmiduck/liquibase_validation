@@ -15,6 +15,15 @@ import static org.junit.jupiter.api.Assertions.*;
 class PostgresTestBaseTest extends PostgresTestBase {
 
     /**
+     * Administrative identifiers are quoted and embedded quotes are doubled.
+     */
+    @Test
+    void quotesIdentifiers() {
+        assertEquals("\"Order Lines\"", PostgresTestBase.quoteIdentifier("Order Lines"));
+        assertEquals("\"a\"\"b\"", PostgresTestBase.quoteIdentifier("a\"b"));
+    }
+
+    /**
      * The private database is cloned from the migrated template and is usable.
      */
     @Test
@@ -123,6 +132,24 @@ class PostgresTestBaseTest extends PostgresTestBase {
             assertNotValidated(PUBLIC_SCHEMA, "probe_columns", "probe_amount_check");
         } finally {
             dropTestTable("probe_columns");
+        }
+    }
+
+    /**
+     * The lock waiter resolves a schema-qualified table instead of assuming the
+     * current schema.
+     */
+    @Test
+    void resolvesNonPublicTableSchema() throws Exception {
+        dsl.execute("CREATE SCHEMA lock_schema");
+        try {
+            dsl.execute("CREATE TABLE lock_schema.probe_lock (id integer)");
+            try (Connection other = openTestConnection()) {
+                int holderPid = holdTableLock(other, "lock_schema.probe_lock", "ACCESS SHARE");
+                awaitTableLockHeld("lock_schema.probe_lock", "AccessShareLock", holderPid);
+            }
+        } finally {
+            dsl.execute("DROP SCHEMA IF EXISTS lock_schema CASCADE");
         }
     }
 

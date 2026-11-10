@@ -67,6 +67,18 @@ class DynamicSqlRuleTest {
     }
 
     /**
+     * A routine or parameter named execute in the declaration header is not
+     * dynamic SQL; only the body after AS is scanned.
+     */
+    @Test
+    void ignoresExecuteInTheDeclarationHeader() {
+        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION execute() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
+        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION f(execute int) RETURNS int AS $$ BEGIN RETURN $1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
+    }
+
+    /**
      * The rule is opt-in, informational, and reports through the engine when
      * included.
      */

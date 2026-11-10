@@ -34,17 +34,23 @@ import java.util.stream.Stream;
 public final class ChangelogValidator {
 
     /**
+     * The {@code NNN-name} shape: a three-digit, zero-padded prefix followed by
+     * alphanumeric segments separated by {@code -} or {@code _}.
+     */
+    private static final String NNN_NAME = "\\d{3}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*";
+
+    /**
      * Matches changeSet ids of the form {@code NNN-name} or {@code NNN_name},
      * where {@code NNN} is a three-digit, zero-padded integer.
      */
-    private static final Pattern CHANGE_SET_ID = Pattern.compile("\\d{3}[-_].+");
+    private static final Pattern CHANGE_SET_ID = Pattern.compile(NNN_NAME);
 
     /**
      * Matches SQL file names of the form {@code NNN-name.sql} or
      * {@code NNN_name.sql}, where {@code NNN} is a three-digit, zero-padded
      * integer.
      */
-    private static final Pattern SQL_FILE_NAME = Pattern.compile("\\d{3}[-_].+\\.sql");
+    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql");
 
     /**
      * Change types that load SQL from an external file through a {@code path}
