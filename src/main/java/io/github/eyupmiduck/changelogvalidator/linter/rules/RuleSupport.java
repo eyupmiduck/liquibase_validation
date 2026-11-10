@@ -68,7 +68,7 @@ final class RuleSupport {
      *
      * @param changeSet the changeset
      * @return {@code true} when the changeset has no sources or at least one
-     *         PostgreSQL-applicable source
+     * PostgreSQL-applicable source
      */
     static boolean hasPostgresSource(ChangeSet changeSet) {
         List<SqlSource> sources = new ArrayList<>(changeSet.sqlSources());

@@ -192,8 +192,8 @@ blocking queries that use it; `CONCURRENTLY` avoids it. The rule reports a
 A changeset with no explicit rollback cannot be reverted cleanly. The rule
 requires an explicit `<rollback>`, including for structured change types that
 Liquibase can invert automatically, so an empty `<rollback/>` accepts a change
-that needs no reversal. It is accepted when a `<rollback>` block is present
-(including an empty one, or `<rollback changeSetId="..."/>` that references
+that needs no reversal. It is accepted when a `<rollback>` block is present (including an empty one, or
+`<rollback changeSetId="..."/>` that references
 another changeset) and when the changeset is `runOnChange` with a stored-routine
 body (re-running the body replaces it). It is a warning and opt-in.
 

@@ -40,16 +40,6 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
     }
 
     /**
-     * Returns whether this modification applies to PostgreSQL.
-     *
-     * @return {@code true} when the filter includes PostgreSQL
-     * @see #appliesToPostgres(String)
-     */
-    public boolean appliesToPostgres() {
-        return appliesToPostgres(dbms);
-    }
-
-    /**
      * Returns whether a Liquibase {@code dbms} filter includes PostgreSQL: unset
      * or blank applies everywhere; a plain name or {@code all} includes it;
      * {@code none} excludes everything; a {@code !name} excludes that database; a
@@ -83,6 +73,16 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             }
         }
         return included || !hasInclusion;
+    }
+
+    /**
+     * Returns whether this modification applies to PostgreSQL.
+     *
+     * @return {@code true} when the filter includes PostgreSQL
+     * @see #appliesToPostgres(String)
+     */
+    public boolean appliesToPostgres() {
+        return appliesToPostgres(dbms);
     }
 
     /**

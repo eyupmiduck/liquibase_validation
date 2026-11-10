@@ -115,7 +115,7 @@ public final class ChangelogModel {
      * line queue supplies the matching element.
      */
     private static Map<Element, Integer> elementLines(Document document,
-                                                       Map<String, Deque<Integer>> linesByTag) {
+                                                      Map<String, Deque<Integer>> linesByTag) {
         Map<Element, Integer> lines = new IdentityHashMap<>();
         assignLines(document.getDocumentElement(), linesByTag, lines);
         return lines;
