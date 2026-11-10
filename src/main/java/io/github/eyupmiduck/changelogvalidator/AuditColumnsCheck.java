@@ -173,7 +173,9 @@ public final class AuditColumnsCheck {
      * <p>The probe manages the connection's transaction state: when the
      * connection is in autocommit mode it starts a transaction and rolls it
      * back, and otherwise it uses a savepoint, so a caller's in-flight
-     * transaction is never committed or discarded.
+     * transaction is never committed or discarded. Autocommit is restored only
+     * after a successful rollback; on rollback failure the connection is left
+     * in manual-commit mode rather than committing the probe's update.
      *
      * @param connection an open connection to the database
      * @param schema     the table's schema
@@ -231,11 +233,10 @@ public final class AuditColumnsCheck {
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
         } finally {
             if (autoCommit) {
-                try {
-                    connection.rollback();
-                } finally {
-                    connection.setAutoCommit(true);
-                }
+                connection.rollback();
+                // Changing to autocommit commits the current transaction, so do
+                // it only after the rollback has succeeded.
+                connection.setAutoCommit(true);
             } else if (savepoint != null) {
                 connection.rollback(savepoint);
                 // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release it so a

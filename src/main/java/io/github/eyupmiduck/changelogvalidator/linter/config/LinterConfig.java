@@ -4,6 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * The linter configuration, loaded from {@code .liquibase-linter.yml}.
@@ -22,10 +23,15 @@ import java.util.*;
 public record LinterConfig(String pgVersion, Severity failOn, List<String> exclude, List<String> include,
                            Map<String, RuleSettings> rules) {
 
+    private static final Pattern PG_VERSION = Pattern.compile("\\d+(?:\\.\\d+)*");
+
     /**
      * Validates the configuration and copies its collections.
      */
     public LinterConfig {
+        Objects.requireNonNull(exclude, "exclude");
+        Objects.requireNonNull(include, "include");
+        Objects.requireNonNull(rules, "rules");
         exclude = List.copyOf(exclude);
         include = List.copyOf(include);
         rules = Map.copyOf(rules);
@@ -89,10 +95,20 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
         if (pgVersion == null || pgVersion.isBlank()) {
             return null;
         }
-        try {
-            return Integer.valueOf(pgVersion.strip().split("\\.")[0]);
-        } catch (NumberFormatException e) {
+        String normalized = pgVersion.strip();
+        if (!PG_VERSION.matcher(normalized).matches()) {
             throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
+        }
+        String major = normalized.substring(0, normalized.indexOf('.') < 0
+                ? normalized.length() : normalized.indexOf('.'));
+        try {
+            int value = Integer.parseInt(major);
+            if (value < 1) {
+                throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("invalid pgVersion: " + pgVersion, e);
         }
     }
 

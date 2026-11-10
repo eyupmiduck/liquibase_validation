@@ -62,8 +62,21 @@ final class RuleTestSupport {
      * @return the unit
      */
     static SqlUnit unsplitUnit(String sql) {
-        SqlSource source = new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, false, ";", true, null);
-        return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql, false, ";", true));
+        return unit(sql, false, ";");
+    }
+
+    /**
+     * An inline-SQL unit with explicit splitting settings.
+     *
+     * @param sql             the SQL
+     * @param splitStatements whether Liquibase splits the SQL
+     * @param delimiter       the end delimiter
+     * @return the unit
+     */
+    static SqlUnit unit(String sql, boolean splitStatements, String delimiter) {
+        SqlSource source = new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, splitStatements, delimiter, true, null);
+        return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql),
+                SqlStatementSplitter.split(sql, splitStatements, delimiter, true));
     }
 
     /**

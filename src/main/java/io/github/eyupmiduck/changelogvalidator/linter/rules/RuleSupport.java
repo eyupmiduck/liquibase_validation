@@ -160,15 +160,15 @@ final class RuleSupport {
     }
 
     /**
-     * Returns the first non-empty unit, for a finding location.
+     * Returns the first unit with a command, for a finding location.
      *
      * @param units the SQL units
-     * @return the first unit with a statement
-     * @throws IllegalStateException when no unit has a statement
+     * @return the first unit with a command
+     * @throws IllegalStateException when no unit has a command
      */
     static SqlUnit firstUnit(List<SqlUnit> units) {
-        return units.stream().filter(unit -> !unit.statements().isEmpty()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("no statements to report"));
+        return units.stream().filter(unit -> !unit.commands().isEmpty()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("no commands to report"));
     }
 
     /**

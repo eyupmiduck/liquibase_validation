@@ -22,15 +22,23 @@ import java.util.regex.Pattern;
  * whose {@code dbms} does not include PostgreSQL is skipped.
  *
  * <p>Property substitution is repeated to a fixed point (a value may reference
- * another property). A repeated state (a cycle) or a substitution that does not
- * settle within the number of properties fails loudly, so a valid long chain is
- * not rejected by an arbitrary depth limit. A placeholder with no property is
- * left as-is, because the linter cannot see properties supplied on the
+ * another property). A repeated state (a cycle), a substitution that does not
+ * settle within the number of properties, or output exceeding the safety bound
+ * fails loudly, so a valid long chain is not rejected by an arbitrary depth
+ * limit and a pathological expansion cannot exhaust the heap. A placeholder with
+ * no property is left as-is, because the linter cannot see properties supplied on the
  * Liquibase command line (see ADR 0003).
  */
 public final class SqlNormalizer {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}]+)}");
+
+    /**
+     * Upper bound on the substituted text. Property expansion can duplicate a
+     * value exponentially; without this bound a pathological definition can
+     * exhaust the heap before the cycle/pass check reports an error.
+     */
+    private static final int MAX_SUBSTITUTED_LENGTH = 10_000_000;
 
     private SqlNormalizer() {
     }
@@ -79,6 +87,11 @@ public final class SqlNormalizer {
             }
             matcher.appendTail(replaced);
             String next = replaced.toString();
+            if (next.length() > MAX_SUBSTITUTED_LENGTH) {
+                throw new IllegalStateException(
+                        "property substitution exceeded " + MAX_SUBSTITUTED_LENGTH
+                                + " characters; check for an expanding property reference");
+            }
             if (next.equals(current)) {
                 // A fixed point: no property changed (including a self or
                 // circular reference that substitutes to the same text).

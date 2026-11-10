@@ -49,4 +49,15 @@ class LinterConfigTest {
                 () -> config("latest").postgresMajorVersion());
         assertEquals("invalid pgVersion: latest", error.getMessage());
     }
+
+    /**
+     * Dot-only, negative and trailing-dot versions are rejected without an
+     * ArrayIndexOutOfBoundsException or a silently truncated major version.
+     */
+    @Test
+    void rejectsMalformedVersionShapes() {
+        for (String version : List.of(".", "..", "-5", "17.", "17..2")) {
+            assertThrows(IllegalArgumentException.class, () -> config(version).postgresMajorVersion(), version);
+        }
+    }
 }

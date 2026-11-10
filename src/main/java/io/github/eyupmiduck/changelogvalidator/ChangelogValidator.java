@@ -5,6 +5,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -90,6 +91,8 @@ public final class ChangelogValidator {
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
                     .forEach(invalid::add);
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
         invalid.sort(Path::compareTo);
         return invalid;
@@ -237,6 +240,10 @@ public final class ChangelogValidator {
                 continue;
             }
             Document document = parse(changelogFile);
+            if (document.getElementsByTagName("includeAll").getLength() > 0) {
+                throw new IOException("includeAll is not supported; list the included changelogs explicitly: "
+                        + changelogFile);
+            }
             NodeList includes = document.getElementsByTagName("include");
             for (int i = 0; i < includes.getLength(); i++) {
                 Element include = (Element) includes.item(i);
@@ -270,6 +277,8 @@ public final class ChangelogValidator {
                     .map(root::relativize)
                     .map(Path::normalize)
                     .forEach(result::add);
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
         result.sort(Path::compareTo);
         return result;
@@ -316,6 +325,13 @@ public final class ChangelogValidator {
         Path resolved = base.resolve(reference).normalize();
         if (!resolved.startsWith(root)) {
             throw new IOException(kind + " escapes the changelog root: " + reference);
+        }
+        if (Files.exists(resolved)) {
+            Path realRoot = root.toRealPath();
+            Path realResolved = resolved.toRealPath();
+            if (!realResolved.startsWith(realRoot)) {
+                throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
+            }
         }
         return resolved;
     }

@@ -373,6 +373,35 @@ class SqlLexerTest {
     }
 
     /**
+     * A line comment terminates at a bare carriage return as well as a newline.
+     */
+    @Test
+    void terminatesLineCommentsAtCarriageReturn() {
+        List<Token> tokens = SqlLexer.tokenize("-- note\rSELECT 1");
+
+        assertEquals(TokenType.LINE_COMMENT, tokens.get(0).type());
+        assertEquals("-- note", tokens.get(0).text());
+        assertTrue(tokens.stream().anyMatch(token -> token.matchesKeyword("SELECT")));
+    }
+
+    /**
+     * An operator run stops before a comment opener, so the comment remains
+     * trivia rather than being swallowed into an operator token.
+     */
+    @Test
+    void stopsOperatorsBeforeComments() {
+        List<Token> suffix = SqlLexer.tokenize("+/*comment*/1");
+        assertEquals(TokenType.OPERATOR, suffix.get(0).type());
+        assertEquals("+", suffix.get(0).text());
+        assertEquals(TokenType.BLOCK_COMMENT, suffix.get(1).type());
+
+        List<Token> line = SqlLexer.tokenize("/-- note\nSELECT 1");
+        assertEquals(TokenType.OPERATOR, line.get(0).type());
+        assertEquals("/", line.get(0).text());
+        assertEquals(TokenType.LINE_COMMENT, line.get(1).type());
+    }
+
+    /**
      * A bare carriage return is a line break, so positions after it are on the
      * next line.
      */

@@ -3,7 +3,9 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import io.github.eyupmiduck.changelogvalidator.linter.Linter;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
@@ -80,6 +82,25 @@ class PreferSingleStatementRuleTest {
     void checksRollback() {
         List<Rule.Violation> violations = new PreferSingleStatementRule()
                 .check(RuleTestSupport.context(false, null, "DROP INDEX idx; DROP INDEX idx2;"));
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("2 statements"));
+    }
+
+    /**
+     * A unit whose only text is a delimiter has a statement but no command; the
+     * rule must select a later unit with a command instead of calling
+     * {@code commands().get(0)} on the delimiter-only unit.
+     */
+    @Test
+    void skipsAUnitWithoutACommand() {
+        SqlUnit delimiterOnly = RuleTestSupport.unit("GO", false, "GO");
+        SqlUnit multiCommand = RuleTestSupport.unsplitUnit("DROP INDEX idx; DROP INDEX idx2;");
+        RuleContext context = new RuleContext(
+                RuleTestSupport.changeSet(false, false, null, false),
+                List.of(delimiterOnly, multiCommand), List.of());
+
+        List<Rule.Violation> violations = new PreferSingleStatementRule().check(context);
 
         assertEquals(1, violations.size());
         assertTrue(violations.get(0).message().contains("2 statements"));

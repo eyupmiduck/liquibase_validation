@@ -233,7 +233,7 @@ public final class SqlLexer {
 
     private int endOfLine(int index) {
         int end = index;
-        while (end < length && sql.charAt(end) != '\n') {
+        while (end < length && sql.charAt(end) != '\n' && sql.charAt(end) != '\r') {
             end++;
         }
         return end;
@@ -405,6 +405,11 @@ public final class SqlLexer {
     private int endOfOperator(int index) {
         int end = index;
         while (end < length && isOperatorCharacter(sql.charAt(end))) {
+            if (end > index && end + 1 < length
+                    && ((sql.charAt(end) == '-' && sql.charAt(end + 1) == '-')
+                    || (sql.charAt(end) == '/' && sql.charAt(end + 1) == '*'))) {
+                break;
+            }
             end++;
         }
         return end;

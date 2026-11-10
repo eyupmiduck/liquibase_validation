@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -68,6 +69,24 @@ class ChangelogModelRollbackAndRoutineTest {
         assertEquals(SqlSource.Kind.ROUTINE_BODY, source.kind());
         assertTrue(source.isInline());
         assertTrue(source.text().contains("PERFORM 1"));
+    }
+
+    /**
+     * A {@code <replace>} without a {@code with} attribute is rejected instead of
+     * silently becoming a replace-with-nothing.
+     */
+    @Test
+    void rejectsAReplaceWithoutWith() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> load("""
+                <changeSet id="001" author="a">
+                    <sql>SELECT DISTINCT 1;</sql>
+                    <modifySql>
+                        <replace replace="DISTINCT "/>
+                    </modifySql>
+                </changeSet>
+                """));
+
+        assertEquals("a REPLACE modification needs a with value", failure.getMessage());
     }
 
     /**

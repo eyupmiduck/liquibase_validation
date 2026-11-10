@@ -7,6 +7,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -229,7 +230,7 @@ public final class ChangelogModel {
             String with = null;
             if (kind == SqlModification.Kind.REPLACE || kind == SqlModification.Kind.REGEXP_REPLACE) {
                 value = child.getAttribute("replace");
-                with = child.getAttribute("with");
+                with = child.hasAttribute("with") ? child.getAttribute("with") : null;
             } else {
                 value = child.getAttribute("value");
             }
@@ -381,6 +382,13 @@ public final class ChangelogModel {
         Path resolved = base.resolve(reference).normalize();
         if (!resolved.startsWith(root)) {
             throw new IOException(kind + " escapes the changelog root: " + reference);
+        }
+        if (Files.exists(resolved)) {
+            Path realRoot = root.toRealPath();
+            Path realResolved = resolved.toRealPath();
+            if (!realResolved.startsWith(realRoot)) {
+                throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
+            }
         }
         return resolved;
     }

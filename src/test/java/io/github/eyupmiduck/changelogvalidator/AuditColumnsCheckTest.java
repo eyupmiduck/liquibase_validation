@@ -433,13 +433,15 @@ class AuditColumnsCheckTest {
     }
 
     /**
-     * Autocommit is restored even when the probe's rollback fails, so a
-     * connection is not left in manual-commit mode.
+     * A failed rollback leaves the connection in manual-commit mode instead of
+     * switching to autocommit (which would commit the probe's update), and the
+     * row remains unchanged when the connection closes.
      */
     @Test
-    void restoresAutoCommitWhenRollbackFails() throws Exception {
+    void doesNotCommitWhenRollbackFails() throws Exception {
         createAuditedTable("orders");
         execute("INSERT INTO audited.orders (id) VALUES (1)");
+        Object before = updatedAt("audited.orders", 1);
 
         try (Connection delegate = openConnection()) {
             Connection failing = (Connection) Proxy.newProxyInstance(
@@ -458,8 +460,12 @@ class AuditColumnsCheckTest {
 
             assertThrows(SQLException.class,
                     () -> AuditColumnsCheck.probeUpdate(failing, "audited", "orders"));
-            assertTrue(delegate.getAutoCommit(), "autocommit must be restored even when rollback fails");
+            assertFalse(delegate.getAutoCommit(),
+                    "autocommit must not be restored after a failed rollback");
         }
+
+        assertEquals(before, updatedAt("audited.orders", 1),
+                "the probe update must not be committed");
     }
 
     /**

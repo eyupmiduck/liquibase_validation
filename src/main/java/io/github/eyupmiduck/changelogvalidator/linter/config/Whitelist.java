@@ -117,8 +117,15 @@ public final class Whitelist {
     }
 
     private static String selector(int index, Map<?, ?> map, String key) throws IOException {
+        if (!map.containsKey(key)) {
+            return null;
+        }
         String value = asString(index, key, map.get(key));
-        if (value != null && value.isBlank()) {
+        if (value == null) {
+            throw new IOException("linter whitelist entry " + index + " field " + key
+                    + " must not be null; omit it to match any value");
+        }
+        if (value.isBlank()) {
             throw new IOException("linter whitelist entry " + index + " field " + key + " must not be blank");
         }
         return value;
