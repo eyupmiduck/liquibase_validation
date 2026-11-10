@@ -107,6 +107,19 @@ class BlockRawAlterTableRuleTest {
     }
 
     /**
+     * An {@code ALTER TABLE} in a source scoped to another database is not a
+     * PostgreSQL concern.
+     */
+    @Test
+    void ignoresSourcesForAnotherDatabase() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("ALTER TABLE t ADD COLUMN c int;", "oracle"));
+
+        assertTrue(new BlockRawAlterTableRule().check(context).isEmpty());
+    }
+
+    /**
      * A routine body that itself runs {@code ALTER TABLE} is the wrapper's
      * implementation, not a caller's raw statement, so it is exempt.
      */
@@ -117,6 +130,22 @@ class BlockRawAlterTableRuleTest {
                 "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN ALTER TABLE t ADD COLUMN c int; END; $$ LANGUAGE plpgsql;")));
 
         assertTrue(forward.isEmpty());
+    }
+
+    /**
+     * An {@code ALTER TABLE} after another command in an unsplit source is still
+     * reported.
+     */
+    @Test
+    void reportsAlterTableInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unsplitUnit("SELECT 1; ALTER TABLE t ADD COLUMN c int;"));
+
+        List<Rule.Violation> violations = new BlockRawAlterTableRule().check(context);
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("raw ALTER TABLE on t"));
     }
 
     /**

@@ -39,6 +39,22 @@ class SingleStatementRuleTest {
     }
 
     /**
+     * An unsplit source is counted by its semicolon-separated commands, so a
+     * forbidden command sharing the source with another command is reported.
+     */
+    @Test
+    void countsCommandsInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(false, false, null, false),
+                RuleTestSupport.unsplitUnit("SELECT 1; CREATE INDEX CONCURRENTLY idx ON t (c);"));
+
+        List<Rule.Violation> violations = new SingleStatementRule().check(context);
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("found 2 statements"));
+    }
+
+    /**
      * A non-transactional changeset with a single forbidden statement is fine.
      */
     @Test

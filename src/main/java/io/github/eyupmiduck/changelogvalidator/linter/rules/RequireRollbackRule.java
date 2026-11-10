@@ -51,6 +51,10 @@ public final class RequireRollbackRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())
+                || !RuleSupport.hasPostgresSource(context.changeSet())) {
+            return List.of();
+        }
         if (context.changeSet().rollbackDefined()) {
             return List.of();
         }

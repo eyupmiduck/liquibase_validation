@@ -80,6 +80,18 @@ class GrantAssertionsTest extends PostgresTestBase {
     }
 
     /**
+     * A missing type is reported instead of making the public-usage check pass
+     * vacuously.
+     */
+    @Test
+    void missingTypeIsReported() throws Exception {
+        try (Connection owner = openOwnerConnection()) {
+            assertThrows(AssertionError.class,
+                    () -> GrantAssertions.assertTypeIsNotUsableByPublic(owner, "grants_clean", "missing_type"));
+        }
+    }
+
+    /**
      * A routine the role cannot execute is reported.
      */
     @Test

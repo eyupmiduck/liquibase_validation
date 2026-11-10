@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator;
 
 import io.github.eyupmiduck.changelogvalidator.linter.config.YamlDocuments;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,53 +32,79 @@ public final class PlpgsqlCheck {
      * @param connection an open connection to the database to check
      * @param schemas    the schemas whose functions are checked
      * @return the findings, ordered by schema, function and line
-     * @throws SQLException if the check cannot be run
+     * @throws SQLException             if the check cannot be run
+     * @throws IllegalArgumentException if {@code schemas} is empty or names a
+     *                                  schema that does not exist
      */
     public static List<Finding> findFindings(Connection connection, Collection<String> schemas) throws SQLException {
         String[] names = schemaNames(schemas);
         List<Finding> findings = new ArrayList<>();
         Array schemaArray = connection.createArrayOf("text", names);
-        try (PreparedStatement statement = connection.prepareStatement("""
-                SELECT DISTINCT n.nspname, p.proname, (issue).lineno, (issue).level,
-                       (issue).statement, (issue).message
-                FROM pg_catalog.pg_proc AS p
-                JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-                JOIN pg_catalog.pg_language AS l ON l.oid = p.prolang
-                CROSS JOIN LATERAL (
-                    -- A regular routine is analysed with no trigger relation;
-                    -- a trigger function is analysed once per attached
-                    -- relation, and skipped when it has none.
-                    SELECT tg.tgrelid AS relid
-                    FROM pg_catalog.pg_trigger AS tg
-                    WHERE tg.tgfoid = p.oid
-                    UNION ALL
-                    SELECT 0::oid
-                    WHERE p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
-                ) AS r
-                CROSS JOIN LATERAL plpgsql_check_function_tb(
-                        p.oid::regprocedure, r.relid::regclass, all_warnings => true
-                    ) AS issue
-                WHERE n.nspname = ANY (?)
-                    AND p.prokind IN ('f', 'p')
-                    AND l.lanname = 'plpgsql'
-                ORDER BY 1, 2, 3
-                """)) {
-            statement.setArray(1, schemaArray);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    findings.add(new Finding(
-                            resultSet.getString(1),
-                            resultSet.getString(2),
-                            resultSet.getInt(3),
-                            resultSet.getString(4),
-                            resultSet.getString(5),
-                            resultSet.getString(6)));
+        try {
+            assertSchemasExist(connection, schemaArray, names);
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    SELECT DISTINCT n.nspname, p.proname, (issue).lineno, (issue).level,
+                           (issue).statement, (issue).message
+                    FROM pg_catalog.pg_proc AS p
+                    JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+                    JOIN pg_catalog.pg_language AS l ON l.oid = p.prolang
+                    CROSS JOIN LATERAL (
+                        -- A regular routine is analysed with no trigger relation;
+                        -- a trigger function is analysed once per attached
+                        -- relation, and skipped when it has none.
+                        SELECT tg.tgrelid AS relid
+                        FROM pg_catalog.pg_trigger AS tg
+                        WHERE tg.tgfoid = p.oid
+                        UNION ALL
+                        SELECT 0::oid
+                        WHERE p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
+                    ) AS r
+                    CROSS JOIN LATERAL plpgsql_check_function_tb(
+                            p.oid::regprocedure, r.relid::regclass, all_warnings => true
+                        ) AS issue
+                    WHERE n.nspname = ANY (?)
+                        AND p.prokind IN ('f', 'p')
+                        AND l.lanname = 'plpgsql'
+                    ORDER BY 1, 2, 3
+                    """)) {
+                statement.setArray(1, schemaArray);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        findings.add(new Finding(
+                                resultSet.getString(1),
+                                resultSet.getString(2),
+                                resultSet.getInt(3),
+                                resultSet.getString(4),
+                                resultSet.getString(5),
+                                resultSet.getString(6)));
+                    }
                 }
             }
         } finally {
             schemaArray.free();
         }
         return findings;
+    }
+
+    /**
+     * Fails when a requested schema does not exist, so a typo cannot turn the
+     * analyser into a vacuous pass.
+     */
+    private static void assertSchemasExist(Connection connection, Array schemaArray, String[] schemas)
+            throws SQLException {
+        Set<String> missing = new LinkedHashSet<>(List.of(schemas));
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = ANY (?)")) {
+            statement.setArray(1, schemaArray);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    missing.remove(resultSet.getString(1));
+                }
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("schema not found: " + missing);
+        }
     }
 
     /**
@@ -128,13 +155,21 @@ public final class PlpgsqlCheck {
      * least one of those keys, so a misspelled entry cannot silently become a
      * catch-all.
      *
-     * @param input the YAML document
+     * @param input the YAML document; an empty document yields an empty list
      * @return the accepted findings
-     * @throws IOException if the document is not a list of mappings, or an
-     *                     entry sets none of the recognised keys
+     * @throws IOException if the document is malformed, is not a list of
+     *                     mappings, or an entry sets none of the recognised keys
      */
     public static List<AllowedFinding> loadWhitelist(InputStream input) throws IOException {
-        Object loaded = YamlDocuments.safe().load(input);
+        Object loaded;
+        try {
+            loaded = YamlDocuments.safe().load(input);
+        } catch (YAMLException e) {
+            throw new IOException("plpgsql_check whitelist is not valid YAML", e);
+        }
+        if (loaded == null) {
+            return List.of();
+        }
         if (!(loaded instanceof List<?> entries)) {
             throw new IOException("plpgsql_check whitelist must be a YAML list");
         }

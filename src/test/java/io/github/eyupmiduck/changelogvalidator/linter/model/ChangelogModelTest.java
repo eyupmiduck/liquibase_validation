@@ -230,6 +230,38 @@ class ChangelogModelTest {
     }
 
     /**
+     * {@code <includeAll>} is rejected rather than silently contributing no
+     * changesets and making a lint run pass.
+     */
+    @Test
+    void rejectsIncludeAll() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="changes/"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(failure.getMessage().contains("includeAll is not supported"));
+    }
+
+    /**
+     * A SQL reference that escapes the changelog root is rejected, matching the
+     * validator's containment policy instead of reading an arbitrary file.
+     */
+    @Test
+    void rejectsSqlReferenceEscapingTheChangelogRoot() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="a">
+                    <sqlFile path="../outside.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(failure.getMessage().contains("escapes the changelog root"));
+    }
+
+    /**
      * The model and source records reject missing required components.
      */
     @Test

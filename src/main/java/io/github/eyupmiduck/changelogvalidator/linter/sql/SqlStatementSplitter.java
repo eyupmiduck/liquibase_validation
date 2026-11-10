@@ -24,7 +24,9 @@ import java.util.List;
  *
  * <p>Limitations: a custom delimiter must correspond to a single non-operator
  * token (for example {@code GO}); an operator delimiter such as {@code /} is not
- * supported because it would also split a division expression. A statement begins
+ * supported because it would also split a division expression, and a
+ * string/dollar-quote delimiter such as {@code $$} is not supported because the
+ * lexer treats it as one opaque string token. A statement begins
  * at its first non-trivia token; a delimited statement ends at the delimiter and
  * a final statement at its last non-trivia token, so leading trivia is never part
  * of the text and the statement offsets are those of the first and last

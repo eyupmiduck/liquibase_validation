@@ -1,0 +1,1 @@
+This directory intentionally ends in .sql to verify the resource walk ignores directories.

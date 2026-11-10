@@ -160,6 +160,11 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      * matches the upgraded one.
      */
     private void compareCatalogWithFromScratchBuild() throws SQLException, IOException {
+        Collection<String> schemas = managedSchemas();
+        if (schemas.isEmpty()) {
+            throw new IllegalStateException(
+                    "managedSchemas() must not be empty when catalog comparison is enabled");
+        }
         freshDatabase = "fresh_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
         createDatabase(freshDatabase);
         prepareDatabase(freshDatabase);
@@ -171,8 +176,8 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         Map<String, String> upgrade;
         try (Connection freshConnection = openOwnerConnection(freshDatabase);
              Connection upgradeOwner = openOwnerConnection(upgradeDatabase)) {
-            fresh = CatalogSnapshot.capture(freshConnection, managedSchemas());
-            upgrade = CatalogSnapshot.capture(upgradeOwner, managedSchemas());
+            fresh = CatalogSnapshot.capture(freshConnection, schemas);
+            upgrade = CatalogSnapshot.capture(upgradeOwner, schemas);
         }
         // Write both trees so a failure can be reviewed with `diff -r` and
         // uploaded as a build artifact.

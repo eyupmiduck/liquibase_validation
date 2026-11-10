@@ -63,7 +63,7 @@ public final class SingleStatementRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        if (context.changeSet().runInTransaction()) {
+        if (context.changeSet().runInTransaction() || !RuleSupport.appliesToPostgres(context.changeSet())) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
@@ -73,13 +73,14 @@ public final class SingleStatementRule implements Rule {
     }
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
-        int statementCount = units.stream().mapToInt(unit -> unit.statements().size()).sum();
+        List<SqlUnit> applicable = RuleSupport.applicableToPostgres(units);
+        int statementCount = applicable.stream().mapToInt(unit -> unit.commands().size()).sum();
         if (statementCount <= 1) {
             return;
         }
-        for (SqlUnit unit : units) {
+        for (SqlUnit unit : applicable) {
             List<Classification> classifications = TransactionForbiddenClassifier.classify(
-                    unit.tokens(), unit.statements(), pgVersion);
+                    unit.tokens(), unit.commands(), pgVersion);
             if (!classifications.isEmpty()) {
                 Classification classification = classifications.get(0);
                 Token token = RuleSupport.firstToken(unit, classification.statement());

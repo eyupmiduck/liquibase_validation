@@ -54,6 +54,31 @@ final class RuleTestSupport {
     }
 
     /**
+     * An inline-SQL unit that Liquibase treats as one statement
+     * ({@code splitStatements=false}) but whose {@link SqlUnit#commands()} still
+     * exposes the semicolon-separated commands.
+     *
+     * @param sql the SQL
+     * @return the unit
+     */
+    static SqlUnit unsplitUnit(String sql) {
+        SqlSource source = new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, false, ";", true, null);
+        return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql, false, ";", true));
+    }
+
+    /**
+     * An inline-SQL unit with a source-level {@code dbms} filter.
+     *
+     * @param sql  the SQL
+     * @param dbms the source-level dbms filter
+     * @return the unit
+     */
+    static SqlUnit unit(String sql, String dbms) {
+        SqlSource source = new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, dbms);
+        return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
+    }
+
+    /**
      * A changeset with the given attributes and no SQL sources.
      *
      * @param runInTransaction whether Liquibase wraps the changeset in a transaction

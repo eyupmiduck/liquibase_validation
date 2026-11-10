@@ -89,6 +89,9 @@ public final class DynamicSqlRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
         List<Violation> violations = new ArrayList<>();
         collect(context.forward(), violations);
         collect(context.rollback(), violations);
@@ -97,7 +100,7 @@ public final class DynamicSqlRule implements Rule {
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
         for (SqlUnit unit : units) {
-            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY) {
+            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY || !RuleSupport.appliesToPostgres(unit)) {
                 continue;
             }
             Matcher matcher = EXECUTE.matcher(unit.sql());

@@ -157,6 +157,28 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * A SQL reference that points to a missing file is rejected rather than
+     * silently passing the orphan check.
+     */
+    @Test
+    void rejectsMissingSqlReference() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile path="sql_changes/missing.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertTrue(failure.getMessage().contains("SQL file reference not found"));
+    }
+
+    /**
      * findSqlFiles lists every {@code .sql} file under the root, relative to
      * it and sorted, ignoring non-SQL files.
      */

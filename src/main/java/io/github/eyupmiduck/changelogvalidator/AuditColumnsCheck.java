@@ -1,11 +1,14 @@
 package io.github.eyupmiduck.changelogvalidator;
 
 import java.sql.*;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -44,6 +47,13 @@ public final class AuditColumnsCheck {
      * overwrites it with the transaction timestamp.
      */
     private static final OffsetDateTime SENTINEL = OffsetDateTime.parse("2000-01-01T00:00:00Z");
+
+    /**
+     * How far {@code updated_at} may be from the transaction timestamp, allowing
+     * for a column's declared precision and driver truncation. A fixed or copied
+     * value outside this window means the trigger did not refresh it.
+     */
+    private static final Duration MAX_REFRESH_DRIFT = Duration.ofSeconds(1);
 
     private static final String VIOLATION_QUERY = """
             SELECT n.nspname AS schema_name,
@@ -97,29 +107,37 @@ public final class AuditColumnsCheck {
      * @param connection an open connection to the database to check
      * @param schemas    the schemas whose tables are checked
      * @return the violations, ordered by schema and table
-     * @throws SQLException if the catalog cannot be read
+     * @throws SQLException             if the catalog cannot be read
+     * @throws IllegalArgumentException if {@code schemas} is empty or names a
+     *                                  schema that does not exist
      */
     public static List<Violation> findViolations(Connection connection, Collection<String> schemas) throws SQLException {
+        if (schemas.isEmpty()) {
+            throw new IllegalArgumentException("at least one schema is required");
+        }
         String[] names = schemas.toArray(String[]::new);
         List<Violation> violations = new ArrayList<>();
         Array schemaArray = connection.createArrayOf("text", names);
-        try (PreparedStatement statement = connection.prepareStatement(VIOLATION_QUERY)) {
-            statement.setArray(1, schemaArray);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    String schema = resultSet.getString("schema_name");
-                    String table = resultSet.getString("table_name");
-                    checkColumn(violations, schema, table, "created_at",
-                            resultSet.getString("created_type"),
-                            resultSet.getString("created_not_null"),
-                            resultSet.getString("created_default"));
-                    checkColumn(violations, schema, table, "updated_at",
-                            resultSet.getString("updated_type"),
-                            resultSet.getString("updated_not_null"),
-                            resultSet.getString("updated_default"));
-                    if (resultSet.getInt("update_triggers") == 0) {
-                        violations.add(new Violation(schema, table,
-                                "no enabled BEFORE UPDATE FOR EACH ROW trigger"));
+        try {
+            assertSchemasExist(connection, schemaArray, schemas);
+            try (PreparedStatement statement = connection.prepareStatement(VIOLATION_QUERY)) {
+                statement.setArray(1, schemaArray);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        String schema = resultSet.getString("schema_name");
+                        String table = resultSet.getString("table_name");
+                        checkColumn(violations, schema, table, "created_at",
+                                resultSet.getString("created_type"),
+                                resultSet.getString("created_not_null"),
+                                resultSet.getString("created_default"));
+                        checkColumn(violations, schema, table, "updated_at",
+                                resultSet.getString("updated_type"),
+                                resultSet.getString("updated_not_null"),
+                                resultSet.getString("updated_default"));
+                        if (resultSet.getInt("update_triggers") == 0) {
+                            violations.add(new Violation(schema, table,
+                                    "no enabled BEFORE UPDATE FOR EACH ROW trigger"));
+                        }
                     }
                 }
             }
@@ -127,6 +145,27 @@ public final class AuditColumnsCheck {
             schemaArray.free();
         }
         return violations;
+    }
+
+    /**
+     * Fails when a requested schema does not exist, so a typo cannot turn the
+     * catalog check into a vacuous pass.
+     */
+    private static void assertSchemasExist(Connection connection, Array schemaArray, Collection<String> schemas)
+            throws SQLException {
+        Set<String> missing = new LinkedHashSet<>(schemas);
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = ANY (?)")) {
+            statement.setArray(1, schemaArray);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    missing.remove(resultSet.getString(1));
+                }
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("schema not found: " + missing);
+        }
     }
 
     /**
@@ -187,7 +226,12 @@ public final class AuditColumnsCheck {
                 }
             }
 
-            boolean refreshed = afterUpdatedAt != null && afterUpdatedAt.isAfter(SENTINEL);
+            OffsetDateTime transactionTimestamp = transactionTimestamp(connection);
+            boolean refreshed = afterUpdatedAt != null
+                    && afterUpdatedAt.isAfter(SENTINEL)
+                    && transactionTimestamp != null
+                    && Duration.between(transactionTimestamp, afterUpdatedAt).abs()
+                    .compareTo(MAX_REFRESH_DRIFT) <= 0;
             boolean createdPreserved = createdAt != null && createdAt.equals(afterCreatedAt);
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
         } finally {
@@ -203,6 +247,18 @@ public final class AuditColumnsCheck {
                 // long-lived caller transaction does not accumulate savepoints.
                 connection.releaseSavepoint(savepoint);
             }
+        }
+    }
+
+    /**
+     * Reads PostgreSQL's transaction timestamp, the value {@code now()} returns
+     * inside the probe's transaction.
+     */
+    private static OffsetDateTime transactionTimestamp(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT now()");
+             ResultSet resultSet = statement.executeQuery()) {
+            resultSet.next();
+            return resultSet.getObject(1, OffsetDateTime.class);
         }
     }
 

@@ -14,10 +14,20 @@ import java.util.*;
  * Reads a Liquibase changelog graph into a stream of {@link ChangeSet}s with
  * their attributes and resolved SQL sources.
  *
- * <p>The changelog graph is the one {@link ChangelogValidator} traverses, so
- * this class does not walk {@code <include>} elements itself. Relative paths
- * are resolved against the declaring changelog file; paths without
- * {@code relativeToChangelogFile} are resolved against the changelog root.
+ * <p>The graph is walked in Liquibase parse order: a file's children (its
+ * properties, changesets and includes) are processed in document order, and an
+ * include is followed immediately before the next sibling. Relative paths are
+ * resolved against the declaring changelog file; paths without
+ * {@code relativeToChangelogFile} are resolved against the changelog root. A
+ * reference that escapes the root is rejected, matching the validator.
+ *
+ * <p>Properties are captured as a snapshot at each changeset, so a property
+ * defined later does not affect an earlier changeset. Global properties are
+ * shared across the graph, while a {@code global="false"} property is local to
+ * its file and included files. Property definitions whose {@code dbms} filter
+ * excludes PostgreSQL are ignored, so a later applicable definition can win.
+ * Context and label filters remain unapplied because the linter has no run
+ * context (see ADR 0003).
  *
  * <p>Formatted-SQL changelogs are not parsed here: a {@code <sqlFile>} that
  * points at a formatted SQL file is exposed as a {@link SqlSource.Kind#SQL_FILE}
@@ -49,32 +59,86 @@ public final class ChangelogModel {
      */
     public static List<ChangeSet> changesets(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
-        List<Path> changelogFiles = ChangelogValidator.findReachableChangelogFiles(root, masterChangelog);
-        // Parse each file once and reuse the DOM for both the property scan and
-        // the changeSet scan.
-        Map<Path, Document> documents = new LinkedHashMap<>();
-        for (Path changelogFile : changelogFiles) {
-            documents.put(changelogFile, parse(changelogFile));
-        }
-        Map<String, String> properties = properties(documents.values());
         List<ChangeSet> changesets = new ArrayList<>();
-        for (Map.Entry<Path, Document> entry : documents.entrySet()) {
-            changesets.addAll(changesetsIn(root, entry.getKey(), entry.getValue(), properties));
-        }
+        visit(root, masterChangelog.toAbsolutePath().normalize(), new LinkedHashMap<>(),
+                new LinkedHashMap<>(), changesets, new LinkedHashSet<>());
         return List.copyOf(changesets);
     }
 
-    private static List<ChangeSet> changesetsIn(Path root, Path changelogFile, Document document,
-                                                Map<String, String> properties) {
-        NodeList nodes = document.getElementsByTagName("changeSet");
-        List<ChangeSet> changesets = new ArrayList<>();
-        for (int i = 0; i < nodes.getLength(); i++) {
-            changesets.add(changeSet(root, changelogFile, (Element) nodes.item(i), properties));
+    /**
+     * Walks one changelog file in document order, applying its properties before
+     * the changesets that follow them and following includes where they appear.
+     * Global properties are shared across the graph; local properties are copied
+     * into the include chain so a child's local properties do not leak back to a
+     * parent or sibling. The visited set prevents an include cycle from looping.
+     */
+    private static void visit(Path root, Path changelogFile, Map<String, String> globals,
+                              Map<String, String> inheritedLocals, List<ChangeSet> changesets,
+                              Set<Path> visited) throws IOException {
+        Path normalized = changelogFile.toAbsolutePath().normalize();
+        if (!visited.add(normalized)) {
+            return;
         }
-        return changesets;
+        Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
+        Document document = parse(normalized);
+        for (Element child : childElements(document.getDocumentElement())) {
+            switch (child.getTagName()) {
+                case "property" -> addProperty(globals, locals, child);
+                case "include" -> {
+                    String file = child.getAttribute("file");
+                    if (file.isBlank()) {
+                        continue;
+                    }
+                    boolean relativeToChangelogFile =
+                            "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
+                    Path base = relativeToChangelogFile ? normalized.getParent() : root;
+                    visit(root, resolveWithin(root, base, file, "include"), globals, locals,
+                            changesets, visited);
+                }
+                case "changeSet" -> changesets.add(changeSet(root, normalized, child, snapshot(globals, locals)));
+                case "includeAll" -> throw new IOException(
+                        "includeAll is not supported by the linter; list the included changelogs explicitly: "
+                                + child.getAttribute("path"));
+                default -> {
+                    // Other databaseChangeLog children (preConditions, ...) carry no
+                    // changeset or property this model needs.
+                }
+            }
+        }
     }
 
-    private static ChangeSet changeSet(Path root, Path changelogFile, Element element, Map<String, String> properties) {
+    /**
+     * Returns the property snapshot visible at a changeset. Liquibase consults
+     * global parameters before local ones, so a global definition wins when both
+     * are present.
+     */
+    private static Map<String, String> snapshot(Map<String, String> globals, Map<String, String> locals) {
+        Map<String, String> visible = new LinkedHashMap<>(globals);
+        locals.forEach(visible::putIfAbsent);
+        return visible;
+    }
+
+    /**
+     * Records a property whose {@code dbms} filter includes PostgreSQL. A
+     * property scoped to another database is ignored so it cannot shadow the
+     * first applicable definition. Global properties are shared graph-wide; a
+     * local property lives in the current file and its includes.
+     */
+    private static void addProperty(Map<String, String> globals, Map<String, String> locals, Element property) {
+        String name = property.getAttribute("name");
+        if (name.isBlank() || !property.hasAttribute("value")) {
+            return;
+        }
+        String dbms = optionalAttribute(property, "dbms");
+        if (!SqlModification.appliesToPostgres(dbms)) {
+            return;
+        }
+        Map<String, String> target = booleanAttribute(property, "global", true) ? globals : locals;
+        target.putIfAbsent(name, property.getAttribute("value"));
+    }
+
+    private static ChangeSet changeSet(Path root, Path changelogFile, Element element,
+                                       Map<String, String> properties) throws IOException {
         List<SqlSource> sqlSources = new ArrayList<>();
         List<SqlSource> rollbackSources = new ArrayList<>();
         List<SqlModification> modifySql = new ArrayList<>();
@@ -111,7 +175,7 @@ public final class ChangelogModel {
      * for a structured change type the model renders, a synthetic inline source.
      * The same resolution is used for forward and rollback children.
      */
-    private static List<SqlSource> sourcesFor(Path root, Path changelogFile, Element child) {
+    private static List<SqlSource> sourcesFor(Path root, Path changelogFile, Element child) throws IOException {
         List<SqlSource> sources = sqlSources(root, changelogFile, child);
         if (sources.isEmpty()) {
             String structured = structuredSql(child);
@@ -120,23 +184,6 @@ public final class ChangelogModel {
             }
         }
         return sources;
-    }
-
-    private static Map<String, String> properties(Collection<Document> documents) {
-        // Liquibase's "first set value wins": keep the first value a name gets.
-        Map<String, String> properties = new LinkedHashMap<>();
-        for (Document document : documents) {
-            NodeList nodes = document.getElementsByTagName("property");
-            for (int i = 0; i < nodes.getLength(); i++) {
-                Element property = (Element) nodes.item(i);
-                String name = property.getAttribute("name");
-                if (name.isBlank() || !property.hasAttribute("value")) {
-                    continue;
-                }
-                properties.putIfAbsent(name, property.getAttribute("value"));
-            }
-        }
-        return Map.copyOf(properties);
     }
 
     private static List<SqlModification> modifications(Element modifySql) {
@@ -226,7 +273,7 @@ public final class ChangelogModel {
         return schema == null || schema.isBlank() ? name : schema + "." + name;
     }
 
-    private static List<SqlSource> sqlSources(Path root, Path changelogFile, Element element) {
+    private static List<SqlSource> sqlSources(Path root, Path changelogFile, Element element) throws IOException {
         return switch (element.getTagName()) {
             case "sql" -> List.of(new SqlSource(
                     SqlSource.Kind.INLINE_SQL,
@@ -247,7 +294,7 @@ public final class ChangelogModel {
      * {@code path} attribute when present, otherwise from the element's inline
      * text (Liquibase also allows the routine body as the element's content).
      */
-    private static List<SqlSource> routineSource(Path root, Path changelogFile, Element element) {
+    private static List<SqlSource> routineSource(Path root, Path changelogFile, Element element) throws IOException {
         if (!element.getAttribute("path").isBlank()) {
             return fileSource(SqlSource.Kind.ROUTINE_BODY, root, changelogFile, element);
         }
@@ -265,7 +312,8 @@ public final class ChangelogModel {
                 optionalAttribute(element, "dbms")));
     }
 
-    private static List<SqlSource> fileSource(SqlSource.Kind kind, Path root, Path changelogFile, Element element) {
+    private static List<SqlSource> fileSource(SqlSource.Kind kind, Path root, Path changelogFile, Element element)
+            throws IOException {
         String path = element.getAttribute("path");
         if (path.isBlank()) {
             return List.of();
@@ -274,12 +322,32 @@ public final class ChangelogModel {
         Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
         return List.of(new SqlSource(
                 kind,
-                base.resolve(path).normalize(),
+                resolveWithin(root, base, path, "SQL file reference"),
                 null,
                 booleanAttribute(element, "splitStatements", true),
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
                 optionalAttribute(element, "dbms")));
+    }
+
+    /**
+     * Resolves a SQL reference against {@code base} and rejects one that escapes
+     * the changelog root, so the linter applies the same containment policy as
+     * {@link ChangelogValidator}.
+     *
+     * @param root      the absolute, normalized changelog root
+     * @param base      the directory the reference is resolved against
+     * @param reference the path from the changelog
+     * @param kind      what is being resolved, for the error message
+     * @return the absolute, normalized path, guaranteed to be under {@code root}
+     * @throws IOException if the reference escapes the changelog root
+     */
+    private static Path resolveWithin(Path root, Path base, String reference, String kind) throws IOException {
+        Path resolved = base.resolve(reference).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new IOException(kind + " escapes the changelog root: " + reference);
+        }
+        return resolved;
     }
 
     private static boolean booleanAttribute(Element element, String name, boolean defaultValue) {

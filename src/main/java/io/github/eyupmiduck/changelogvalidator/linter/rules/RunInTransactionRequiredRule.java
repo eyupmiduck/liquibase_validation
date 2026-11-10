@@ -58,7 +58,7 @@ public final class RunInTransactionRequiredRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        if (!context.changeSet().runInTransaction()) {
+        if (!context.changeSet().runInTransaction() || !RuleSupport.appliesToPostgres(context.changeSet())) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
@@ -69,8 +69,11 @@ public final class RunInTransactionRequiredRule implements Rule {
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
         for (SqlUnit unit : units) {
+            if (!RuleSupport.appliesToPostgres(unit)) {
+                continue;
+            }
             for (Classification classification : TransactionForbiddenClassifier.classify(
-                    unit.tokens(), unit.statements(), pgVersion)) {
+                    unit.tokens(), unit.commands(), pgVersion)) {
                 Token token = RuleSupport.firstToken(unit, classification.statement());
                 String statement = RuleSupport.display(classification.family());
                 violations.add(new Violation(

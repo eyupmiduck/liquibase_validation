@@ -106,6 +106,19 @@ class RequireDbmsPostgresqlRuleTest {
     }
 
     /**
+     * A PostgreSQL-only command after another command in an unsplit source is
+     * still found, so {@code splitStatements=false} does not hide it.
+     */
+    @Test
+    void reportsConstructInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unsplitUnit("SELECT 1; CREATE DOMAIN positive_int AS int;"));
+
+        assertEquals(1, new RequireDbmsPostgresqlRule().check(context).size());
+    }
+
+    /**
      * A PostgreSQL-only cast or operator is reported, but portable SQL is not.
      */
     @Test

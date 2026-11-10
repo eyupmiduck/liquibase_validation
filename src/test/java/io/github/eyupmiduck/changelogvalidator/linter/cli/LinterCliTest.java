@@ -226,6 +226,20 @@ class LinterCliTest {
     }
 
     /**
+     * A graph with no changesets is an error, not a vacuous pass.
+     */
+    @Test
+    void rejectsAnEmptyChangelog() throws IOException {
+        Path root = Files.createDirectories(tempDir.resolve("empty"));
+        Files.writeString(root.resolve("db.changelog-master.xml"), xml(""));
+
+        Result result = run("--changelog-root", root.toString());
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("no changesets found"));
+    }
+
+    /**
      * An unreadable changelog is a runtime error.
      */
     @Test

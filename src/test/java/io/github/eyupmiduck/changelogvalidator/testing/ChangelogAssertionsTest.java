@@ -1,7 +1,10 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -72,6 +75,28 @@ class ChangelogAssertionsTest {
 
         assertDoesNotThrow(() -> ChangelogAssertions.assertChangeSetsFollowNaming(
                 ChangelogTestSupport.changelogRoot(), ChangelogTestSupport.master()));
+    }
+
+    /**
+     * A directory whose name ends in {@code .sql} is not treated as an orphaned
+     * SQL file.
+     */
+    @Test
+    void ignoresDirectoriesEndingInSql(@TempDir Path root) throws IOException {
+        Path changes = Files.createDirectories(root.resolve("changes"));
+        Files.writeString(changes.resolve("001-real.sql"), "SELECT 1;");
+        Files.createDirectories(changes.resolve("directory.sql"));
+        Files.writeString(root.resolve("master.xml"), io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport
+                .changelog("<include file=\"changes/changes.xml\" relativeToChangelogFile=\"true\"/>"));
+        Files.writeString(changes.resolve("changes.xml"), io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport
+                .changelog("""
+                        <changeSet id="001-real" author="a">
+                            <sqlFile path="001-real.sql" relativeToChangelogFile="true"/>
+                        </changeSet>
+                        """));
+
+        assertDoesNotThrow(() -> ChangelogAssertions.assertNoOrphanedSqlFiles(
+                root, root.resolve("master.xml")));
     }
 
     /**

@@ -96,7 +96,8 @@ public final class ChangelogAssertions {
     public static void assertNoOrphanedSqlFiles(Path changelogRoot, Path master) throws IOException {
         Set<Path> allSql = new TreeSet<>();
         try (Stream<Path> walk = Files.walk(changelogRoot)) {
-            walk.filter(path -> path.getFileName().toString().endsWith(".sql"))
+            walk.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".sql"))
                     .map(path -> path.toAbsolutePath().normalize())
                     .forEach(allSql::add);
         }

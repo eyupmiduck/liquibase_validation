@@ -44,9 +44,12 @@ public final class RequireConcurrentIndexDeletionRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
         List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
+        collect(RuleSupport.applicableToPostgres(context.forward()), violations);
+        collect(RuleSupport.applicableToPostgres(context.rollback()), violations);
         return List.copyOf(violations);
     }
 

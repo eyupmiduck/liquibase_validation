@@ -59,6 +59,11 @@ transformations are applied (honouring `applyToRollback` and the `dbms` filter),
 and the `createTable`/`createIndex`/`dropIndex` change types are rendered to SQL.
 The limits of this normalisation are recorded in
 [docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
+Statement splitting supports the default `;` and a single-token, non-operator
+delimiter such as `GO`; operator and dollar-quote delimiters such as `/` and
+`$$` are not supported. When a source sets `splitStatements="false"`, the
+rules still analyse its commands separately so a forbidden statement cannot hide
+behind another command.
 
 Run it with the executable jar (published to GitHub Packages as the `cli`
 classifier alongside the library), or from the library API:

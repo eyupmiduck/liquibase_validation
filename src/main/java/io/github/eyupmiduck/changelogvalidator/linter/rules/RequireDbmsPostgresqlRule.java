@@ -93,7 +93,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
                 .filter(token -> !token.isTrivia())
                 .toList();
         int from = 0;
-        for (SqlStatement statement : unit.statements()) {
+        for (SqlStatement statement : unit.commands()) {
             while (from < words.size() && words.get(from).endOffset() <= statement.startOffset()) {
                 from++;
             }
@@ -187,7 +187,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        if (gatedOnPostgres(context.changeSet())) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet()) || gatedOnPostgres(context.changeSet())) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
@@ -198,7 +198,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
         for (SqlUnit unit : units) {
-            if (postgresOnly(unit.source().dbms())) {
+            if (postgresOnly(unit.source().dbms()) || !RuleSupport.appliesToPostgres(unit)) {
                 continue;
             }
             String construct = firstPostgresConstruct(unit);

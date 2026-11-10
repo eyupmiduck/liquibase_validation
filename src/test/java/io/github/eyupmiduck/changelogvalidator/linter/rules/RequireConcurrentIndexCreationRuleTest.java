@@ -122,6 +122,19 @@ class RequireConcurrentIndexCreationRuleTest {
     }
 
     /**
+     * A source scoped to another database is not checked on the PostgreSQL
+     * target.
+     */
+    @Test
+    void ignoresSourcesForAnotherDatabase() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("CREATE INDEX idx ON t (c);", "oracle"));
+
+        assertTrue(new RequireConcurrentIndexCreationRule().check(context).isEmpty());
+    }
+
+    /**
      * A trailing {@code CREATE INDEX} in an unsplit block is still detected, and
      * a table created in the other direction exempts an index.
      */

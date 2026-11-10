@@ -87,6 +87,10 @@ public final class LinterCli {
             }
             boolean ignoreFailures = options.ignoreFailures() || config.failOn() == null;
             List<ChangeSet> changeSets = ChangelogModel.changesets(options.changelogRoot(), options.master());
+            if (changeSets.isEmpty()) {
+                err.println("error: no changesets found in " + options.master());
+                return 2;
+            }
             Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), config);
             List<Finding> findings = linter.lint(changeSets);
             Whitelist.Report report = Whitelist.load(options.whitelist()).apply(findings);
