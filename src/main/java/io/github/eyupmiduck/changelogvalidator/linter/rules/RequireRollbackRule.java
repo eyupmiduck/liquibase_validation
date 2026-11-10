@@ -12,12 +12,14 @@ import java.util.List;
  * reverted cleanly.
  *
  * <p>The rule is advisory (warning) and opt-in: a project lists it under
- * {@code include} when it wants the check. A changeset is accepted when it
- * declares a {@code <rollback>} block, including an empty one and one that
- * references another changeset ({@code <rollback changeSetId="..."/>}), or when
- * it is a {@code runOnChange} changeset whose body is a stored routine
- * (re-running the body replaces it, so a rollback is not required to reverse
- * it).
+ * {@code include} when it wants the check. It enforces an <em>explicit</em>
+ * rollback, even for structured changes (for example {@code <createTable>})
+ * that Liquibase can invert automatically; an empty {@code <rollback/>} accepts
+ * such a change under this policy. A changeset is accepted when it declares a
+ * {@code <rollback>} block, including an empty one and one that references
+ * another changeset ({@code <rollback changeSetId="..."/>}), or when it is a
+ * {@code runOnChange} changeset whose body is a stored routine (re-running the
+ * body replaces it, so a rollback is not required to reverse it).
  *
  * <p>A rollback that only partially inverts the forward change is the concern of
  * the opt-in {@link RequireRollbackParityRule}.
@@ -51,6 +53,10 @@ public final class RequireRollbackRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())
+                || !RuleSupport.hasPostgresSource(context.changeSet())) {
+            return List.of();
+        }
         if (context.changeSet().rollbackDefined()) {
             return List.of();
         }
@@ -60,6 +66,6 @@ public final class RequireRollbackRule implements Rule {
         return List.of(new Violation(
                 "changeset has no rollback",
                 "Add a <rollback> block that reverses the change, or an empty <rollback/> when the change needs none.",
-                context.changeSet().changelogFile(), 1, 1));
+                context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
 }

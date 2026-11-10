@@ -71,7 +71,7 @@ public final class PreferSingleStatementRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        if (context.changeSet().runInTransaction()) {
+        if (context.changeSet().runInTransaction() || !RuleSupport.appliesToPostgres(context.changeSet())) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
@@ -81,19 +81,20 @@ public final class PreferSingleStatementRule implements Rule {
     }
 
     private void collect(List<SqlUnit> units, String direction, List<Violation> violations) {
-        int statementCount = units.stream().mapToInt(unit -> unit.statements().size()).sum();
+        List<SqlUnit> applicable = RuleSupport.applicableToPostgres(units);
+        int statementCount = applicable.stream().mapToInt(unit -> unit.commands().size()).sum();
         if (statementCount <= 1) {
             return;
         }
-        for (SqlUnit unit : units) {
-            if (!TransactionForbiddenClassifier.classify(unit.tokens(), unit.statements(), pgVersion).isEmpty()) {
+        for (SqlUnit unit : applicable) {
+            if (!TransactionForbiddenClassifier.classify(unit.tokens(), unit.commands(), pgVersion).isEmpty()) {
                 // The single-statement error rule covers a transaction-forbidden
                 // statement; do not also warn about it here.
                 return;
             }
         }
-        SqlUnit firstUnit = RuleSupport.firstUnit(units);
-        SqlStatement first = firstUnit.statements().get(0);
+        SqlUnit firstUnit = RuleSupport.firstUnit(applicable);
+        SqlStatement first = firstUnit.commands().get(0);
         Token token = RuleSupport.firstToken(firstUnit, first);
         violations.add(new Violation(
                 "runInTransaction=\"false\" " + direction + " SQL has " + statementCount

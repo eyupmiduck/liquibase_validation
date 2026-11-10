@@ -128,17 +128,41 @@ class SqlNormalizerTest {
     }
 
     /**
-     * A chain longer than the depth limit fails loudly instead of returning
-     * partially substituted SQL.
+     * A long acyclic chain is substituted to completion instead of being
+     * rejected by an arbitrary depth limit.
      */
     @Test
-    void failsWhenPropertySubstitutionExceedsTheDepthLimit() {
+    void substitutesALongAcyclicChain() {
         Map<String, String> properties = new java.util.HashMap<>();
         for (int i = 0; i < 20; i++) {
             properties.put("p" + i, "${p" + (i + 1) + "}");
         }
+        properties.put("p20", "done");
+
+        assertEquals("done",
+                SqlNormalizer.normalise("${p0}", new Normalisation(properties, List.of()), false));
+    }
+
+    /**
+     * A self-expanding property never settles, so substitution fails rather than
+     * growing without bound.
+     */
+    @Test
+    void failsWhenAPropertyExpandsWithoutSettling() {
+        Normalisation normalisation = new Normalisation(Map.of("a", "${a}${a}"), List.of());
 
         assertThrows(IllegalStateException.class,
-                () -> SqlNormalizer.normalise("${p0}", new Normalisation(properties, List.of()), false));
+                () -> SqlNormalizer.normalise("${a}", normalisation, false));
+    }
+
+    /**
+     * A cycle across two properties is detected by the repeated-state check.
+     */
+    @Test
+    void failsAcrossAPropertyCycle() {
+        Normalisation normalisation = new Normalisation(Map.of("a", "${b}", "b", "${a}"), List.of());
+
+        assertThrows(IllegalStateException.class,
+                () -> SqlNormalizer.normalise("${a}", normalisation, false));
     }
 }

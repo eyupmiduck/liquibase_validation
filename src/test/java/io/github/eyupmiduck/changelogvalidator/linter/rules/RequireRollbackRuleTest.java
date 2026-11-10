@@ -68,6 +68,25 @@ class RequireRollbackRuleTest {
     }
 
     /**
+     * A changeset or source scoped to another database does not need a rollback
+     * on the PostgreSQL target.
+     */
+    @Test
+    void ignoresChangesetsForAnotherDatabase() {
+        SqlUnit oracle = RuleTestSupport.unit("CREATE TABLE t (c int);", "oracle");
+        ChangeSet sourceScoped = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(oracle.source()), false, List.of());
+
+        assertTrue(new RequireRollbackRule()
+                .check(new RuleContext(sourceScoped, List.of(oracle), List.of())).isEmpty());
+
+        ChangeSet changeSetScoped = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                "oracle", null, null, List.of(), false, List.of());
+        assertTrue(new RequireRollbackRule().check(new RuleContext(changeSetScoped,
+                List.of(RuleTestSupport.unit("CREATE TABLE t (c int);")), List.of())).isEmpty());
+    }
+
+    /**
      * The rule warns by default, is opt-in, and reports through the engine when
      * included.
      */

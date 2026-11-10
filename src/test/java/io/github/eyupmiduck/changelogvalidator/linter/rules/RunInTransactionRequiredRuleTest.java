@@ -49,6 +49,38 @@ class RunInTransactionRequiredRuleTest {
     }
 
     /**
+     * A forbidden command after another command in an unsplit source is still
+     * detected; {@code splitStatements=false} must not hide it.
+     */
+    @Test
+    void detectsForbiddenCommandInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unsplitUnit("SELECT 1; CREATE INDEX CONCURRENTLY idx ON t (c);"));
+
+        List<Rule.Violation> violations = new RunInTransactionRequiredRule().check(context);
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("CREATE INDEX CONCURRENTLY"));
+    }
+
+    /**
+     * A source or changeset scoped to another database is not checked on the
+     * PostgreSQL target.
+     */
+    @Test
+    void ignoresSourcesForAnotherDatabase() {
+        String sql = "CREATE INDEX CONCURRENTLY idx ON t (c);";
+
+        assertTrue(new RunInTransactionRequiredRule().check(
+                RuleTestSupport.context(RuleTestSupport.changeSet(true, false, null, false),
+                        RuleTestSupport.unit(sql, "oracle"))).isEmpty());
+        assertTrue(new RunInTransactionRequiredRule().check(
+                RuleTestSupport.context(RuleTestSupport.changeSet(true, false, "oracle", false),
+                        RuleTestSupport.unit(sql))).isEmpty());
+    }
+
+    /**
      * A statement that a transaction permits is not reported.
      */
     @Test

@@ -89,6 +89,14 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Quotes a PostgreSQL identifier, doubling embedded quotes, so a database or
+     * role name that needs quoting is used literally in administrative SQL.
+     */
+    static String quoteIdentifier(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
+
+    /**
      * Returns the SQLSTATE of the first {@link SQLException} in a throwable's
      * cause chain, or {@code null} when there is none.
      *
@@ -315,18 +323,22 @@ public abstract class PostgresTestBase {
         try {
             // Tolerate a template left behind by an interrupted earlier run in
             // the same container, so setup is repeatable.
-            execute(adminConnection(database), "DROP DATABASE IF EXISTS " + template + " WITH (FORCE)");
-            execute(adminConnection(database), "CREATE DATABASE " + template);
+            execute(adminConnection(database),
+                    "DROP DATABASE IF EXISTS " + quoteIdentifier(template) + " WITH (FORCE)");
+            execute(adminConnection(database), "CREATE DATABASE " + quoteIdentifier(template));
             // The template is fresh, so grant the owner role the privileges it
             // needs to run Liquibase (as the init script does for the main
             // database): CREATE on the database and on its public schema. The
             // test role may create tables it owns in public too.
             execute(adminConnection(database),
-                    "GRANT CREATE ON DATABASE " + template + " TO " + configuration.ownerUser());
+                    "GRANT CREATE ON DATABASE " + quoteIdentifier(template) + " TO "
+                            + quoteIdentifier(configuration.ownerUser()));
             try (Connection admin = adminConnection(template);
                  Statement statement = admin.createStatement()) {
-                statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.ownerUser());
-                statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.testUser());
+                statement.execute("GRANT CREATE ON SCHEMA public TO "
+                        + quoteIdentifier(configuration.ownerUser()));
+                statement.execute("GRANT CREATE ON SCHEMA public TO "
+                        + quoteIdentifier(configuration.testUser()));
             }
             installExtensions(template);
             try (Connection owner = connection(template, configuration.ownerUser(),
@@ -349,7 +361,8 @@ public abstract class PostgresTestBase {
             // Mark as a real template and forbid connections, so a leaked session
             // cannot make CREATE DATABASE ... TEMPLATE fail.
             execute(adminConnection(database),
-                    "ALTER DATABASE " + template + " WITH IS_TEMPLATE TRUE ALLOW_CONNECTIONS FALSE");
+                    "ALTER DATABASE " + quoteIdentifier(template)
+                            + " WITH IS_TEMPLATE TRUE ALLOW_CONNECTIONS FALSE");
         } catch (Exception e) {
             throw new IllegalStateException("Failed to prepare template database", e);
         }
@@ -365,7 +378,8 @@ public abstract class PostgresTestBase {
         testDatabaseName = "test_" + suffix;
         try (Connection admin = adminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("CREATE DATABASE \"" + testDatabaseName + "\" TEMPLATE " + template);
+            statement.execute("CREATE DATABASE " + quoteIdentifier(testDatabaseName)
+                    + " TEMPLATE " + quoteIdentifier(template));
         } catch (SQLException e) {
             dropDatabaseQuietly();
             throw e;
@@ -467,7 +481,7 @@ public abstract class PostgresTestBase {
      * @throws SQLException if the database cannot be created
      */
     protected void createDatabase(String database) throws SQLException {
-        execute(adminConnection(configuration().databaseName()), "CREATE DATABASE \"" + database + "\"");
+        execute(adminConnection(configuration().databaseName()), "CREATE DATABASE " + quoteIdentifier(database));
     }
 
     /**
@@ -479,7 +493,7 @@ public abstract class PostgresTestBase {
      */
     protected void dropDatabase(String database) throws SQLException {
         execute(adminConnection(configuration().databaseName()),
-                "DROP DATABASE IF EXISTS \"" + database + "\" WITH (FORCE)");
+                "DROP DATABASE IF EXISTS " + quoteIdentifier(database) + " WITH (FORCE)");
     }
 
     /**
@@ -659,6 +673,13 @@ public abstract class PostgresTestBase {
      * @throws InterruptedException if waiting for the lock is interrupted
      */
     protected void awaitTableLockHeld(String table, String mode, int holderPid) throws InterruptedException {
+        String schema = null;
+        String relation = table;
+        int dot = table.lastIndexOf('.');
+        if (dot > 0) {
+            schema = table.substring(0, dot);
+            relation = table.substring(dot + 1);
+        }
         for (int attempt = 0; attempt < 100; attempt++) {
             Object held = dsl.fetchValue(
                     """
@@ -668,13 +689,13 @@ public abstract class PostgresTestBase {
                                 JOIN pg_class c ON c.oid = l.relation
                                 JOIN pg_namespace n ON n.oid = c.relnamespace
                                 WHERE c.relname = ?
-                                    AND n.nspname = current_schema()
+                                    AND n.nspname = COALESCE(CAST(? AS text), current_schema())
                                     AND l.mode = ?
                                     AND l.granted
                                     AND l.pid = ?
                             )
                             """,
-                    table, mode, holderPid);
+                    relation, schema, mode, holderPid);
             if (Boolean.TRUE.equals(held)) {
                 return;
             }

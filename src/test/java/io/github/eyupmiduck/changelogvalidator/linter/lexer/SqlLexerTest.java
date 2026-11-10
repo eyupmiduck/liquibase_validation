@@ -40,6 +40,12 @@ class SqlLexerTest {
                 Arguments.of("0o17", TokenType.NUMBER),
                 Arguments.of("0b1010", TokenType.NUMBER),
                 Arguments.of("1.5e-3", TokenType.NUMBER),
+                Arguments.of("1_000", TokenType.NUMBER),
+                Arguments.of("1_000.5", TokenType.NUMBER),
+                Arguments.of("1.5e-3_0", TokenType.NUMBER),
+                Arguments.of("0x1_f", TokenType.NUMBER),
+                Arguments.of("0o1_7", TokenType.NUMBER),
+                Arguments.of("0b1_0", TokenType.NUMBER),
                 Arguments.of("e'a'", TokenType.E_STRING),
                 Arguments.of("b'1'", TokenType.STRING),
                 Arguments.of("x'f'", TokenType.STRING),
@@ -347,6 +353,23 @@ class SqlLexerTest {
         List<Token> binary = SqlLexer.tokenize("0b12");
         assertEquals("0b1", binary.get(0).text());
         assertEquals("2", binary.get(1).text());
+    }
+
+    /**
+     * An underscore is a numeric separator only between digits, so an invalid
+     * trailing or doubled separator ends the number token.
+     */
+    @Test
+    void stopsNumericSeparatorsAtInvalidPositions() {
+        List<Token> tokens = SqlLexer.tokenize("1_ 1__0").stream()
+                .filter(token -> !token.isTrivia())
+                .toList();
+
+        assertEquals("1", tokens.get(0).text());
+        assertEquals(TokenType.WORD, tokens.get(1).type());
+        assertEquals("_", tokens.get(1).text());
+        assertEquals("1", tokens.get(2).text());
+        assertEquals("__0", tokens.get(3).text());
     }
 
     /**

@@ -73,6 +73,33 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * The default patterns reject whitespace and empty name segments that a
+     * loose {@code .+} suffix would have accepted.
+     */
+    @Test
+    void rejectsLooseNaming() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="001-good" author="test"/>
+                <changeSet id="002-with space" author="test"/>
+                <changeSet id="003-" author="test"/>
+                """));
+        Files.writeString(changes.resolve("001-good.sql"), "");
+        Files.writeString(changes.resolve("002-with space.sql"), "");
+        Files.writeString(changes.resolve("003-.sql"), "");
+
+        assertEquals(List.of("002-with space", "003-"),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master).stream()
+                        .map(ChangelogValidator.InvalidChangeSet::id).toList());
+        assertEquals(List.of(Path.of("002-with space.sql"), Path.of("003-.sql")),
+                ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+    }
+
+    /**
      * Changesets reachable through an include are checked by id; ids without a
      * three-digit prefix and changesets missing an id are reported, and
      * correctly named ones are not.
@@ -154,6 +181,28 @@ class ChangelogValidatorTest {
         List<Path> orphaned = ChangelogValidator.findOrphanedSqlFiles(changes, master);
 
         assertEquals(List.of(Path.of("sql_changes/003-orphan.sql")), orphaned);
+    }
+
+    /**
+     * A SQL reference that points to a missing file is rejected rather than
+     * silently passing the orphan check.
+     */
+    @Test
+    void rejectsMissingSqlReference() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile path="sql_changes/missing.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertTrue(failure.getMessage().contains("SQL file reference not found"));
     }
 
     /**

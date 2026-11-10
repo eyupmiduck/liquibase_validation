@@ -17,8 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies the normalisation the {@link ChangelogModel} captures: changelog
@@ -143,6 +142,97 @@ class ChangelogModelNormalisationTest {
         assertEquals("010-create-index", findings.get(0).changeSetId());
         assertTrue(findings.get(0).message().contains("blocks writes on t"),
                 () -> "expected the substituted table, got: " + findings.get(0).message());
+    }
+
+    /**
+     * Properties follow Liquibase's depth-first parse order: a property in an
+     * included file is seen before a later sibling and wins.
+     */
+    @Test
+    void resolvesPropertiesInLiquibaseParseOrder() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="a.xml" relativeToChangelogFile="true"/>
+                <include file="b.xml" relativeToChangelogFile="true"/>
+                """));
+        write("a.xml", ChangelogTestSupport.changelog("""
+                <include file="c.xml" relativeToChangelogFile="true"/>
+                <changeSet id="001-a" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+        write("b.xml", ChangelogTestSupport.changelog("""
+                <property name="x" value="from-b"/>
+                <changeSet id="002-b" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+        write("c.xml", ChangelogTestSupport.changelog("""
+                <property name="x" value="from-c"/>
+                <changeSet id="003-c" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals("from-c", ChangelogTestSupport.byId(changesets, "001-a").normalisation().properties().get("x"));
+        assertEquals("from-c", ChangelogTestSupport.byId(changesets, "002-b").normalisation().properties().get("x"));
+        assertEquals("from-c", ChangelogTestSupport.byId(changesets, "003-c").normalisation().properties().get("x"));
+    }
+
+    /**
+     * A property defined after a changeset is not applied to that earlier
+     * changeset, while a later changeset sees it.
+     */
+    @Test
+    void doesNotApplyAPropertyDefinedAfterTheChangeSet() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-before" author="a"><sql>SELECT ${x};</sql></changeSet>
+                <property name="x" value="later"/>
+                <changeSet id="002-after" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertNull(ChangelogTestSupport.byId(changesets, "001-before").normalisation().properties().get("x"));
+        assertEquals("later", ChangelogTestSupport.byId(changesets, "002-after").normalisation().properties().get("x"));
+    }
+
+    /**
+     * A local property is visible in its file and included files but does not
+     * leak back to the parent changeset after the include returns.
+     */
+    @Test
+    void keepsLocalPropertiesInTheIncludeChain() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="a.xml" relativeToChangelogFile="true"/>
+                <changeSet id="002-root" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+        write("a.xml", ChangelogTestSupport.changelog("""
+                <property name="x" value="local" global="false"/>
+                <changeSet id="001-a" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals("local", ChangelogTestSupport.byId(changesets, "001-a").normalisation().properties().get("x"));
+        assertNull(ChangelogTestSupport.byId(changesets, "002-root").normalisation().properties().get("x"));
+    }
+
+    /**
+     * A property scoped to another database does not shadow a later PostgreSQL
+     * property of the same name.
+     */
+    @Test
+    void ignoresPropertiesScopedToAnotherDatabase() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <property name="x" value="oracle-value" dbms="oracle"/>
+                <property name="x" value="postgres-value" dbms="postgresql"/>
+                <changeSet id="001-use" author="a"><sql>SELECT ${x};</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals("postgres-value",
+                ChangelogTestSupport.byId(changesets, "001-use").normalisation().properties().get("x"));
     }
 
     private void write(String relativePath, String content) throws IOException {

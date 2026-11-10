@@ -26,6 +26,26 @@ class TrackingTableAssertionsTest extends PostgresTestBase {
     }
 
     /**
+     * A view with the expected name is not a tracking table and is reported.
+     */
+    @Test
+    void viewIsNotATrackingTable() throws Exception {
+        dsl.execute("CREATE SCHEMA tracking_view");
+        try {
+            dsl.execute("CREATE VIEW tracking_view.databasechangelog AS SELECT 1 AS id");
+            dsl.execute("CREATE TABLE tracking_view.databasechangeloglock (id integer)");
+
+            try (Connection owner = openOwnerConnection()) {
+                assertThrows(AssertionError.class, () -> TrackingTableAssertions.assertTrackingTablesAreIsolated(
+                        owner, "tracking_view", "databasechangelog", "databasechangeloglock",
+                        List.of(PUBLIC_SCHEMA)));
+            }
+        } finally {
+            dsl.execute("DROP SCHEMA IF EXISTS tracking_view CASCADE");
+        }
+    }
+
+    /**
      * A missing tracking table is reported.
      */
     @Test

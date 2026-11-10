@@ -34,17 +34,23 @@ import java.util.stream.Stream;
 public final class ChangelogValidator {
 
     /**
+     * The {@code NNN-name} shape: a three-digit, zero-padded prefix followed by
+     * alphanumeric segments separated by {@code -} or {@code _}.
+     */
+    private static final String NNN_NAME = "\\d{3}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*";
+
+    /**
      * Matches changeSet ids of the form {@code NNN-name} or {@code NNN_name},
      * where {@code NNN} is a three-digit, zero-padded integer.
      */
-    private static final Pattern CHANGE_SET_ID = Pattern.compile("\\d{3}[-_].+");
+    private static final Pattern CHANGE_SET_ID = Pattern.compile(NNN_NAME);
 
     /**
      * Matches SQL file names of the form {@code NNN-name.sql} or
      * {@code NNN_name.sql}, where {@code NNN} is a three-digit, zero-padded
      * integer.
      */
-    private static final Pattern SQL_FILE_NAME = Pattern.compile("\\d{3}[-_].+\\.sql");
+    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql");
 
     /**
      * Change types that load SQL from an external file through a {@code path}
@@ -156,7 +162,8 @@ public final class ChangelogValidator {
      * @param changelogRoot   the changelog directory to scan
      * @param masterChangelog the master changelog file to traverse
      * @return the orphaned SQL files, relative to {@code changelogRoot}
-     * @throws IOException if a changelog file cannot be read
+     * @throws IOException if a changelog file cannot be read, or a SQL
+     *                     reference points to a file that does not exist
      */
     public static List<Path> findOrphanedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
@@ -182,7 +189,8 @@ public final class ChangelogValidator {
      * @param masterChangelog the master changelog file to traverse
      * @return the referenced SQL files, relative to {@code changelogRoot},
      * sorted
-     * @throws IOException if a changelog file cannot be read
+     * @throws IOException if a changelog file cannot be read, or a reference
+     *                     points to a file that does not exist
      */
     public static List<Path> findReferencedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
@@ -281,7 +289,11 @@ public final class ChangelogValidator {
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
-                result.add(root.relativize(resolveWithin(root, base, path, "SQL file reference")));
+                Path resolved = resolveWithin(root, base, path, "SQL file reference");
+                if (!Files.isRegularFile(resolved)) {
+                    throw new IOException("SQL file reference not found: " + path);
+                }
+                result.add(root.relativize(resolved));
             }
         }
         return result;

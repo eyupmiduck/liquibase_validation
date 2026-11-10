@@ -85,7 +85,12 @@ public final class LinterCli {
             if (options.failOn() != null) {
                 config = config.withFailOn(options.failOn());
             }
+            boolean ignoreFailures = options.ignoreFailures() || config.failOn() == null;
             List<ChangeSet> changeSets = ChangelogModel.changesets(options.changelogRoot(), options.master());
+            if (changeSets.isEmpty()) {
+                err.println("error: no changesets found in " + options.master());
+                return 2;
+            }
             Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), config);
             List<Finding> findings = linter.lint(changeSets);
             Whitelist.Report report = Whitelist.load(options.whitelist()).apply(findings);
@@ -94,9 +99,9 @@ public final class LinterCli {
                 for (Whitelist.AllowedFinding entry : report.stale()) {
                     err.println("stale whitelist entry: " + entry.describe());
                 }
-                return options.ignoreFailures() ? 0 : 1;
+                return ignoreFailures ? 0 : 1;
             }
-            return options.ignoreFailures() || !linter.fails(report.unmatched()) ? 0 : 1;
+            return ignoreFailures || !linter.fails(report.unmatched()) ? 0 : 1;
         } catch (IOException | RuntimeException e) {
             err.println("error: " + describe(e));
             return 2;

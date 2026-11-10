@@ -72,7 +72,8 @@ public final class TestResources {
     private static List<String> readFromDirectory(Path directory) throws IOException {
         List<Path> files;
         try (Stream<Path> walk = Files.walk(directory)) {
-            files = walk.filter(path -> path.getFileName().toString().endsWith(".sql"))
+            files = walk.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".sql"))
                     .sorted(Comparator.comparing(Path::toString))
                     .toList();
         }

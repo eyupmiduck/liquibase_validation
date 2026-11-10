@@ -23,9 +23,11 @@ import java.util.Objects;
  * @param endDelimiter    the statement delimiter
  * @param stripComments   whether Liquibase removes comments
  * @param dbms            the source-level dbms restriction, or null
+ * @param line            the one-based line of the declaring XML element, or 1
+ *                        for a source created outside the changelog model
  */
 public record SqlSource(Kind kind, Path path, String text, boolean splitStatements, String endDelimiter,
-                        boolean stripComments, String dbms) {
+                        boolean stripComments, String dbms, int line) {
 
     /**
      * Validates the source's required components and its kind-specific shape:
@@ -34,6 +36,9 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
     public SqlSource {
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(endDelimiter, "endDelimiter");
+        if (line < 1) {
+            throw new IllegalArgumentException("line must be one-based, was " + line);
+        }
         switch (kind) {
             case INLINE_SQL -> {
                 Objects.requireNonNull(text, "text for INLINE_SQL");
@@ -53,6 +58,22 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
                 }
             }
         }
+    }
+
+    /**
+     * Creates a source without changelog line information.
+     *
+     * @param kind            the source kind
+     * @param path            the resolved file path for file kinds, otherwise null
+     * @param text            the inline SQL for inline sources, otherwise null
+     * @param splitStatements whether Liquibase splits the SQL into statements
+     * @param endDelimiter    the statement delimiter
+     * @param stripComments   whether Liquibase removes comments
+     * @param dbms            the source-level dbms restriction, or null
+     */
+    public SqlSource(Kind kind, Path path, String text, boolean splitStatements, String endDelimiter,
+                     boolean stripComments, String dbms) {
+        this(kind, path, text, splitStatements, endDelimiter, stripComments, dbms, 1);
     }
 
     /**

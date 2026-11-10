@@ -114,6 +114,7 @@ public final class GrantAssertions {
      */
     public static void assertTypeIsNotUsableByPublic(Connection connection, String schema, String type)
             throws SQLException {
+        assertTypeExists(connection, schema, type);
         String sql = """
                 SELECT count(*)::int AS usable_by_public
                 FROM pg_catalog.pg_type AS t
@@ -136,6 +137,29 @@ public final class GrantAssertions {
                 int usable = rows.getInt(1);
                 assertTrue(usable == 0,
                         () -> schema + "." + type + " is usable by PUBLIC by default");
+            }
+        }
+    }
+
+    /**
+     * Fails when a type does not exist, so a typo cannot make the public-usage
+     * assertion pass vacuously.
+     */
+    private static void assertTypeExists(Connection connection, String schema, String type) throws SQLException {
+        String sql = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_type AS t
+                    JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
+                    WHERE n.nspname = ? AND t.typname = ?
+                )
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, schema);
+            statement.setString(2, type);
+            try (ResultSet rows = statement.executeQuery()) {
+                rows.next();
+                assertTrue(rows.getBoolean(1), () -> "type not found: " + schema + "." + type);
             }
         }
     }

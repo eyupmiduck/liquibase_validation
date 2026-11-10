@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
 import java.util.ArrayList;
@@ -72,6 +73,35 @@ public final class DynamicSqlRule implements Rule {
         return new int[]{1, 1};
     }
 
+    /**
+     * Returns the text to scan for {@code EXECUTE} and its offset in the unit.
+     * For a {@code CREATE FUNCTION}/{@code CREATE PROCEDURE} declaration the
+     * body is the string literal after {@code AS}, so a routine or parameter
+     * named {@code execute} in the header is not mistaken for dynamic SQL. A bare
+     * routine body has no declaration and is scanned whole.
+     */
+    private static Body body(SqlUnit unit) {
+        List<Token> tokens = unit.tokens().stream().filter(token -> !token.isTrivia()).toList();
+        if (!TokenWords.startsWith(tokens, "CREATE")) {
+            return new Body(unit.sql(), 0);
+        }
+        int routine = TokenWords.indexOf(tokens, "FUNCTION", 1);
+        if (routine < 0) {
+            routine = TokenWords.indexOf(tokens, "PROCEDURE", 1);
+        }
+        if (routine < 0) {
+            return new Body(unit.sql(), 0);
+        }
+        int as = TokenWords.indexOf(tokens, "AS", routine + 1);
+        if (as < 0 || as + 1 >= tokens.size()) {
+            return new Body(unit.sql(), 0);
+        }
+        Token body = tokens.get(as + 1);
+        return body.isStringLiteral()
+                ? new Body(body.text(), body.startOffset())
+                : new Body(unit.sql(), 0);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -89,6 +119,9 @@ public final class DynamicSqlRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
         List<Violation> violations = new ArrayList<>();
         collect(context.forward(), violations);
         collect(context.rollback(), violations);
@@ -97,19 +130,26 @@ public final class DynamicSqlRule implements Rule {
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
         for (SqlUnit unit : units) {
-            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY) {
+            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY || !RuleSupport.appliesToPostgres(unit)) {
                 continue;
             }
-            Matcher matcher = EXECUTE.matcher(unit.sql());
+            Body body = body(unit);
+            Matcher matcher = EXECUTE.matcher(body.text());
             if (!matcher.find()) {
                 continue;
             }
-            int[] position = position(unit, matcher.start());
+            int[] position = position(unit, body.sourceOffset() + matcher.start());
             violations.add(new Violation(
                     "EXECUTE",
                     "routine body builds SQL dynamically; static rules cannot see the statements it runs",
                     "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
                     unit.file(), position[0], position[1]));
         }
+    }
+
+    /**
+     * A body to scan and its offset in the unit's SQL.
+     */
+    private record Body(String text, int sourceOffset) {
     }
 }

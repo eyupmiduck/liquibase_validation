@@ -63,6 +63,23 @@ class LinterTest {
     }
 
     /**
+     * An inline source's token line is shifted to the declaring XML element, so a
+     * finding does not point at line 1 of the changelog.
+     */
+    @Test
+    void usesTheDeclaredLineForInlineSql() throws IOException {
+        SqlSource source = new SqlSource(SqlSource.Kind.INLINE_SQL, null, "SELECT bad", true, ";", true, null, 7);
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(source), false, List.of());
+
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule())).lint(List.of(changeSet));
+
+        assertEquals(1, findings.size());
+        assertEquals(7, findings.get(0).line());
+        assertEquals(8, findings.get(0).column());
+    }
+
+    /**
      * A file-based source is read and reported against the SQL file, and inline
      * self-closing sources are not read.
      */
@@ -148,6 +165,17 @@ class LinterTest {
         assertFalse(linter.fails(List.of()));
         assertFalse(linter.fails(List.of(findingWith(Severity.INFO))));
         assertTrue(linter.fails(List.of(findingWith(Severity.ERROR))));
+    }
+
+    /**
+     * A null threshold ({@code failOn: none}) never fails, even for errors.
+     */
+    @Test
+    void neverFailsWithoutAFailureThreshold() {
+        LinterConfig config = new LinterConfig(null, null, List.of(), List.of(), Map.of());
+        Linter linter = new Linter(List.of(new ForbiddenWordRule()), config);
+
+        assertFalse(linter.fails(List.of(findingWith(Severity.ERROR))));
     }
 
     /**

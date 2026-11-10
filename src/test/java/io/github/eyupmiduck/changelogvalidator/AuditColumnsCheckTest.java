@@ -120,6 +120,18 @@ class AuditColumnsCheckTest {
     }
 
     /**
+     * An empty or misspelled schema list is rejected instead of producing a
+     * vacuous pass.
+     */
+    @Test
+    void rejectsEmptyAndMissingSchemas() throws Exception {
+        assertThrows(IllegalArgumentException.class,
+                () -> AuditColumnsCheck.findViolations(connection, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> AuditColumnsCheck.findViolations(connection, List.of("missing_schema")));
+    }
+
+    /**
      * A compliant table produces no violations.
      */
     @Test
@@ -337,6 +349,31 @@ class AuditColumnsCheckTest {
         assertFalse(probe.get().updatedAtRefreshed(), () -> probe.get().describe());
         assertTrue(probe.get().createdAtPreserved(), () -> probe.get().describe());
         assertFalse(probe.get().passed());
+    }
+
+    /**
+     * A trigger that writes a fixed timestamp after the sentinel is not a
+     * refresh, so the probe must reject it.
+     */
+    @Test
+    void probeRejectsAFixedTimestamp() throws Exception {
+        execute("CREATE OR REPLACE FUNCTION unaudited.fixed_set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$"
+                + " BEGIN NEW.updated_at := '2025-01-01T00:00:00Z'::timestamptz; RETURN NEW; END; $$");
+        execute("""
+                CREATE TABLE unaudited.fixed (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """);
+        execute("CREATE TRIGGER fixed_set_updated_at BEFORE UPDATE ON unaudited.fixed"
+                + " FOR EACH ROW EXECUTE FUNCTION unaudited.fixed_set_updated_at()");
+        execute("INSERT INTO unaudited.fixed (id) VALUES (1)");
+
+        Optional<AuditColumnsCheck.Probe> probe = AuditColumnsCheck.probeUpdate(connection, "unaudited", "fixed");
+
+        assertTrue(probe.isPresent());
+        assertFalse(probe.get().updatedAtRefreshed(), () -> probe.get().describe());
     }
 
     /**

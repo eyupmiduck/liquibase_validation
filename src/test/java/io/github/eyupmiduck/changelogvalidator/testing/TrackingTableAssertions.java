@@ -40,9 +40,9 @@ public final class TrackingTableAssertions {
     public static void assertTrackingTablesAreIsolated(Connection connection, String trackingSchema,
                                                        String changelogTable, String changelogLockTable,
                                                        Collection<String> applicationSchemas) throws SQLException {
-        assertTrue(anyRelationExists(connection, trackingSchema, changelogTable),
+        assertTrue(tableExists(connection, trackingSchema, changelogTable),
                 () -> "expected " + trackingSchema + "." + changelogTable);
-        assertTrue(anyRelationExists(connection, trackingSchema, changelogLockTable),
+        assertTrue(tableExists(connection, trackingSchema, changelogLockTable),
                 () -> "expected " + trackingSchema + "." + changelogLockTable);
 
         for (String schema : applicationSchemas) {
@@ -53,16 +53,26 @@ public final class TrackingTableAssertions {
         }
     }
 
+    private static boolean tableExists(Connection connection, String schema, String relation)
+            throws SQLException {
+        return relationExists(connection, schema, relation, "c.relkind IN ('r', 'p')");
+    }
+
     private static boolean anyRelationExists(Connection connection, String schema, String relation)
+            throws SQLException {
+        return relationExists(connection, schema, relation, "true");
+    }
+
+    private static boolean relationExists(Connection connection, String schema, String relation, String condition)
             throws SQLException {
         String sql = """
                 SELECT EXISTS (
                     SELECT 1
                     FROM pg_catalog.pg_class AS c
                     JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
-                    WHERE n.nspname = ? AND c.relname = ?
+                    WHERE n.nspname = ? AND c.relname = ? AND %s
                 )
-                """;
+                """.formatted(condition);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, schema);
             statement.setString(2, relation);

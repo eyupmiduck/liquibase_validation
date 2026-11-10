@@ -3,7 +3,9 @@ package io.github.eyupmiduck.changelogvalidator.linter.sql;
 import io.github.eyupmiduck.changelogvalidator.linter.model.Normalisation;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlModification;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,15 +22,15 @@ import java.util.regex.Pattern;
  * whose {@code dbms} does not include PostgreSQL is skipped.
  *
  * <p>Property substitution is repeated to a fixed point (a value may reference
- * another property), up to a small depth; a circular reference therefore stops
- * rather than looping, and exceeding the depth fails loudly. A placeholder with
- * no property is left as-is, because the linter cannot see properties supplied
- * on the Liquibase command line (see ADR 0003).
+ * another property). A repeated state (a cycle) or a substitution that does not
+ * settle within the number of properties fails loudly, so a valid long chain is
+ * not rejected by an arbitrary depth limit. A placeholder with no property is
+ * left as-is, because the linter cannot see properties supplied on the
+ * Liquibase command line (see ADR 0003).
  */
 public final class SqlNormalizer {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}]+)}");
-    private static final int MAX_SUBSTITUTION_DEPTH = 10;
 
     private SqlNormalizer() {
     }
@@ -60,7 +62,14 @@ public final class SqlNormalizer {
             return sql;
         }
         String current = sql;
-        for (int depth = 0; depth < MAX_SUBSTITUTION_DEPTH; depth++) {
+        Set<String> seen = new HashSet<>();
+        // A chain can visit each property at most once; a self-expanding value
+        // changes the string forever, so the property count bounds the passes.
+        for (int pass = 0; pass <= properties.size(); pass++) {
+            if (!seen.add(current)) {
+                throw new IllegalStateException(
+                        "property substitution does not converge; check for a circular property reference");
+            }
             Matcher matcher = PLACEHOLDER.matcher(current);
             StringBuilder replaced = new StringBuilder();
             while (matcher.find()) {
@@ -77,7 +86,8 @@ public final class SqlNormalizer {
             }
             current = next;
         }
-        throw new IllegalStateException("property substitution exceeded " + MAX_SUBSTITUTION_DEPTH
-                + " passes; check for a circular property reference");
+        throw new IllegalStateException(
+                "property substitution does not converge within " + (properties.size() + 1)
+                        + " passes; check for a circular or expanding property reference");
     }
 }

@@ -207,6 +207,12 @@ public final class RoutineAssertions {
                 FROM pg_catalog.pg_proc AS p
                 JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
                 WHERE n.nspname IN (%s)
+                    AND p.prokind IN ('f', 'p')
+                    AND NOT EXISTS (SELECT 1
+                                    FROM pg_catalog.pg_depend AS d
+                                    WHERE d.classid = 'pg_proc'::regclass
+                                      AND d.objid = p.oid
+                                      AND d.deptype = 'e')
                 """.formatted(placeholders(schemas.size()));
         Map<Long, String> routines = new TreeMap<>();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {

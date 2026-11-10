@@ -27,6 +27,12 @@ import java.util.stream.Stream;
  * system schemas are excluded, as are row data, OIDs, sequence
  * {@code last_value} and statistics, none of which are schema.
  *
+ * <p>Coverage is intentionally partial: aggregates and window functions,
+ * row-level security policies, rules, sequence ownership, column
+ * storage/compression/statistics, inheritance, tablespaces, and user-defined
+ * base or multirange types are not captured. See the README for the supported
+ * object list and its limits.
+ *
  * <p>The map can be written to a directory tree (one file per object) so a
  * mismatch can be reviewed with a directory diff and uploaded as a build
  * artifact; see {@link #DEFAULT_DUMP_DIRECTORY}. A routine is written one level

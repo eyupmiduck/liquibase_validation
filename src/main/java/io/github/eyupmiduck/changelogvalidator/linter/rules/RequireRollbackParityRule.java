@@ -33,7 +33,8 @@ public final class RequireRollbackParityRule implements Rule {
     private static int statements(List<SqlUnit> units) {
         return units.stream()
                 .filter(unit -> unit.source().kind() != SqlSource.Kind.ROUTINE_BODY)
-                .mapToInt(unit -> unit.statements().size())
+                .filter(RuleSupport::appliesToPostgres)
+                .mapToInt(unit -> unit.commands().size())
                 .sum();
     }
 
@@ -54,6 +55,9 @@ public final class RequireRollbackParityRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
         if (!context.changeSet().rollbackDefined() || context.rollback().isEmpty()) {
             return List.of();
         }
@@ -70,6 +74,6 @@ public final class RequireRollbackParityRule implements Rule {
                 "rollback has " + rollback + " statement" + (rollback == 1 ? "" : "s")
                         + " for " + forward + " forward statement" + (forward == 1 ? "" : "s"),
                 "Make the rollback invert the whole forward change, not only part of it.",
-                context.changeSet().changelogFile(), 1, 1));
+                context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
 }

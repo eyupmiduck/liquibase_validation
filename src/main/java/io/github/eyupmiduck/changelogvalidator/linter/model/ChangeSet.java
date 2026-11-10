@@ -30,10 +30,12 @@ import java.util.Objects;
  * @param rollbackSources  the rollback SQL sources
  * @param normalisation    the properties and {@code <modifySql>} transformations
  *                         that turn the raw SQL into what Liquibase runs
+ * @param line             the one-based line of the {@code <changeSet>} element
  */
 public record ChangeSet(String id, String author, Path changelogFile, boolean runInTransaction, boolean runOnChange,
                         String dbms, String context, String labels, List<SqlSource> sqlSources,
-                        boolean rollbackDefined, List<SqlSource> rollbackSources, Normalisation normalisation) {
+                        boolean rollbackDefined, List<SqlSource> rollbackSources, Normalisation normalisation,
+                        int line) {
 
     /**
      * Validates the changeset's required components and copies its lists.
@@ -45,6 +47,9 @@ public record ChangeSet(String id, String author, Path changelogFile, boolean ru
         Objects.requireNonNull(normalisation, "normalisation");
         Objects.requireNonNull(sqlSources, "sqlSources");
         Objects.requireNonNull(rollbackSources, "rollbackSources");
+        if (line < 1) {
+            throw new IllegalArgumentException("line must be one-based, was " + line);
+        }
         sqlSources = List.copyOf(sqlSources);
         rollbackSources = List.copyOf(rollbackSources);
     }
@@ -68,6 +73,6 @@ public record ChangeSet(String id, String author, Path changelogFile, boolean ru
                      String dbms, String context, String labels, List<SqlSource> sqlSources,
                      boolean rollbackDefined, List<SqlSource> rollbackSources) {
         this(id, author, changelogFile, runInTransaction, runOnChange, dbms, context, labels, sqlSources,
-                rollbackDefined, rollbackSources, Normalisation.none());
+                rollbackDefined, rollbackSources, Normalisation.none(), 1);
     }
 }

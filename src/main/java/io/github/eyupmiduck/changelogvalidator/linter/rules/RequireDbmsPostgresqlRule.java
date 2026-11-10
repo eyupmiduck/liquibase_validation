@@ -12,6 +12,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -26,11 +27,13 @@ import java.util.regex.Pattern;
  * PostgreSQL casts and operators ({@code ::}, {@code ->}, {@code ?}, {@code @>},
  * ...) that are common in {@code <sql>} bodies.
  *
- * <p>A changeset is accepted when it sets {@code dbms} to a list that includes
- * {@code postgresql} (case-insensitive, comma-separated), or when every SQL
- * source sets the same (Liquibase applies a source-level {@code dbms} too). The
- * rule is an error and on by default: a PostgreSQL-only changelog without the
- * gate is a deployment hazard, not a style nit.
+ * <p>A changeset is accepted when it gates execution to PostgreSQL only with
+ * {@code dbms="postgresql"} (case-insensitive), or when a SQL source does the
+ * same (Liquibase applies a source-level {@code dbms} too). A comma-separated
+ * list that also names another database does not satisfy the rule, because the
+ * PostgreSQL-only SQL would still run on that target. The rule is an error and
+ * on by default: a PostgreSQL-only changelog without the gate is a deployment
+ * hazard, not a style nit.
  *
  * <p>It is a token-level heuristic: a construct inside a dollar-quoted routine
  * body is examined through the body's own tokens, and a mention in a string or
@@ -44,25 +47,42 @@ public final class RequireDbmsPostgresqlRule implements Rule {
      */
     public static final String ID = "require-dbms-postgresql";
 
+    /**
+     * PostgreSQL index access methods that have no portable equivalent.
+     */
+    private static final Set<String> POSTGRES_INDEX_METHODS = Set.of("gin", "gist", "brin", "spgist");
+
     // Operators and punctuation that only PostgreSQL (among common targets)
     // accepts in these positions. Matching is token-based, so a keyword inside
     // a string or comment cannot trigger it.
     private static final Pattern POSTGRES_OPERATORS = Pattern.compile("::|->>|->|#>>|#>|@>|<@|\\?\\||\\?&|\\?");
 
     private static boolean gatedOnPostgres(ChangeSet changeSet) {
-        return listsPostgres(changeSet.dbms());
+        return postgresOnly(changeSet.dbms());
     }
 
-    private static boolean listsPostgres(String dbms) {
+    /**
+     * Returns whether {@code dbms} restricts execution to PostgreSQL. A plain
+     * PostgreSQL name (or a repeated one) qualifies; {@code all}, {@code none},
+     * negated entries, and any other database name do not, because the SQL would
+     * still run on a target that cannot execute it.
+     */
+    private static boolean postgresOnly(String dbms) {
         if (dbms == null || dbms.isBlank()) {
             return false;
         }
+        boolean sawPostgres = false;
         for (String candidate : dbms.split(",")) {
-            if (candidate.strip().equalsIgnoreCase("postgresql")) {
-                return true;
+            String name = candidate.strip();
+            if (name.isEmpty()) {
+                continue;
             }
+            if (!name.equalsIgnoreCase("postgresql")) {
+                return false;
+            }
+            sawPostgres = true;
         }
-        return false;
+        return sawPostgres;
     }
 
     private static String firstPostgresConstruct(SqlUnit unit) {
@@ -73,7 +93,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
                 .filter(token -> !token.isTrivia())
                 .toList();
         int from = 0;
-        for (SqlStatement statement : unit.statements()) {
+        for (SqlStatement statement : unit.commands()) {
             while (from < words.size() && words.get(from).endOffset() <= statement.startOffset()) {
                 from++;
             }
@@ -115,14 +135,44 @@ public final class RequireDbmsPostgresqlRule implements Rule {
         if (TokenWords.startsWith(words, "REINDEX") && TokenWords.contains(words, "CONCURRENTLY")) {
             return "CONCURRENTLY";
         }
+        if (TokenWords.startsWith(words, "ALTER", "TABLE")
+                && TokenWords.adjacent(words, "DETACH", "PARTITION")
+                && TokenWords.contains(words, "CONCURRENTLY")) {
+            return "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";
+        }
         if (TokenWords.contains(words, "LANGUAGE") && TokenWords.adjacent(words, "LANGUAGE", "PLPGSQL")) {
             return "LANGUAGE plpgsql";
         }
-        if (TokenWords.contains(words, "USING")
-                && TokenWords.containsAny(words, "GIN", "GIST", "BRIN", "SPGIST")) {
+        if (usesPostgresIndexMethod(words)) {
             return "a PostgreSQL index method";
         }
         return null;
+    }
+
+    /**
+     * Returns whether the statement is a {@code CREATE INDEX} whose access method
+     * is one of PostgreSQL's non-portable index methods. The method must be the
+     * token immediately after {@code USING}, so an identifier named {@code gin}
+     * elsewhere in the statement (or a portable {@code USING btree (gin)} index)
+     * does not trigger the rule.
+     */
+    private static boolean usesPostgresIndexMethod(List<Token> words) {
+        if (!TokenWords.startsWith(words, "CREATE")) {
+            return false;
+        }
+        int index = 1;
+        if (index < words.size() && words.get(index).matchesKeyword("UNIQUE")) {
+            index++;
+        }
+        if (index >= words.size() || !words.get(index).matchesKeyword("INDEX")) {
+            return false;
+        }
+        int using = TokenWords.indexOf(words, "USING", index + 1);
+        if (using < 0 || using + 1 >= words.size()) {
+            return false;
+        }
+        String method = RuleSupport.identifier(words.get(using + 1));
+        return method != null && POSTGRES_INDEX_METHODS.contains(method);
     }
 
     @Override
@@ -137,7 +187,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
-        if (gatedOnPostgres(context.changeSet())) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet()) || gatedOnPostgres(context.changeSet())) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
@@ -148,7 +198,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {
         for (SqlUnit unit : units) {
-            if (listsPostgres(unit.source().dbms())) {
+            if (postgresOnly(unit.source().dbms()) || !RuleSupport.appliesToPostgres(unit)) {
                 continue;
             }
             String construct = firstPostgresConstruct(unit);
@@ -160,7 +210,7 @@ public final class RequireDbmsPostgresqlRule implements Rule {
                     "changeset uses PostgreSQL-only syntax (" + construct
                             + ") without dbms=\"postgresql\"; on another database it fails at deploy",
                     "Add dbms=\"postgresql\" to the changeset, or make the SQL portable.",
-                    unit.file(), 1, 1));
+                    unit.file(), unit.source().isInline() ? unit.source().line() : 1, 1));
         }
     }
 }

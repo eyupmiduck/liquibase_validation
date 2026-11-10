@@ -160,6 +160,11 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      * matches the upgraded one.
      */
     private void compareCatalogWithFromScratchBuild() throws SQLException, IOException {
+        Collection<String> schemas = managedSchemas();
+        if (schemas.isEmpty()) {
+            throw new IllegalStateException(
+                    "managedSchemas() must not be empty when catalog comparison is enabled");
+        }
         freshDatabase = "fresh_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
         createDatabase(freshDatabase);
         prepareDatabase(freshDatabase);
@@ -171,8 +176,8 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         Map<String, String> upgrade;
         try (Connection freshConnection = openOwnerConnection(freshDatabase);
              Connection upgradeOwner = openOwnerConnection(upgradeDatabase)) {
-            fresh = CatalogSnapshot.capture(freshConnection, managedSchemas());
-            upgrade = CatalogSnapshot.capture(upgradeOwner, managedSchemas());
+            fresh = CatalogSnapshot.capture(freshConnection, schemas);
+            upgrade = CatalogSnapshot.capture(upgradeOwner, schemas);
         }
         // Write both trees so a failure can be reviewed with `diff -r` and
         // uploaded as a build artifact.
@@ -208,14 +213,16 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         // project's main database only).
         try (Connection admin = openAdminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON DATABASE \"" + database + "\" TO " + configuration.ownerUser());
+            statement.execute("GRANT CREATE ON DATABASE " + quoteIdentifier(database)
+                    + " TO " + quoteIdentifier(configuration.ownerUser()));
         }
         try (Connection admin = openAdminConnection(database);
              Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.ownerUser());
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + configuration.testUser());
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.ownerUser()));
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.testUser()));
             statement.execute("CREATE SCHEMA IF NOT EXISTS "
-                    + trackingSettings().liquibaseSchema() + " AUTHORIZATION " + configuration.ownerUser());
+                    + quoteIdentifier(trackingSettings().liquibaseSchema())
+                    + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
         }
     }
 

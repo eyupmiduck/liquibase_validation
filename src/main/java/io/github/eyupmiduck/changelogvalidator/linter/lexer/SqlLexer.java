@@ -19,7 +19,8 @@ import java.util.Set;
  * strings with backslash escapes; the {@code B'...'} and {@code X'...'} string
  * forms; dollar-quoted strings ({@code $$} and {@code $tag$$...$tag$}); quoted
  * identifiers with doubled double quotes; numeric literals, including the
- * {@code 0x}, {@code 0o} and {@code 0b} integer forms; positional parameters;
+ * {@code 0x}, {@code 0o} and {@code 0b} integer forms and underscore digit
+ * separators; positional parameters;
  * bare words; operators; and structural punctuation.
  *
  * <p>Keyword classification is deliberately left to rules: a bare word is a
@@ -79,6 +80,7 @@ public final class SqlLexer {
 
     private static boolean isRadixDigit(char character, char radix) {
         return switch (radix) {
+            case 'd' -> isDigit(character);
             case 'x' -> isDigit(character)
                     || (character >= 'a' && character <= 'f')
                     || (character >= 'A' && character <= 'F');
@@ -351,32 +353,42 @@ public final class SqlLexer {
         if (sql.charAt(index) == '0' && index + 1 < length) {
             char radix = Character.toLowerCase(sql.charAt(index + 1));
             if (radix == 'x' || radix == 'o' || radix == 'b') {
-                end = index + 2;
-                while (end < length && isRadixDigit(sql.charAt(end), radix)) {
-                    end++;
-                }
-                return end;
+                return endOfDigits(index + 2, radix);
             }
         }
-        while (end < length && isDigit(sql.charAt(end))) {
-            end++;
-        }
+        end = endOfDigits(end, 'd');
         if (end < length && sql.charAt(end) == '.') {
-            end++;
-            while (end < length && isDigit(sql.charAt(end))) {
-                end++;
-            }
+            end = endOfDigits(end + 1, 'd');
         }
         if (end < length && (sql.charAt(end) == 'e' || sql.charAt(end) == 'E')) {
             int exponent = end + 1;
             if (exponent < length && (sql.charAt(exponent) == '+' || sql.charAt(exponent) == '-')) {
                 exponent++;
             }
-            if (exponent < length && isDigit(sql.charAt(exponent))) {
-                while (exponent < length && isDigit(sql.charAt(exponent))) {
-                    exponent++;
-                }
-                end = exponent;
+            int exponentEnd = endOfDigits(exponent, 'd');
+            if (exponentEnd > exponent) {
+                end = exponentEnd;
+            }
+        }
+        return end;
+    }
+
+    /**
+     * Consumes digits of {@code radix}, allowing an underscore only between two
+     * digits so PostgreSQL's numeric separators form part of the literal.
+     */
+    private int endOfDigits(int index, char radix) {
+        int end = index;
+        while (end < length) {
+            char current = sql.charAt(end);
+            if (isRadixDigit(current, radix)) {
+                end++;
+            } else if (current == '_' && end > index && end + 1 < length
+                    && isRadixDigit(sql.charAt(end - 1), radix)
+                    && isRadixDigit(sql.charAt(end + 1), radix)) {
+                end++;
+            } else {
+                break;
             }
         }
         return end;

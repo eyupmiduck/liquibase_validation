@@ -59,6 +59,11 @@ transformations are applied (honouring `applyToRollback` and the `dbms` filter),
 and the `createTable`/`createIndex`/`dropIndex` change types are rendered to SQL.
 The limits of this normalisation are recorded in
 [docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
+Statement splitting supports the default `;` and a single-token, non-operator
+delimiter such as `GO`; operator and dollar-quote delimiters such as `/` and
+`$$` are not supported. When a source sets `splitStatements="false"`, the
+rules still analyse its commands separately so a forbidden statement cannot hide
+behind another command.
 
 Run it with the executable jar (published to GitHub Packages as the `cli`
 classifier alongside the library), or from the library API:
@@ -184,12 +189,13 @@ blocking queries that use it; `CONCURRENTLY` avoids it. The rule reports a
 
 #### changeset-rollback-required
 
-A changeset with no rollback cannot be reverted cleanly. The rule reports a
-changeset that declares no `<rollback>`. It is accepted when a `<rollback>` block
-is present (including an empty one, or `<rollback changeSetId="..."/>` that
-references another changeset) and when the changeset is `runOnChange` with a
-stored-routine body (re-running the body replaces it). It is a warning and
-opt-in.
+A changeset with no explicit rollback cannot be reverted cleanly. The rule
+requires an explicit `<rollback>`, including for structured change types that
+Liquibase can invert automatically, so an empty `<rollback/>` accepts a change
+that needs no reversal. It is accepted when a `<rollback>` block is present (including an empty one, or
+`<rollback changeSetId="..."/>` that references
+another changeset) and when the changeset is `runOnChange` with a stored-routine
+body (re-running the body replaces it). It is a warning and opt-in.
 
 ```xml
 <!-- Reported: no rollback. -->
@@ -265,10 +271,12 @@ equivalent — `CONCURRENTLY` (index and partition operations), `CREATE DOMAIN`,
 the casts and operators common in `<sql>` bodies (`::`, `->`, `->>`, `@>`, ...).
 
 The gate can be on the changeset or, as Liquibase applies it too, on an
-individual SQL source (`dbms` is case-insensitive and may be a comma-separated
-list). Structured change types are exempt, and a mention in a string or comment
-does not count. It is a token-level heuristic — an unlisted PostgreSQL-only
-construct is a false negative — and an error on by default.
+individual SQL source (`dbms` is case-insensitive). The gate must restrict
+execution to PostgreSQL: a comma-separated list that also names another database
+does not satisfy it, because the SQL would still run on that target. Structured
+change types are exempt, and a mention in a string or comment does not count. It
+is a token-level heuristic — an unlisted PostgreSQL-only construct is a false
+negative — and an error on by default.
 
 ```xml
 <!-- Reported: CREATE INDEX CONCURRENTLY is PostgreSQL-only. -->
@@ -345,8 +353,9 @@ lexer understands the PostgreSQL lexical forms the changelog files use:
 - dollar-quoted strings (`$$...$$` and `$tag$...$tag$`), which is how routine
   bodies appear — a whole body is one token;
 - quoted identifiers (`"..."` with doubled double quotes);
-- numeric literals (including the `0x`, `0o`, `0b`, `L` and `_` forms) and
-  positional parameters (`$1`);
+- numeric literals (including the `0x`, `0o`, `0b` and underscore-separator
+  forms) and positional parameters (`$1`); the `L` suffix is not a PostgreSQL
+  numeric form and is not recognised;
 - operators and punctuation, and bare words (keywords are matched by rules with
   `Token.matchesKeyword`, so identifier/keyword classification is not baked in);
 - Liquibase formatted-SQL directives (`--liquibase`, `--changeset`,
@@ -554,6 +563,15 @@ signature. Both captures are written one file per object under
 `target/catalog-snapshot/{fresh,upgrade}`, so a difference can be reviewed with
 `diff -r` and uploaded as a build artifact. The comparison covers
 `managedSchemas()` and can be turned off with `catalogComparisonEnabled()`.
+
+The capture covers schemas, relations (tables, partitioned tables, views,
+materialized views and foreign tables), columns, constraints, indexes,
+sequences, domains, composite/enum/range types, functions and procedures,
+triggers, extensions, ACLs and comments. It deliberately does not cover
+aggregates and window functions, row-level security policies, rules, sequence
+ownership (`OWNED BY`), column storage/compression/statistics, inheritance,
+tablespaces, or user-defined base and multirange types; a difference in one of
+those is not detected by the catalog comparison.
 
 When there is no published release below the current version it skips (so a
 project's first release does not break its build), and it can be disabled for an

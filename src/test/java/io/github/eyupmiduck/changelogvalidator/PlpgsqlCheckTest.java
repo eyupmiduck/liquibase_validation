@@ -300,14 +300,24 @@ class PlpgsqlCheckTest {
     }
 
     /**
-     * loadWhitelist rejects a document that is not a list of mappings, and an
-     * entry that sets none of the recognised keys.
+     * loadWhitelist rejects a document that is not a list of mappings, an entry
+     * that sets none of the recognised keys, and malformed YAML as IOException.
      */
     @Test
     void rejectsMalformedWhitelist() {
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("schema: x")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- just-a-string")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- schemas: misspelled")));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("not: [valid")));
+    }
+
+    /**
+     * An empty whitelist document means no finding is accepted, matching the
+     * linter whitelist semantics.
+     */
+    @Test
+    void acceptsAnEmptyWhitelist() throws Exception {
+        assertTrue(PlpgsqlCheck.loadWhitelist(stream("")).isEmpty());
     }
 
     /**
@@ -338,6 +348,8 @@ class PlpgsqlCheckTest {
     @Test
     void rejectsMissingSchemasAndAllowList() {
         assertThrows(IllegalArgumentException.class, () -> PlpgsqlCheck.findFindings(null, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> PlpgsqlCheck.findFindings(connection, List.of("missing_schema")));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.findFindings(null, null));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.check(null, List.of("public"), null));
     }

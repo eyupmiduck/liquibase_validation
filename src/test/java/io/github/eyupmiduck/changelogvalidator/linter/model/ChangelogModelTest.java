@@ -96,6 +96,37 @@ class ChangelogModelTest {
     }
 
     /**
+     * A changeset and its inline/structured source carry the line of their XML
+     * element.
+     */
+    @Test
+    void recordsElementLines() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-index" author="a">
+                    <createIndex indexName="idx" tableName="t">
+                        <column name="c"/>
+                    </createIndex>
+                </changeSet>
+                """));
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(
+                ChangelogModel.changesets(changelogRoot, master), "001-index");
+
+        assertEquals(lineOf("changes.xml", "<changeSet"), changeSet.line());
+        assertEquals(lineOf("changes.xml", "<createIndex"), changeSet.sqlSources().get(0).line());
+    }
+
+    private int lineOf(String file, String marker) throws IOException {
+        List<String> lines = Files.readAllLines(changelogRoot.resolve(file));
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(marker)) {
+                return i + 1;
+            }
+        }
+        throw new AssertionError("no " + marker + " in " + file);
+    }
+
+    /**
      * A {@code <sqlFile>} source and its rollback resolve to absolute paths.
      */
     @Test
@@ -227,6 +258,38 @@ class ChangelogModelTest {
                 () -> ChangelogModel.changesets(changelogRoot, doctypeMaster));
         assertTrue(failure.getMessage().contains("doctype.xml"),
                 () -> "the failure should name the changelog: " + failure.getMessage());
+    }
+
+    /**
+     * {@code <includeAll>} is rejected rather than silently contributing no
+     * changesets and making a lint run pass.
+     */
+    @Test
+    void rejectsIncludeAll() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="changes/"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(failure.getMessage().contains("includeAll is not supported"));
+    }
+
+    /**
+     * A SQL reference that escapes the changelog root is rejected, matching the
+     * validator's containment policy instead of reading an arbitrary file.
+     */
+    @Test
+    void rejectsSqlReferenceEscapingTheChangelogRoot() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="a">
+                    <sqlFile path="../outside.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(failure.getMessage().contains("escapes the changelog root"));
     }
 
     /**

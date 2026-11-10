@@ -125,6 +125,7 @@ public abstract class ChangelogLinterContract {
         Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), config);
 
         List<ChangeSet> changeSets = ChangelogModel.changesets(changelogRoot(), master());
+        assertFalse(changeSets.isEmpty(), "the changelog graph should contain at least one changeset");
         List<Finding> findings = linter.lint(changeSets);
         Whitelist.Report report = Whitelist.load(whitelistFile()).apply(findings);
 

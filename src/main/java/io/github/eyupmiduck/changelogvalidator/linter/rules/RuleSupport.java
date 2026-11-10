@@ -4,9 +4,13 @@ import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
+import io.github.eyupmiduck.changelogvalidator.linter.model.SqlModification;
+import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenClassifier.Family;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -21,6 +25,56 @@ import java.util.Locale;
 final class RuleSupport {
 
     private RuleSupport() {
+    }
+
+    /**
+     * Returns whether a changeset's {@code dbms} filter can run on PostgreSQL.
+     * An unset filter, {@code all}, and a list that includes PostgreSQL qualify;
+     * a filter that names only another database does not.
+     *
+     * @param changeSet the changeset
+     * @return {@code true} when the changeset can run on PostgreSQL
+     */
+    static boolean appliesToPostgres(ChangeSet changeSet) {
+        return SqlModification.appliesToPostgres(changeSet.dbms());
+    }
+
+    /**
+     * Returns whether a SQL source's {@code dbms} filter can run on PostgreSQL.
+     *
+     * @param unit the SQL unit
+     * @return {@code true} when the source can run on PostgreSQL
+     */
+    static boolean appliesToPostgres(SqlUnit unit) {
+        return SqlModification.appliesToPostgres(unit.source().dbms());
+    }
+
+    /**
+     * Returns the SQL units whose source-level {@code dbms} filter can run on
+     * PostgreSQL, preserving order.
+     *
+     * @param units the units
+     * @return the applicable units
+     */
+    static List<SqlUnit> applicableToPostgres(List<SqlUnit> units) {
+        return units.stream().filter(RuleSupport::appliesToPostgres).toList();
+    }
+
+    /**
+     * Returns whether a changeset has SQL that can run on PostgreSQL. A
+     * changeset with no SQL sources (for example one using only structured change
+     * types) is considered relevant, so rules that require a rollback still see
+     * it.
+     *
+     * @param changeSet the changeset
+     * @return {@code true} when the changeset has no sources or at least one
+     * PostgreSQL-applicable source
+     */
+    static boolean hasPostgresSource(ChangeSet changeSet) {
+        List<SqlSource> sources = new ArrayList<>(changeSet.sqlSources());
+        sources.addAll(changeSet.rollbackSources());
+        return sources.isEmpty() || sources.stream()
+                .anyMatch(source -> SqlModification.appliesToPostgres(source.dbms()));
     }
 
     /**

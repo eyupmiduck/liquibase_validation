@@ -31,6 +31,17 @@ class MavenVersionTest {
     }
 
     /**
+     * Numeric segments longer than a long compare without overflow, and leading
+     * zeros do not change the value.
+     */
+    @Test
+    void comparesArbitraryLengthNumericSegments() {
+        assertLess("99999999999999999999", "100000000000000000000");
+        assertEquals(0, MavenVersion.compare("0001.02", "1.2"));
+        assertLess("1.00000000000000000001", "1.00000000000000000002");
+    }
+
+    /**
      * A qualifier sorts below the release: a snapshot precedes its release.
      */
     @Test

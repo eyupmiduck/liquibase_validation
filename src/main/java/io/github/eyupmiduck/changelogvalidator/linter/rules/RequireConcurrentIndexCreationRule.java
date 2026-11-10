@@ -51,13 +51,18 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
 
     @Override
     public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
         // The same changeset may create a table in one direction and index it in
         // the other, so the exemption is computed over forward and rollback.
-        Set<String> created = new HashSet<>(ConcurrentIndexes.tablesCreatedIn(context.forward()));
-        created.addAll(ConcurrentIndexes.tablesCreatedIn(context.rollback()));
+        List<SqlUnit> forward = RuleSupport.applicableToPostgres(context.forward());
+        List<SqlUnit> rollback = RuleSupport.applicableToPostgres(context.rollback());
+        Set<String> created = new HashSet<>(ConcurrentIndexes.tablesCreatedIn(forward));
+        created.addAll(ConcurrentIndexes.tablesCreatedIn(rollback));
         List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), created, violations);
-        collect(context.rollback(), created, violations);
+        collect(forward, created, violations);
+        collect(rollback, created, violations);
         return List.copyOf(violations);
     }
 
