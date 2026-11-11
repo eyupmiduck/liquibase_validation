@@ -47,6 +47,18 @@ class TokenWordsTest {
     }
 
     /**
+     * An empty keyword sequence never matches, and a negative start is rejected
+     * rather than reaching an invalid list index.
+     */
+    @Test
+    void rejectsEmptyPrefixAndNegativeStart() {
+        List<Token> words = tokens("SELECT 1");
+
+        assertFalse(TokenWords.startsWith(words));
+        assertThrows(IllegalArgumentException.class, () -> TokenWords.indexOf(words, "SELECT", -1));
+    }
+
+    /**
      * {@code within} keeps only non-trivia tokens inside the offset range.
      */
     @Test

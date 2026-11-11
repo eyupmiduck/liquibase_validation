@@ -96,6 +96,80 @@ class ChangelogModelTest {
     }
 
     /**
+     * A prefixed Liquibase namespace is resolved by local element name rather
+     * than silently producing zero changesets.
+     */
+    @Test
+    void readsPrefixedNamespaceElements() throws IOException {
+        String prefix = """
+                <lb:databaseChangeLog xmlns:lb="http://www.liquibase.org/xml/ns/dbchangelog">
+                %s
+                </lb:databaseChangeLog>
+                """;
+        write("db.changelog-master.xml", prefix.formatted("""
+                <lb:include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        write("changes.xml", prefix.formatted("""
+                <lb:changeSet id="001-prefixed" author="a">
+                    <lb:sql>SELECT 1;</lb:sql>
+                </lb:changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(1, changesets.size());
+        assertEquals("001-prefixed", changesets.get(0).id());
+        assertEquals(1, changesets.get(0).sqlSources().size());
+    }
+
+    /**
+     * A diamond include is visited through both branches, matching Liquibase,
+     * rather than being dropped after the first encounter.
+     */
+    @Test
+    void visitsARepeatedIncludeInEveryBranch() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="a.xml" relativeToChangelogFile="true"/>
+                <include file="b.xml" relativeToChangelogFile="true"/>
+                """));
+        write("a.xml", ChangelogTestSupport.changelog("""
+                <include file="common.xml" relativeToChangelogFile="true"/>
+                """));
+        write("b.xml", ChangelogTestSupport.changelog("""
+                <include file="common.xml" relativeToChangelogFile="true"/>
+                """));
+        write("common.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="shared" author="a">
+                    <sql>SELECT 1;</sql>
+                </changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(2, changesets.size());
+        assertTrue(changesets.stream().allMatch(changeSet -> changeSet.id().equals("shared")));
+    }
+
+    /**
+     * A real include cycle is rejected instead of silently truncating the graph.
+     */
+    @Test
+    void rejectsACircularInclude() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="a.xml" relativeToChangelogFile="true"/>
+                """));
+        write("a.xml", ChangelogTestSupport.changelog("""
+                <include file="db.changelog-master.xml" relativeToChangelogFile="true"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class, () -> ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+        assertTrue(failure.getMessage().contains("circular"));
+    }
+
+    /**
      * A changeset and its inline/structured source carry the line of their XML
      * element.
      */

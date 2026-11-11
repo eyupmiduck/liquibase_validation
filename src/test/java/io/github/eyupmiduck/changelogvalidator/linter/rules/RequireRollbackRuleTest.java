@@ -68,6 +68,22 @@ class RequireRollbackRuleTest {
     }
 
     /**
+     * Only the sources PostgreSQL actually runs decide whether a runOnChange
+     * changeset is a routine body, so a routine plus another database's SQL is
+     * still exempt.
+     */
+    @Test
+    void exemptsRoutineBodiesAlongsideOtherDatabaseSources() {
+        SqlUnit routine = RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, "CREATE FUNCTION f() RETURNS void AS $$ $$");
+        SqlUnit oracle = RuleTestSupport.unit("CREATE TABLE t (c int);", "oracle");
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true,
+                null, null, null, List.of(routine.source(), oracle.source()), false, List.of());
+
+        assertTrue(new RequireRollbackRule()
+                .check(new RuleContext(changeSet, List.of(routine, oracle), List.of())).isEmpty());
+    }
+
+    /**
      * A changeset or source scoped to another database does not need a rollback
      * on the PostgreSQL target.
      */

@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
@@ -45,19 +46,38 @@ public final class BlockRawAlterTableRule implements Rule {
     }
 
     /**
+     * Returns the index of the table identifier, skipping the optional
+     * {@code IF EXISTS} and {@code ONLY} prefixes.
+     */
+    private static int tableNameStart(List<Token> tokens) {
+        int start = 2;
+        if (start + 1 < tokens.size()
+                && tokens.get(start).matchesKeyword("IF")
+                && tokens.get(start + 1).matchesKeyword("EXISTS")) {
+            start += 2;
+        }
+        if (start < tokens.size() && tokens.get(start).matchesKeyword("ONLY")) {
+            start++;
+        }
+        return start;
+    }
+
+    /**
      * Suggests the wrapper for the first recognized clause, or a generic pointer.
      * An {@code ADD CONSTRAINT <name>} clause is matched by its trailing keyword,
      * because the constraint name sits between {@code CONSTRAINT} and the kind.
      */
     private static String wrapperHint(List<Token> tokens) {
-        if (hasClause(tokens, "RENAME", "COLUMN")) {
+        int rename = TokenWords.indexOf(tokens, "RENAME", 2);
+        if (rename >= 0 && rename + 1 < tokens.size()) {
+            Token next = tokens.get(rename + 1);
+            if (next.matchesKeyword("TO")) {
+                return "use ddl_utils.rename_table";
+            }
+            if (next.matchesKeyword("CONSTRAINT")) {
+                return "use ddl_utils.rename_constraint";
+            }
             return "use ddl_utils.rename_column";
-        }
-        if (hasClause(tokens, "RENAME", "CONSTRAINT")) {
-            return "use ddl_utils.rename_constraint";
-        }
-        if (hasClause(tokens, "RENAME", "TO")) {
-            return "use ddl_utils.rename_table";
         }
         if (hasClause(tokens, "DROP", "NOT", "NULL")) {
             return "use ddl_utils.drop_not_null";
@@ -65,19 +85,22 @@ public final class BlockRawAlterTableRule implements Rule {
         if (hasClause(tokens, "SET", "NOT", "NULL")) {
             return "use ddl_utils.ensure_not_null";
         }
-        if (hasClause(tokens, "FOREIGN", "KEY") || hasClause(tokens, "ADD", "FOREIGN")) {
-            return "use ddl_utils.add_foreign_key or ddl_utils.ensure_foreign_key";
-        }
-        if (hasClause(tokens, "CHECK")) {
-            return "use ddl_utils.add_check_constraint or ddl_utils.ensure_check_constraint";
-        }
         if (hasClause(tokens, "DROP", "COLUMN")) {
             return "use ddl_utils.drop_column or ddl_utils.drop_columns";
         }
         if (hasClause(tokens, "DROP", "CONSTRAINT")) {
             return "use ddl_utils.drop_constraint";
         }
+        if (hasClause(tokens, "ALTER", "COLUMN")) {
+            return "use the matching ddl_utils column helper (for example ddl_utils.set_column_default)";
+        }
+        if (hasClause(tokens, "FOREIGN", "KEY") || hasClause(tokens, "ADD", "FOREIGN")) {
+            return "use ddl_utils.add_foreign_key or ddl_utils.ensure_foreign_key";
+        }
         if (hasClause(tokens, "ADD", "CONSTRAINT")) {
+            if (hasClause(tokens, "CHECK")) {
+                return "use ddl_utils.add_check_constraint or ddl_utils.ensure_check_constraint";
+            }
             if (hasClause(tokens, "PRIMARY", "KEY")) {
                 return "use ddl_utils.add_primary_key_using_index";
             }
@@ -86,11 +109,11 @@ public final class BlockRawAlterTableRule implements Rule {
             }
             return "use the matching ddl_utils constraint helper";
         }
+        if (hasClause(tokens, "ADD", "CHECK")) {
+            return "use ddl_utils.add_check_constraint or ddl_utils.ensure_check_constraint";
+        }
         if (hasClause(tokens, "ADD")) {
             return "use ddl_utils.add_column or ddl_utils.add_columns";
-        }
-        if (hasClause(tokens, "ALTER", "COLUMN")) {
-            return "use the matching ddl_utils column helper (for example ddl_utils.set_column_default)";
         }
         return "use the matching ddl_utils function/procedure (see the ddl_utils schema)";
     }
@@ -144,7 +167,7 @@ public final class BlockRawAlterTableRule implements Rule {
                     continue;
                 }
                 Token token = RuleSupport.firstToken(unit, statement);
-                String table = RuleSupport.qualifiedName(tokens, 2);
+                String table = RuleSupport.qualifiedName(tokens, tableNameStart(tokens));
                 String hint = wrapperHint(tokens);
                 violations.add(new Violation(
                         "ALTER TABLE",

@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
 import java.util.List;
@@ -32,8 +33,11 @@ public final class RequireRollbackRule implements Rule {
     public static final String ID = "changeset-rollback-required";
 
     private static boolean isRoutineBody(RuleContext context) {
-        return !context.forward().isEmpty()
-                && context.forward().stream().allMatch(unit -> unit.source().kind() == SqlSource.Kind.ROUTINE_BODY);
+        // A changeset can mix sources for different databases; only the ones
+        // PostgreSQL runs determine whether the body is a routine.
+        List<SqlUnit> applicable = RuleSupport.applicableToPostgres(context.forward());
+        return !applicable.isEmpty()
+                && applicable.stream().allMatch(unit -> unit.source().kind() == SqlSource.Kind.ROUTINE_BODY);
     }
 
     @Override

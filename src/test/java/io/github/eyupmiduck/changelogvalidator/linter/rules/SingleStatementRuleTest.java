@@ -55,6 +55,24 @@ class SingleStatementRuleTest {
     }
 
     /**
+     * Every offending unit is reported, not only the first, so whitelisting one
+     * family cannot hide another unit's forbidden statement.
+     */
+    @Test
+    void reportsEveryOffendingUnit() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(false, false, null, false),
+                RuleTestSupport.unit("CREATE INDEX CONCURRENTLY a ON t (c);"),
+                RuleTestSupport.unit("DROP DATABASE d;"));
+
+        List<Rule.Violation> violations = new SingleStatementRule().check(context);
+
+        assertEquals(2, violations.size());
+        assertTrue(violations.stream().anyMatch(v -> v.statement().equals("CREATE INDEX CONCURRENTLY")));
+        assertTrue(violations.stream().anyMatch(v -> v.statement().equals("DROP DATABASE")));
+    }
+
+    /**
      * A non-transactional changeset with a single forbidden statement is fine.
      */
     @Test

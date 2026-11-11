@@ -92,7 +92,6 @@ public final class SingleStatementRule implements Rule {
                                 + statementCount + " statements)",
                         "Move each statement into its own changeset with runInTransaction=\"false\".",
                         unit.file(), token.line(), token.column()));
-                return;
             }
         }
     }

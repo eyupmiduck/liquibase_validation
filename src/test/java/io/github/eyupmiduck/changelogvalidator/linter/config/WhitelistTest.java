@@ -169,6 +169,10 @@ class WhitelistTest {
         assertThrows(IOException.class, () -> load("""
                 - reason: accepted
                 """));
+        assertThrows(IOException.class, () -> load("""
+                - rule:
+                  reason: accepted
+                """));
     }
 
     /**

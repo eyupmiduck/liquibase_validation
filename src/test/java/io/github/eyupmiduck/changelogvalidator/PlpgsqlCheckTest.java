@@ -40,9 +40,21 @@ class PlpgsqlCheckTest {
     }
 
     private static String baseTag() {
-        String image = System.getProperty(
-                PostgresTestBase.POSTGRES_IMAGE_PROPERTY, PostgresTestBase.DEFAULT_POSTGRES_IMAGE);
-        String tag = image.substring(image.lastIndexOf(':') + 1);
+        return baseTag(System.getProperty(
+                PostgresTestBase.POSTGRES_IMAGE_PROPERTY, PostgresTestBase.DEFAULT_POSTGRES_IMAGE));
+    }
+
+    /**
+     * Returns the version tag of an image reference such as {@code
+     * postgres:19rc1-alpine} or {@code postgres:19rc1-alpine@sha256:...}, with
+     * any variant suffix removed. A digest is not part of the tag.
+     */
+    static String baseTag(String image) {
+        int digest = image.indexOf('@');
+        String withoutDigest = digest < 0 ? image : image.substring(0, digest);
+        int slash = withoutDigest.lastIndexOf('/');
+        int colon = withoutDigest.lastIndexOf(':');
+        String tag = colon > slash ? withoutDigest.substring(colon + 1) : "latest";
         int suffix = tag.indexOf('-');
         return suffix < 0 ? tag : tag.substring(0, suffix);
     }
@@ -309,6 +321,12 @@ class PlpgsqlCheckTest {
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- just-a-string")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("- schemas: misspelled")));
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("not: [valid")));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("""
+                - message: {a: b}
+                """)));
+        assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("""
+                - message: [a]
+                """)));
     }
 
     /**
@@ -341,6 +359,18 @@ class PlpgsqlCheckTest {
     }
 
     /**
+     * The Debian base tag is derived from the image reference, including a
+     * digest-pinned one, and drops the Alpine variant suffix.
+     */
+    @Test
+    void derivesTheBaseTagFromADigestPinnedImage() {
+        assertEquals("17", baseTag("postgres:17-alpine"));
+        assertEquals("19rc1", baseTag(
+                "postgres:19rc1-alpine@sha256:0571e712ad11a80278d6850551ae50a224d1e27a0234bbdc7b39e8aed391f924"));
+        assertEquals("16", baseTag("postgres:16"));
+    }
+
+    /**
      * A null or empty schema collection is rejected up front, and a null
      * allow-list is rejected, rather than NPE-ing inside the query or reporting a
      * confusing stale-whitelist failure.
@@ -350,7 +380,14 @@ class PlpgsqlCheckTest {
         assertThrows(IllegalArgumentException.class, () -> PlpgsqlCheck.findFindings(null, List.of()));
         assertThrows(IllegalArgumentException.class,
                 () -> PlpgsqlCheck.findFindings(connection, List.of("missing_schema")));
+        assertThrows(IllegalArgumentException.class,
+                () -> PlpgsqlCheck.findFindings(connection, List.of(" ")));
+        assertThrows(IllegalArgumentException.class,
+                () -> PlpgsqlCheck.findFindings(connection, java.util.Arrays.asList((String) null)));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.findFindings(null, null));
         assertThrows(NullPointerException.class, () -> PlpgsqlCheck.check(null, List.of("public"), null));
+        assertThrows(NullPointerException.class,
+                () -> PlpgsqlCheck.check(connection, List.of("checked"),
+                        java.util.Arrays.asList((PlpgsqlCheck.AllowedFinding) null)));
     }
 }

@@ -4,6 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * The linter configuration, loaded from {@code .liquibase-linter.yml}.
@@ -22,12 +23,25 @@ import java.util.*;
 public record LinterConfig(String pgVersion, Severity failOn, List<String> exclude, List<String> include,
                            Map<String, RuleSettings> rules) {
 
+    private static final Pattern PG_VERSION = Pattern.compile("\\d+(?:\\.\\d+)*");
+
     /**
-     * Validates the configuration and copies its collections.
+     * Validates the required collections and copies them. A rule cannot be both
+     * excluded and included.
      */
     public LinterConfig {
-        exclude = List.copyOf(exclude);
-        include = List.copyOf(include);
+        Objects.requireNonNull(exclude, "exclude");
+        Objects.requireNonNull(include, "include");
+        Objects.requireNonNull(rules, "rules");
+        List<String> excluded = List.copyOf(exclude);
+        List<String> included = List.copyOf(include);
+        Set<String> overlap = new HashSet<>(excluded);
+        overlap.retainAll(included);
+        if (!overlap.isEmpty()) {
+            throw new IllegalArgumentException("rules cannot be both excluded and included: " + overlap);
+        }
+        exclude = excluded;
+        include = included;
         rules = Map.copyOf(rules);
     }
 
@@ -89,10 +103,20 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
         if (pgVersion == null || pgVersion.isBlank()) {
             return null;
         }
-        try {
-            return Integer.valueOf(pgVersion.strip().split("\\.")[0]);
-        } catch (NumberFormatException e) {
+        String normalized = pgVersion.strip();
+        if (!PG_VERSION.matcher(normalized).matches()) {
             throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
+        }
+        String major = normalized.substring(0, normalized.indexOf('.') < 0
+                ? normalized.length() : normalized.indexOf('.'));
+        try {
+            int value = Integer.parseInt(major);
+            if (value < 1) {
+                throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("invalid pgVersion: " + pgVersion, e);
         }
     }
 
@@ -113,7 +137,8 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * Per-rule settings.
      *
      * @param severity the severity override, or null to use the rule default
-     * @param options  free-form rule options
+     * @param options  free-form rule options, in declaration order; the map is a
+     *                 shallow unmodifiable copy
      */
     public record RuleSettings(Severity severity, Map<String, Object> options) {
 
@@ -122,7 +147,9 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
          */
         public RuleSettings {
             Objects.requireNonNull(options, "options");
-            options = Map.copyOf(options);
+            // Preserve the loader's insertion order while making the map
+            // unmodifiable; nested values remain shallow.
+            options = Collections.unmodifiableMap(new LinkedHashMap<>(options));
         }
     }
 }

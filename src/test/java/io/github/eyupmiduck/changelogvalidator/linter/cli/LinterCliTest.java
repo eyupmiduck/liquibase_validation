@@ -128,6 +128,19 @@ class LinterCliTest {
     }
 
     /**
+     * A value beginning with a dash is accepted unless it is a known option;
+     * the previous blanket rejection made such paths impossible.
+     */
+    @Test
+    void acceptsAValueBeginningWithDash() throws IOException {
+        Path root = changelog("clean", CLEAN);
+
+        Result result = run("--changelog-root", root.toString(), "--config", "-config.yml");
+
+        assertEquals(0, result.code());
+    }
+
+    /**
      * A configuration file can set {@code failOn: none}, matching the documented
      * threshold even though it is not a finding severity.
      */

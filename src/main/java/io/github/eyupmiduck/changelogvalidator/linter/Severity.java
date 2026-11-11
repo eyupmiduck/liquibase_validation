@@ -43,7 +43,7 @@ public enum Severity {
         try {
             return valueOf(value.strip().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("unknown severity: " + value, e);
+            throw new IllegalArgumentException("unknown severity: '" + value.strip() + "'", e);
         }
     }
 
@@ -53,6 +53,7 @@ public enum Severity {
      *
      * @param other the threshold severity
      * @return {@code true} when this severity is at least as severe
+     * @throws NullPointerException when {@code other} is null
      */
     public boolean atLeast(Severity other) {
         Objects.requireNonNull(other, "other");

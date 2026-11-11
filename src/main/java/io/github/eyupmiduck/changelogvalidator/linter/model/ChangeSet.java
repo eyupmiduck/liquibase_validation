@@ -55,7 +55,10 @@ public record ChangeSet(String id, String author, Path changelogFile, boolean ru
     }
 
     /**
-     * Creates a changeset with no SQL normalisation.
+     * Creates a changeset with no SQL normalisation and no reliable source
+     * location. The line is set to 1 and the normalisation to
+     * {@link Normalisation#none()}; callers that have XML line/property
+     * information should use the canonical constructor.
      *
      * @param id               the changeset id
      * @param author           the changeset author, or an empty string

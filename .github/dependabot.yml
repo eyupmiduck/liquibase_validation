@@ -2,8 +2,9 @@
 #
 # Minor and patch updates are grouped into a single PR per ecosystem to reduce
 # noise; major updates arrive as individual PRs so they get a real review.
-# The auto-merge workflow only queues the grouped minor/patch PRs, so a major
-# update always needs a manual merge.
+# The shared auto-merge workflow gates on dependabot/fetch-metadata's
+# update-type (not on this label or group name), so a major update still needs a
+# manual merge.
 version: 2
 updates:
   - package-ecosystem: maven
@@ -11,6 +12,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - dependencies
@@ -29,12 +32,17 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     labels:
       - dependencies
     commit-message:
       prefix: deps
     groups:
+      # GitHub Actions tags are semver-like (v1, v2-beta), which Dependabot
+      # resolves to a release level; a major tag therefore stays outside this
+      # group and gets its own PR, as the header comment promises.
       github-actions-minor-patch:
         patterns:
           - "*"

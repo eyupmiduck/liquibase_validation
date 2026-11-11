@@ -14,7 +14,9 @@ import java.util.regex.Pattern;
  * refreshed on every {@code UPDATE} regardless of the caller.
  *
  * <p>The catalog check ({@link #findViolations}) is structural: it verifies the
- * columns and that a suitable trigger exists. The behavioral probe
+ * columns and that a suitable unrestricted ({@code BEFORE UPDATE ... FOR EACH
+ * ROW}, with no {@code UPDATE OF} column list and no {@code WHEN} clause)
+ * trigger exists. The behavioral probe
  * ({@link #probeUpdate}) goes further and verifies on a real row that an
  * {@code UPDATE} refreshes {@code updated_at} and preserves {@code created_at},
  * rolling the change back afterwards.
@@ -72,7 +74,9 @@ public final class AuditColumnsCheck {
                         AND t.tgenabled IN ('O', 'A')
                         AND (t.tgtype & 1) <> 0
                         AND (t.tgtype & 2) <> 0
-                        AND (t.tgtype & 16) <> 0) AS update_triggers
+                        AND (t.tgtype & 16) <> 0
+                        AND t.tgattr = ''::int2vector
+                        AND t.tgqual IS NULL) AS update_triggers
             FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
             LEFT JOIN pg_catalog.pg_attribute a
@@ -164,6 +168,29 @@ public final class AuditColumnsCheck {
     }
 
     /**
+     * Returns whether the relation is a partitioned table. The probe's {@code
+     * ctid} lookup is only safe on an ordinary physical relation.
+     */
+    private static boolean isPartitioned(Connection connection, String schema, String table) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM pg_catalog.pg_class AS c
+                            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+                            WHERE n.nspname = ? AND c.relname = ? AND c.relkind = 'p'
+                        )
+                        """)) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getBoolean(1);
+            }
+        }
+    }
+
+    /**
      * Probes a table's audit columns on a real row: it updates one row's
      * {@code updated_at} to a sentinel in the past and reads the result back,
      * so a working trigger overwrites the sentinel with the transaction
@@ -173,16 +200,22 @@ public final class AuditColumnsCheck {
      * <p>The probe manages the connection's transaction state: when the
      * connection is in autocommit mode it starts a transaction and rolls it
      * back, and otherwise it uses a savepoint, so a caller's in-flight
-     * transaction is never committed or discarded.
+     * transaction is never committed or discarded. Autocommit is restored only
+     * after a successful rollback; on rollback failure the connection is left
+     * in manual-commit mode rather than committing the probe's update.
      *
      * @param connection an open connection to the database
      * @param schema     the table's schema
      * @param table      the table to probe
-     * @return the probe result, or empty when the table has no rows to probe
+     * @return the probe result, or empty when the table has no rows to probe or
+     * is partitioned (where {@code ctid} is not a safe row identity)
      * @throws SQLException if the probe cannot run
      */
     public static Optional<Probe> probeUpdate(Connection connection, String schema, String table)
             throws SQLException {
+        if (isPartitioned(connection, schema, table)) {
+            return Optional.empty();
+        }
         String qualified = quoteIdentifier(schema) + "." + quoteIdentifier(table);
         boolean autoCommit = connection.getAutoCommit();
         Savepoint savepoint = null;
@@ -214,7 +247,9 @@ public final class AuditColumnsCheck {
                 update.setString(2, ctid);
                 try (ResultSet resultSet = update.executeQuery()) {
                     if (!resultSet.next()) {
-                        return Optional.empty();
+                        // The initial SELECT found a row, but a BEFORE UPDATE
+                        // trigger returned NULL and suppressed the update.
+                        return Optional.of(new Probe(schema, table, false, false));
                     }
                     afterCreatedAt = resultSet.getObject("created_at", OffsetDateTime.class);
                     afterUpdatedAt = resultSet.getObject("updated_at", OffsetDateTime.class);
@@ -231,11 +266,10 @@ public final class AuditColumnsCheck {
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
         } finally {
             if (autoCommit) {
-                try {
-                    connection.rollback();
-                } finally {
-                    connection.setAutoCommit(true);
-                }
+                connection.rollback();
+                // Changing to autocommit commits the current transaction, so do
+                // it only after the rollback has succeeded.
+                connection.setAutoCommit(true);
             } else if (savepoint != null) {
                 connection.rollback(savepoint);
                 // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release it so a

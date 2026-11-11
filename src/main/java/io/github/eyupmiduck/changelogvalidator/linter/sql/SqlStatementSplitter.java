@@ -19,19 +19,18 @@ import java.util.List;
  * <p>Defaults follow Liquibase: {@code splitStatements} is on and the
  * {@code endDelimiter} is {@code ;}. Comments and directives are removed from
  * the returned text by default so a rule cannot match a keyword that only
- * appears in a comment. Liquibase also splits on a {@code GO} at the end of a
- * line; that is a SQL Server idiom and is not implemented here.
+ * appears in a comment. A caller-supplied word delimiter such as {@code GO} is
+ * honored only when it is the last non-trivia token on its line.
  *
  * <p>Limitations: a custom delimiter must correspond to a single non-operator
  * token (for example {@code GO}); an operator delimiter such as {@code /} is not
  * supported because it would also split a division expression, and a
  * string/dollar-quote delimiter such as {@code $$} is not supported because the
  * lexer treats it as one opaque string token. A statement begins
- * at its first non-trivia token; a delimited statement ends at the delimiter and
- * a final statement at its last non-trivia token, so leading trivia is never part
- * of the text and the statement offsets are those of the first and last
- * non-trivia tokens, not of the returned text. {@code splitStatements=false}
- * returns the whole input as one statement.
+ * at its first non-trivia token and ends at its last non-trivia token (before the
+ * delimiter), so leading and trailing trivia is never part of the offsets. The
+ * text is the span between those first and last non-trivia tokens.
+ * {@code splitStatements=false} returns the whole input as one statement.
  */
 public final class SqlStatementSplitter {
 
@@ -71,12 +70,14 @@ public final class SqlStatementSplitter {
                                            boolean stripComments) {
         String delimiter = endDelimiter == null ? DEFAULT_END_DELIMITER : endDelimiter.strip();
         List<SqlStatement> statements = new ArrayList<>();
+        List<Token> allTokens = SqlLexer.tokenize(sql);
         List<Token> current = new ArrayList<>();
         int start = -1;
         int lastEnd = -1;
-        for (Token token : SqlLexer.tokenize(sql)) {
-            if (splitStatements && isDelimiter(token, delimiter)) {
-                addIfNotEmpty(statements, sql, current, start, token.startOffset(), stripComments);
+        for (int index = 0; index < allTokens.size(); index++) {
+            Token token = allTokens.get(index);
+            if (splitStatements && isDelimiter(allTokens, index, delimiter)) {
+                addIfNotEmpty(statements, sql, current, start, lastEnd, stripComments);
                 current = new ArrayList<>();
                 start = -1;
                 lastEnd = -1;
@@ -98,14 +99,30 @@ public final class SqlStatementSplitter {
         return List.copyOf(statements);
     }
 
-    private static boolean isDelimiter(Token token, String delimiter) {
-        return !delimiter.isEmpty()
-                && !token.isTrivia()
-                && !token.isStringLiteral()
-                && token.type() != TokenType.QUOTED_IDENTIFIER
-                && token.type() != TokenType.OPERATOR
-                && token.type() != TokenType.ERROR
-                && token.text().equalsIgnoreCase(delimiter);
+    private static boolean isDelimiter(List<Token> tokens, int index, String delimiter) {
+        Token token = tokens.get(index);
+        if (delimiter.isEmpty()
+                || token.isTrivia()
+                || token.isStringLiteral()
+                || token.type() == TokenType.QUOTED_IDENTIFIER
+                || token.type() == TokenType.OPERATOR
+                || token.type() == TokenType.ERROR
+                || !token.text().equalsIgnoreCase(delimiter)) {
+            return false;
+        }
+        if (token.type() != TokenType.WORD) {
+            return true;
+        }
+        // Liquibase recognises a word delimiter such as GO only when it ends the
+        // line; an identifier with the same text inside a statement must not
+        // split it.
+        for (int next = index + 1; next < tokens.size(); next++) {
+            Token candidate = tokens.get(next);
+            if (!candidate.isTrivia()) {
+                return candidate.line() > token.line();
+            }
+        }
+        return true;
     }
 
     private static void addIfNotEmpty(List<SqlStatement> statements, String sql, List<Token> tokens,

@@ -40,6 +40,16 @@ class LinterConfigTest {
     }
 
     /**
+     * A rule cannot be both excluded and included, because the silent precedence
+     * would be surprising.
+     */
+    @Test
+    void rejectsExcludeIncludeOverlap() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new LinterConfig(null, Severity.ERROR, List.of("a"), List.of("a"), Map.of()));
+    }
+
+    /**
      * A non-numeric version is rejected with a message naming the setting, so a
      * typo cannot silently disable version gating.
      */
@@ -48,5 +58,16 @@ class LinterConfigTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> config("latest").postgresMajorVersion());
         assertEquals("invalid pgVersion: latest", error.getMessage());
+    }
+
+    /**
+     * Dot-only, negative and trailing-dot versions are rejected without an
+     * ArrayIndexOutOfBoundsException or a silently truncated major version.
+     */
+    @Test
+    void rejectsMalformedVersionShapes() {
+        for (String version : List.of(".", "..", "-5", "17.", "17..2")) {
+            assertThrows(IllegalArgumentException.class, () -> config(version).postgresMajorVersion(), version);
+        }
     }
 }

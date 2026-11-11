@@ -33,7 +33,10 @@ final class Json {
                 case '\b' -> json.append("\\b");
                 case '\f' -> json.append("\\f");
                 default -> {
-                    if (character < 0x20 || (Character.isSurrogate(character) && !isPairedSurrogate(value, i))) {
+                    if (character < 0x20
+                            || character == '\u2028'
+                            || character == '\u2029'
+                            || (Character.isSurrogate(character) && !isPairedSurrogate(value, i))) {
                         appendUnicode(json, character);
                     } else {
                         json.append(character);

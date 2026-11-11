@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.linter.config;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -30,15 +31,23 @@ public final class LinterConfigLoader {
      * @throws IOException if the file cannot be read
      */
     public static LinterConfig load(Path configFile) throws IOException {
-        if (!Files.exists(configFile)) {
+        if (Files.notExists(configFile)) {
             return LinterConfig.defaults();
         }
         try (Reader reader = Files.newBufferedReader(configFile)) {
-            Object loaded = YamlDocuments.safe().load(reader);
-            if (loaded == null) {
+            List<Object> documents = new ArrayList<>();
+            try {
+                YamlDocuments.safe().loadAll(reader).forEach(documents::add);
+            } catch (YAMLException e) {
+                throw new IllegalArgumentException("config is not valid YAML: " + configFile, e);
+            }
+            if (documents.isEmpty() || documents.get(0) == null) {
                 return LinterConfig.defaults();
             }
-            if (!(loaded instanceof Map<?, ?> map)) {
+            if (documents.size() > 1) {
+                throw new IllegalArgumentException("config must contain exactly one YAML document: " + configFile);
+            }
+            if (!(documents.get(0) instanceof Map<?, ?> map)) {
                 throw new IllegalArgumentException("config must be a mapping: " + configFile);
             }
             return parse(map);

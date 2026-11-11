@@ -41,8 +41,13 @@ public final class Linter {
         Objects.requireNonNull(config, "config");
         Set<String> known = new HashSet<>();
         for (Rule rule : rules) {
-            if (!known.add(rule.id())) {
-                throw new IllegalArgumentException("duplicate rule id: " + rule.id());
+            Objects.requireNonNull(rule, "rule");
+            String id = Objects.requireNonNull(rule.id(), "rule id");
+            if (!id.matches("[a-z][a-z0-9]*(?:-[a-z0-9]+)*")) {
+                throw new IllegalArgumentException("rule id must be lower-case kebab-case: " + id);
+            }
+            if (!known.add(id)) {
+                throw new IllegalArgumentException("duplicate rule id: " + id);
             }
         }
         for (String id : config.referencedRuleIds()) {
@@ -72,6 +77,9 @@ public final class Linter {
      * @throws IOException if a SQL file cannot be read
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
+        if (rules.stream().noneMatch(config::isEnabled)) {
+            return List.of();
+        }
         List<Finding> findings = new ArrayList<>();
         for (ChangeSet changeSet : changeSets) {
             RuleContext context = context(changeSet);
@@ -80,7 +88,9 @@ public final class Linter {
                     continue;
                 }
                 Severity severity = config.severityFor(rule);
-                for (Rule.Violation violation : rule.check(context)) {
+                List<Rule.Violation> violations = Objects.requireNonNull(rule.check(context),
+                        () -> "rule " + rule.id() + " returned null from check()");
+                for (Rule.Violation violation : violations) {
                     findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
                             violation.file(), violation.line(), violation.column(),
                             violation.statement(), violation.message(), violation.help()));

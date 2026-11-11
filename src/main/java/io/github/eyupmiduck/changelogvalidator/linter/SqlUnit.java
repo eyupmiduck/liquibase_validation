@@ -18,11 +18,16 @@ import java.util.Objects;
  * @param sql        the SQL text
  * @param tokens     the lexed tokens
  * @param statements the statements Liquibase would execute
+ * @param commands   the commands to analyse, computed once when the unit is
+ *                   created
  */
-public record SqlUnit(SqlSource source, Path file, String sql, List<Token> tokens, List<SqlStatement> statements) {
+public record SqlUnit(SqlSource source, Path file, String sql, List<Token> tokens, List<SqlStatement> statements,
+                      List<SqlStatement> commands) {
 
     /**
-     * Validates the unit's required components and copies its lists.
+     * Validates the unit's required components and copies its lists. When
+     * {@code commands} is null (the convenience constructor), it is derived from
+     * {@code statements} or by re-splitting an unsplit source.
      */
     public SqlUnit {
         Objects.requireNonNull(source, "source");
@@ -30,25 +35,26 @@ public record SqlUnit(SqlSource source, Path file, String sql, List<Token> token
         Objects.requireNonNull(sql, "sql");
         Objects.requireNonNull(tokens, "tokens");
         Objects.requireNonNull(statements, "statements");
+        if (commands == null) {
+            commands = source.splitStatements()
+                    ? statements
+                    : SqlStatementSplitter.split(sql, true, source.endDelimiter(), source.stripComments());
+        }
         tokens = List.copyOf(tokens);
         statements = List.copyOf(statements);
+        commands = List.copyOf(commands);
     }
 
     /**
-     * Returns the commands to inspect when Liquibase executes the source in one
-     * go. When {@code splitStatements} is true this is {@link #statements()};
-     * otherwise the source is re-split on its end delimiter (or {@code ;}) so
-     * rules can still see multiple commands. A delimiter the tokenizer cannot
-     * represent, such as {@code $$}, remains a single command and is documented
-     * as unsupported.
+     * Creates a unit and derives its command list.
      *
-     * @return the statements to analyse, in source order
+     * @param source     the model source
+     * @param file       the file the SQL came from
+     * @param sql        the SQL text
+     * @param tokens     the lexed tokens
+     * @param statements the statements Liquibase would execute
      */
-    public List<SqlStatement> commands() {
-        if (source.splitStatements()) {
-            return statements;
-        }
-        String delimiter = source.endDelimiter().isBlank() ? ";" : source.endDelimiter();
-        return SqlStatementSplitter.split(sql, true, delimiter, source.stripComments());
+    public SqlUnit(SqlSource source, Path file, String sql, List<Token> tokens, List<SqlStatement> statements) {
+        this(source, file, sql, tokens, statements, null);
     }
 }

@@ -1,7 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
 import io.github.eyupmiduck.changelogvalidator.ChangelogTestSupport;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -10,8 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies that {@link ChangelogModel} captures rollback structured changes,
@@ -52,6 +50,24 @@ class ChangelogModelRollbackAndRoutineTest {
     }
 
     /**
+     * A text-only {@code <rollback>DROP TABLE t;</rollback>} body is captured,
+     * not just nested rollback elements.
+     */
+    @Test
+    void capturesTextOnlyRollback() throws IOException {
+        ChangeSet changeSet = load("""
+                <changeSet id="001" author="a">
+                    <sql>CREATE TABLE t (c int);</sql>
+                    <rollback>DROP TABLE t;</rollback>
+                </changeSet>
+                """);
+
+        assertEquals(1, changeSet.rollbackSources().size());
+        assertEquals(SqlSource.Kind.INLINE_SQL, changeSet.rollbackSources().get(0).kind());
+        assertTrue(changeSet.rollbackSources().get(0).text().contains("DROP TABLE t"));
+    }
+
+    /**
      * A routine body given as element text (no {@code path}) is captured as an
      * inline routine source.
      */
@@ -68,6 +84,24 @@ class ChangelogModelRollbackAndRoutineTest {
         assertEquals(SqlSource.Kind.ROUTINE_BODY, source.kind());
         assertTrue(source.isInline());
         assertTrue(source.text().contains("PERFORM 1"));
+    }
+
+    /**
+     * A {@code <replace>} without a {@code with} attribute is rejected instead of
+     * silently becoming a replace-with-nothing.
+     */
+    @Test
+    void rejectsAReplaceWithoutWith() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> load("""
+                <changeSet id="001" author="a">
+                    <sql>SELECT DISTINCT 1;</sql>
+                    <modifySql>
+                        <replace replace="DISTINCT "/>
+                    </modifySql>
+                </changeSet>
+                """));
+
+        assertEquals("a REPLACE modification needs a with value", failure.getMessage());
     }
 
     /**

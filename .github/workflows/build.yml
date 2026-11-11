@@ -28,8 +28,14 @@ jobs:
         # The same matrix the consumers run, so the shared test support and the
         # project's own tests are exercised on every supported major, not only
         # the default. PostgreSQL 19 is a release candidate until its scheduled
-        # GA on 2026-11-19; the tag is explicit so the leg tests that pre-release.
-        postgres: [ "postgres:16-alpine", "postgres:17-alpine", "postgres:18-alpine", "postgres:19rc1-alpine" ]
+        # GA on 2026-11-19, so this leg is pinned by digest: RC tags are often
+        # re-pushed, and a moved tag would turn an unrelated PR red. Switch it
+        # to the GA tag (and drop the digest) once 19 is released.
+        postgres:
+          - "postgres:16-alpine"
+          - "postgres:17-alpine"
+          - "postgres:18-alpine"
+          - "postgres:19rc1-alpine@sha256:0571e712ad11a80278d6850551ae50a224d1e27a0234bbdc7b39e8aed391f924"
 
     steps:
       - name: Checkout
@@ -71,6 +77,7 @@ jobs:
     # than staying "expected" forever.
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require every PostgreSQL leg to pass
         run: |

@@ -61,14 +61,44 @@ class RequireRollbackParityRuleTest {
     }
 
     /**
-     * A missing rollback, a reference-only rollback and a routine body are not
-     * this rule's concern.
+     * A missing rollback, an empty rollback block, a reference-only rollback and a
+     * routine body are not this rule's concern.
      */
     @Test
     void ignoresMissingAndNonStatementRollbacks() {
         assertTrue(new RequireRollbackParityRule().check(context(false, "CREATE TABLE t (c int);")).isEmpty());
         assertTrue(new RequireRollbackParityRule()
                 .check(context(true, "CREATE TABLE t (c int);", "DROP TABLE t;")).isEmpty());
+    }
+
+    /**
+     * A defined rollback whose SQL is blank or comment-only reverses nothing and
+     * is reported rather than silently accepted.
+     */
+    @Test
+    void reportsARollbackWithNoExecutableStatement() {
+        List<Rule.Violation> violations = new RequireRollbackParityRule()
+                .check(context(true, "CREATE TABLE a (x int); CREATE TABLE b (x int);", " -- nothing here"));
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.get(0).message().contains("no executable statement"));
+    }
+
+    /**
+     * A routine body and a rollback scoped to another database are opaque, so
+     * they are not reported as a zero-statement rollback.
+     */
+    @Test
+    void ignoresOpaqueZeroStatementRollbacks() {
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(), true, List.of());
+        RuleContext routine = new RuleContext(changeSet, List.of(RuleTestSupport.unit("CREATE TABLE a (x int);")),
+                List.of(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, "CREATE FUNCTION f() RETURNS void AS $$ $$")));
+        assertTrue(new RequireRollbackParityRule().check(routine).isEmpty());
+
+        RuleContext oracle = new RuleContext(changeSet, List.of(RuleTestSupport.unit("CREATE TABLE a (x int);")),
+                List.of(RuleTestSupport.unit("DROP TABLE a;", "oracle")));
+        assertTrue(new RequireRollbackParityRule().check(oracle).isEmpty());
     }
 
     /**

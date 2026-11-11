@@ -92,6 +92,12 @@ class RequireConcurrentIndexCreationRuleTest {
                 .check(RuleTestSupport.context("CREATE TABLE public.t (c int); CREATE INDEX idx ON public.t (c);")).isEmpty());
         assertTrue(new RequireConcurrentIndexCreationRule()
                 .check(RuleTestSupport.context("CREATE UNLOGGED TABLE IF NOT EXISTS t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
+        // A qualified CREATE TABLE and an unqualified index (and the reverse) name
+        // the same table, so the fresh-schema exemption applies.
+        assertTrue(new RequireConcurrentIndexCreationRule()
+                .check(RuleTestSupport.context("CREATE TABLE public.t (c int); CREATE INDEX idx ON t (c);")).isEmpty());
+        assertTrue(new RequireConcurrentIndexCreationRule()
+                .check(RuleTestSupport.context("CREATE TABLE t (c int); CREATE INDEX idx ON public.t (c);")).isEmpty());
 
         assertEquals(1, new RequireConcurrentIndexCreationRule()
                 .check(RuleTestSupport.context("CREATE TABLE other (c int); CREATE INDEX idx ON t (c);")).size());
@@ -136,10 +142,11 @@ class RequireConcurrentIndexCreationRuleTest {
 
     /**
      * A trailing {@code CREATE INDEX} in an unsplit block is still detected, and
-     * a table created in the other direction exempts an index.
+     * a table created in the other direction does not exempt an index because
+     * the directions never run together.
      */
     @Test
-    void detectsIndexesInAnUnsplitBlockAndExemptsAcrossDirections() {
+    void detectsIndexesInAnUnsplitBlockAndDoesNotExemptAcrossDirections() {
         String sql = "CREATE TABLE other (c int); CREATE INDEX idx ON t (c);";
         SqlUnit unsplit = new SqlUnit(new SqlSource(SqlSource.Kind.INLINE_SQL, null, sql, true, ";", true, null),
                 FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql, false, ";", true));
@@ -152,8 +159,11 @@ class RequireConcurrentIndexCreationRuleTest {
         assertEquals(1, violations.size());
         assertTrue(violations.get(0).message().contains("blocks writes on t"));
 
+        assertEquals(1, new RequireConcurrentIndexCreationRule()
+                .check(RuleTestSupport.context("CREATE TABLE t (c int);", "CREATE INDEX idx ON t (c);")).size());
         assertTrue(new RequireConcurrentIndexCreationRule()
-                .check(RuleTestSupport.context("CREATE TABLE t (c int);", "CREATE INDEX idx ON t (c);")).isEmpty());
+                .check(RuleTestSupport.context("CREATE TABLE t (c int);", "CREATE TABLE t (c int); CREATE INDEX idx ON t (c);"))
+                .isEmpty());
     }
 
     /**

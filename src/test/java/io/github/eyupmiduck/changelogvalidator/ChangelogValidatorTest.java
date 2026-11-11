@@ -324,6 +324,43 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * {@code <includeAll>} is rejected instead of silently producing an
+     * incomplete changelog graph.
+     */
+    @Test
+    void rejectsIncludeAll() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="changes/"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertTrue(failure.getMessage().contains("includeAll is not supported"));
+    }
+
+    /**
+     * A symlink under the changelog root that points outside it is rejected, as
+     * the lexical containment check alone would allow it.
+     */
+    @Test
+    void rejectsSymlinkEscape() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path outside = Files.createDirectories(tempDir.resolve("outside"));
+        Files.writeString(outside.resolve("outside.xml"), ChangelogTestSupport.changelog(""));
+        Files.createSymbolicLink(changes.resolve("linked"), outside);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="linked/outside.xml" relativeToChangelogFile="true"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertTrue(failure.getMessage().contains("symlink"));
+    }
+
+    /**
      * A cycle of includes is traversed once and does not loop forever.
      */
     @Test

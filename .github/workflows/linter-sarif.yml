@@ -3,10 +3,13 @@ name: Linter SARIF
 # Demonstrates the changelog linter's SARIF output reaching GitHub code
 # scanning: it lints a sample changelog and uploads the SARIF document, so the
 # finding shows inline on the pull request. The sample deliberately contains a
-# finding, so the failing step is expected and advisory
-# (`continue-on-error`); the upload is the point of this workflow, the real
-# gate is `./mvnw verify` in the Build workflow. See the README's "Code
-# scanning" section.
+# finding, so the failing step is expected and advisory; the upload is the point
+# of this workflow, the real gate is `./mvnw verify` in the Build workflow. See
+# the README's "Code scanning" section.
+#
+# The build job runs PR-controlled code and therefore only gets contents: read.
+# The upload job gets security-events: write and does not check out or execute
+# the pull request.
 
 on:
   pull_request:
@@ -20,18 +23,18 @@ concurrency:
   group: linter-sarif-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  security-events: write
-
 jobs:
-  lint:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Java 25
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -59,14 +62,58 @@ jobs:
       - name: Lint the sample changelog (SARIF)
         # The findings are reported by the upload; `--fail-on none` keeps the
         # SARIF file for it and a clean exit.
+        env:
+          CLI_JAR: ${{ steps.cli.outputs.jar }}
         run: |
-          java -jar "${{ steps.cli.outputs.jar }}" \
+          java -jar "${CLI_JAR}" \
             --changelog-root src/test/resources/sarif \
             --master src/test/resources/sarif/sample-changelog.xml \
             --config src/test/resources/sarif/sample-changelog-linter.yml \
             --reporter sarif \
             --fail-on none \
             > linter.sarif
+
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linter-sarif
+          path: linter.sarif
+          retention-days: 1
+
+      # Shows how a finding fails a run without turning this demonstration into
+      # a blocking check on every pull request. Only exit code 1 (findings) is
+      # tolerated; usage/runtime errors (2) and an unexpectedly clean run fail.
+      - name: Fail on linter findings
+        env:
+          CLI_JAR: ${{ steps.cli.outputs.jar }}
+        run: |
+          set +e
+          java -jar "${CLI_JAR}" \
+            --changelog-root src/test/resources/sarif \
+            --master src/test/resources/sarif/sample-changelog.xml \
+            --config src/test/resources/sarif/sample-changelog-linter.yml \
+            --reporter tty \
+            --fail-on warning
+          status=$?
+          if [ "${status}" -eq 1 ]; then
+            exit 0
+          fi
+          echo "expected linter exit 1 for findings, got ${status}" >&2
+          exit 1
+
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Download SARIF artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linter-sarif
 
       - name: Upload SARIF to code scanning
         # A pull request from a fork gets a read-only GITHUB_TOKEN, so the
@@ -77,14 +124,25 @@ jobs:
         with:
           sarif_file: linter.sarif
 
-      # Shows how a finding fails a run without turning this demonstration into
-      # a blocking check on every pull request.
-      - name: Fail on linter findings
-        continue-on-error: true
+  # Branch protection on main requires a check named "lint". The security split
+  # moved the build and upload into separate jobs, so keep the required name on
+  # an aggregate job that only passes when both succeed.
+  lint:
+    name: lint
+    needs:
+      - build
+      - upload
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the linter build and SARIF upload to pass
         run: |
-          java -jar "${{ steps.cli.outputs.jar }}" \
-            --changelog-root src/test/resources/sarif \
-            --master src/test/resources/sarif/sample-changelog.xml \
-            --config src/test/resources/sarif/sample-changelog-linter.yml \
-            --reporter tty \
-            --fail-on warning
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "::error::the linter build did not pass: ${{ needs.build.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.upload.result }}" != "success" ]; then
+            echo "::error::the SARIF upload did not pass: ${{ needs.upload.result }}"
+            exit 1
+          fi

@@ -328,6 +328,20 @@ class SqlLexerTest {
     }
 
     /**
+     * A token must have a coherent offset span and one-based location.
+     */
+    @Test
+    void rejectsInvalidSpansAndLocations() {
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", -1, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 1, 0, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "xy", 0, 1, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 0, 1, 0, 1));
+        assertThrows(IllegalArgumentException.class, () -> new Token(TokenType.WORD, "x", 0, 1, 1, 0));
+        assertThrows(NullPointerException.class,
+                () -> new Token(TokenType.WORD, "x", 0, 1, 1, 1).matchesKeyword(null));
+    }
+
+    /**
      * Keyword matching is case-insensitive and only applies to bare words.
      */
     @Test
@@ -370,6 +384,35 @@ class SqlLexerTest {
         assertEquals("_", tokens.get(1).text());
         assertEquals("1", tokens.get(2).text());
         assertEquals("__0", tokens.get(3).text());
+    }
+
+    /**
+     * A line comment terminates at a bare carriage return as well as a newline.
+     */
+    @Test
+    void terminatesLineCommentsAtCarriageReturn() {
+        List<Token> tokens = SqlLexer.tokenize("-- note\rSELECT 1");
+
+        assertEquals(TokenType.LINE_COMMENT, tokens.get(0).type());
+        assertEquals("-- note", tokens.get(0).text());
+        assertTrue(tokens.stream().anyMatch(token -> token.matchesKeyword("SELECT")));
+    }
+
+    /**
+     * An operator run stops before a comment opener, so the comment remains
+     * trivia rather than being swallowed into an operator token.
+     */
+    @Test
+    void stopsOperatorsBeforeComments() {
+        List<Token> suffix = SqlLexer.tokenize("+/*comment*/1");
+        assertEquals(TokenType.OPERATOR, suffix.get(0).type());
+        assertEquals("+", suffix.get(0).text());
+        assertEquals(TokenType.BLOCK_COMMENT, suffix.get(1).type());
+
+        List<Token> line = SqlLexer.tokenize("/-- note\nSELECT 1");
+        assertEquals(TokenType.OPERATOR, line.get(0).type());
+        assertEquals("/", line.get(0).text());
+        assertEquals(TokenType.LINE_COMMENT, line.get(1).type());
     }
 
     /**

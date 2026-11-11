@@ -24,6 +24,22 @@ public record Token(TokenType type, String text, int startOffset, int endOffset,
     public Token {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(text, "text");
+        if (startOffset < 0) {
+            throw new IllegalArgumentException("startOffset must be non-negative, was " + startOffset);
+        }
+        if (endOffset < startOffset) {
+            throw new IllegalArgumentException(
+                    "endOffset (" + endOffset + ") must not precede startOffset (" + startOffset + ")");
+        }
+        if (text.length() != endOffset - startOffset) {
+            throw new IllegalArgumentException("text length must equal the offset span");
+        }
+        if (line < 1) {
+            throw new IllegalArgumentException("line must be one-based, was " + line);
+        }
+        if (column < 1) {
+            throw new IllegalArgumentException("column must be one-based, was " + column);
+        }
     }
 
     /**
@@ -52,6 +68,7 @@ public record Token(TokenType type, String text, int startOffset, int endOffset,
      * @return {@code true} when this is a {@link TokenType#WORD} with the given text
      */
     public boolean matchesKeyword(String keyword) {
+        Objects.requireNonNull(keyword, "keyword");
         return type == TokenType.WORD && text.equalsIgnoreCase(keyword);
     }
 }

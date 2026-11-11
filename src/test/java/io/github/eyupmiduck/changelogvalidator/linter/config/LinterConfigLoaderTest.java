@@ -119,6 +119,24 @@ class LinterConfigLoaderTest {
     }
 
     /**
+     * A multi-document YAML stream and duplicate keys are rejected instead of
+     * silently discarding configuration.
+     */
+    @Test
+    void rejectsMultipleDocumentsAndDuplicateKeys() {
+        assertThrows(IllegalArgumentException.class, () -> load("""
+                ---
+                failOn: error
+                ---
+                failOn: warning
+                """));
+        assertThrows(IllegalArgumentException.class, () -> load("""
+                failOn: error
+                failOn: warning
+                """));
+    }
+
+    /**
      * A rule entry that is only a mapping without a severity keeps the rule's
      * default severity and has no options.
      */

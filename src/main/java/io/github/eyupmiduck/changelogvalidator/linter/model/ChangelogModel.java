@@ -7,6 +7,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -70,43 +71,59 @@ public final class ChangelogModel {
      * the changesets that follow them and following includes where they appear.
      * Global properties are shared across the graph; local properties are copied
      * into the include chain so a child's local properties do not leak back to a
-     * parent or sibling. The visited set prevents an include cycle from looping.
+     * parent or sibling. Only the active include chain is tracked, so cycles are
+     * rejected while a legitimate repeated include in another branch is still
+     * visited.
      */
     private static void visit(Path root, Path changelogFile, Map<String, String> globals,
                               Map<String, String> inheritedLocals, List<ChangeSet> changesets,
-                              Set<Path> visited) throws IOException {
+                              Set<Path> active) throws IOException {
         Path normalized = changelogFile.toAbsolutePath().normalize();
-        if (!visited.add(normalized)) {
-            return;
+        if (active.contains(normalized)) {
+            throw new IOException("circular changelog include: " + normalized);
         }
-        Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
-        Document document = parse(normalized);
-        Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
-        for (Element child : childElements(document.getDocumentElement())) {
-            switch (child.getTagName()) {
-                case "property" -> addProperty(globals, locals, child);
-                case "include" -> {
-                    String file = child.getAttribute("file");
-                    if (file.isBlank()) {
-                        continue;
+        active.add(normalized);
+        try {
+            Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
+            Document document = parse(normalized);
+            Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
+            for (Element child : childElements(document.getDocumentElement())) {
+                switch (tagName(child)) {
+                    case "property" -> addProperty(globals, locals, child);
+                    case "include" -> {
+                        String file = child.getAttribute("file");
+                        if (file.isBlank()) {
+                            continue;
+                        }
+                        boolean relativeToChangelogFile =
+                                "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
+                        Path base = relativeToChangelogFile ? normalized.getParent() : root;
+                        visit(root, resolveWithin(root, base, file, "include"), globals, locals,
+                                changesets, active);
                     }
-                    boolean relativeToChangelogFile =
-                            "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
-                    Path base = relativeToChangelogFile ? normalized.getParent() : root;
-                    visit(root, resolveWithin(root, base, file, "include"), globals, locals,
-                            changesets, visited);
-                }
-                case "changeSet" -> changesets.add(changeSet(root, normalized, child, snapshot(globals, locals),
-                        lines));
-                case "includeAll" -> throw new IOException(
-                        "includeAll is not supported by the linter; list the included changelogs explicitly: "
-                                + child.getAttribute("path"));
-                default -> {
-                    // Other databaseChangeLog children (preConditions, ...) carry no
-                    // changeset or property this model needs.
+                    case "changeSet" -> changesets.add(changeSet(root, normalized, child,
+                            snapshot(globals, locals), lines));
+                    case "includeAll" -> throw new IOException(
+                            "includeAll is not supported by the linter; list the included changelogs explicitly: "
+                                    + child.getAttribute("path"));
+                    default -> {
+                        // Other databaseChangeLog children (preConditions, ...) carry no
+                        // changeset or property this model needs.
+                    }
                 }
             }
+        } finally {
+            active.remove(normalized);
         }
+    }
+
+    /**
+     * Returns the local element name, so a prefixed Liquibase namespace is handled
+     * the same as the default namespace.
+     */
+    private static String tagName(Element element) {
+        String local = element.getLocalName();
+        return local == null ? element.getTagName() : local;
     }
 
     /**
@@ -170,12 +187,20 @@ public final class ChangelogModel {
         List<SqlModification> modifySql = new ArrayList<>();
         boolean rollbackDefined = false;
         for (Element child : childElements(element)) {
-            switch (child.getTagName()) {
+            switch (tagName(child)) {
                 case "rollback" -> {
                     rollbackDefined = true;
-                    for (Element rollbackChild : childElements(child)) {
-                        rollbackSources.addAll(sourcesFor(root, changelogFile, rollbackChild,
-                                lines.getOrDefault(rollbackChild, 1)));
+                    List<Element> rollbackChildren = childElements(child);
+                    if (rollbackChildren.isEmpty()) {
+                        String text = child.getTextContent();
+                        if (text != null && !text.isBlank()) {
+                            rollbackSources.add(inlineSql(text, lines.getOrDefault(child, 1)));
+                        }
+                    } else {
+                        for (Element rollbackChild : rollbackChildren) {
+                            rollbackSources.addAll(sourcesFor(root, changelogFile, rollbackChild,
+                                    lines.getOrDefault(rollbackChild, 1)));
+                        }
                     }
                 }
                 case "modifySql" -> modifySql.addAll(modifications(child));
@@ -221,7 +246,7 @@ public final class ChangelogModel {
         boolean applyToRollback = booleanAttribute(modifySql, "applyToRollback", false);
         List<SqlModification> modifications = new ArrayList<>();
         for (Element child : childElements(modifySql)) {
-            SqlModification.Kind kind = SqlModification.Kind.from(child.getTagName());
+            SqlModification.Kind kind = SqlModification.Kind.from(tagName(child));
             if (kind == null) {
                 continue;
             }
@@ -229,7 +254,7 @@ public final class ChangelogModel {
             String with = null;
             if (kind == SqlModification.Kind.REPLACE || kind == SqlModification.Kind.REGEXP_REPLACE) {
                 value = child.getAttribute("replace");
-                with = child.getAttribute("with");
+                with = child.hasAttribute("with") ? child.getAttribute("with") : null;
             } else {
                 value = child.getAttribute("value");
             }
@@ -246,7 +271,7 @@ public final class ChangelogModel {
     }
 
     private static String structuredSql(Element change) {
-        return switch (change.getTagName()) {
+        return switch (tagName(change)) {
             case "createTable" -> createTableSql(change);
             case "createIndex" -> createIndexSql(change);
             case "dropIndex" -> dropIndexSql(change);
@@ -262,7 +287,7 @@ public final class ChangelogModel {
         }
         List<String> columns = new ArrayList<>();
         for (Element column : childElements(change)) {
-            if (!"column".equals(column.getTagName()) || column.getAttribute("name").isBlank()) {
+            if (!"column".equals(tagName(column)) || column.getAttribute("name").isBlank()) {
                 continue;
             }
             String type = column.getAttribute("type");
@@ -282,7 +307,7 @@ public final class ChangelogModel {
         }
         List<String> columns = new ArrayList<>();
         for (Element column : childElements(change)) {
-            if ("column".equals(column.getTagName()) && !column.getAttribute("name").isBlank()) {
+            if ("column".equals(tagName(column)) && !column.getAttribute("name").isBlank()) {
                 columns.add(column.getAttribute("name"));
             }
         }
@@ -305,7 +330,7 @@ public final class ChangelogModel {
 
     private static List<SqlSource> sqlSources(Path root, Path changelogFile, Element element, int line)
             throws IOException {
-        return switch (element.getTagName()) {
+        return switch (tagName(element)) {
             case "sql" -> List.of(new SqlSource(
                     SqlSource.Kind.INLINE_SQL,
                     null,
@@ -381,6 +406,13 @@ public final class ChangelogModel {
         Path resolved = base.resolve(reference).normalize();
         if (!resolved.startsWith(root)) {
             throw new IOException(kind + " escapes the changelog root: " + reference);
+        }
+        if (Files.exists(resolved)) {
+            Path realRoot = root.toRealPath();
+            Path realResolved = resolved.toRealPath();
+            if (!realResolved.startsWith(realRoot)) {
+                throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
+            }
         }
         return resolved;
     }

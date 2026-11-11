@@ -34,6 +34,10 @@ import java.util.Set;
  */
 public final class LinterCli {
 
+    private static final java.util.Set<String> OPTION_NAMES = java.util.Set.of(
+            "-r", "--changelog-root", "-m", "--master", "-c", "--config", "-w", "--whitelist",
+            "--reporter", "--fail-on", "-h", "--help");
+
     private static final String USAGE = """
             Usage: liquibase-linter --changelog-root DIR [options]
             
@@ -56,7 +60,12 @@ public final class LinterCli {
      * @param args the command-line arguments
      */
     public static void main(String[] args) {
-        System.exit(run(args, System.out, System.err));
+        int code = run(args, System.out, System.err);
+        // JSON/SARIF reporters do not end with a newline, so auto-flush does not
+        // fire; flush explicitly before System.exit discards buffered output.
+        System.out.flush();
+        System.err.flush();
+        System.exit(code);
     }
 
     /**
@@ -128,9 +137,17 @@ public final class LinterCli {
             Severity failOn = null;
             boolean ignoreFailures = false;
             boolean help = false;
+            boolean endOfOptions = false;
             Set<String> seen = new HashSet<>();
             for (int i = 0; i < args.length; i++) {
                 String argument = args[i];
+                if (endOfOptions) {
+                    throw new IllegalArgumentException("unexpected argument after --: " + argument);
+                }
+                if ("--".equals(argument)) {
+                    endOfOptions = true;
+                    continue;
+                }
                 switch (argument) {
                     case "-r", "--changelog-root" -> {
                         mark(seen, "changelog-root", argument);
@@ -185,7 +202,7 @@ public final class LinterCli {
                 throw new IllegalArgumentException("missing value for " + option);
             }
             String value = args[index];
-            if (value.startsWith("-")) {
+            if (OPTION_NAMES.contains(value)) {
                 throw new IllegalArgumentException("missing value for " + option + ": " + value + " is an option");
             }
             return value;
