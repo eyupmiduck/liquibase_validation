@@ -89,8 +89,8 @@ class DynamicSqlRuleTest {
     @Test
     void reportsLexerCompatiblePositions() {
         Rule.Violation carriageReturn = new DynamicSqlRule().check(context(RuleTestSupport.unit(
-                SqlSource.Kind.ROUTINE_BODY,
-                "CREATE FUNCTION f() RETURNS void AS $$\rBEGIN\r  EXECUTE 'x';\rEND; $$ LANGUAGE plpgsql;")))
+                        SqlSource.Kind.ROUTINE_BODY,
+                        "CREATE FUNCTION f() RETURNS void AS $$\rBEGIN\r  EXECUTE 'x';\rEND; $$ LANGUAGE plpgsql;")))
                 .get(0);
         assertEquals(3, carriageReturn.line());
         assertEquals(3, carriageReturn.column());

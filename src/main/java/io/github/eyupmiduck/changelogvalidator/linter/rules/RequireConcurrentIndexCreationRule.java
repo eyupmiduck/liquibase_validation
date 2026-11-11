@@ -36,6 +36,29 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
      */
     public static final String ID = "require-concurrent-index-creation";
 
+    /**
+     * Returns whether {@code table} is one of the created tables, comparing the
+     * final name segment so a qualified and an unqualified reference to the same
+     * table match.
+     */
+    private static boolean isCreated(Set<String> created, String table) {
+        if (created.contains(table)) {
+            return true;
+        }
+        String simple = simpleName(table);
+        for (String candidate : created) {
+            if (simpleName(candidate).equals(simple)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String simpleName(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(dot + 1);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -79,28 +102,5 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
                     "Build the index with CREATE INDEX CONCURRENTLY in a runInTransaction=\"false\" changeset.",
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }
-    }
-
-    /**
-     * Returns whether {@code table} is one of the created tables, comparing the
-     * final name segment so a qualified and an unqualified reference to the same
-     * table match.
-     */
-    private static boolean isCreated(Set<String> created, String table) {
-        if (created.contains(table)) {
-            return true;
-        }
-        String simple = simpleName(table);
-        for (String candidate : created) {
-            if (simpleName(candidate).equals(simple)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String simpleName(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot < 0 ? name : name.substring(dot + 1);
     }
 }

@@ -111,7 +111,7 @@ final class RuleSupport {
      * @param tokens the tokens
      * @param start  the index of the first identifier; may be negative
      * @return the normalized qualified name, or null when {@code start} is out
-     *         of range or does not point at an identifier
+     * of range or does not point at an identifier
      */
     static String qualifiedName(List<Token> tokens, int start) {
         if (start < 0 || start >= tokens.size()) {
@@ -154,7 +154,7 @@ final class RuleSupport {
      * @param unit      the SQL unit
      * @param statement the statement
      * @return the first token in the span, or the unit's first non-trivia token
-     *         as a fallback
+     * as a fallback
      * @throws IllegalStateException when the unit has no non-trivia token, so no
      *                               location can be produced
      */

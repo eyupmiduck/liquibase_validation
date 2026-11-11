@@ -31,27 +31,6 @@ class RulesTest {
         }
     }
 
-    @Test
-    void registersEveryRuleImplementationInThePackage() throws Exception {
-        Set<String> registered = Rules.all(null).stream()
-                .map(Rule::id)
-                .collect(Collectors.toSet());
-        assertFalse(registered.isEmpty());
-
-        List<String> missing = new ArrayList<>();
-        int implementations = 0;
-        for (Class<?> type : ruleClasses()) {
-            Rule rule = instantiate(type);
-            implementations++;
-            if (!registered.contains(rule.id())) {
-                missing.add(type.getSimpleName() + " (" + rule.id() + ")");
-            }
-        }
-
-        assertFalse(implementations == 0, "no rule implementations found to check");
-        assertTrue(missing.isEmpty(), () -> "rules missing from Rules.all(): " + missing);
-    }
-
     private static List<Class<?>> ruleClasses() throws Exception {
         Package rulePackage = Rules.class.getPackage();
         Path directory = Path.of(Rules.class.getProtectionDomain().getCodeSource().getLocation().toURI())
@@ -73,5 +52,26 @@ class RulesTest {
             }
         }
         return classes;
+    }
+
+    @Test
+    void registersEveryRuleImplementationInThePackage() throws Exception {
+        Set<String> registered = Rules.all(null).stream()
+                .map(Rule::id)
+                .collect(Collectors.toSet());
+        assertFalse(registered.isEmpty());
+
+        List<String> missing = new ArrayList<>();
+        int implementations = 0;
+        for (Class<?> type : ruleClasses()) {
+            Rule rule = instantiate(type);
+            implementations++;
+            if (!registered.contains(rule.id())) {
+                missing.add(type.getSimpleName() + " (" + rule.id() + ")");
+            }
+        }
+
+        assertFalse(implementations == 0, "no rule implementations found to check");
+        assertTrue(missing.isEmpty(), () -> "rules missing from Rules.all(): " + missing);
     }
 }

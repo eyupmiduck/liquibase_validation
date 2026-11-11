@@ -207,6 +207,19 @@ public final class Whitelist {
             return value == null ? "*" : value;
         }
 
+        private static String normalizePath(String path) {
+            String normalized = path.replace('\\', '/');
+            while (normalized.startsWith("./")) {
+                normalized = normalized.substring(2);
+            }
+            while (normalized.endsWith("/") && !normalized.isEmpty()) {
+                normalized = normalized.substring(0, normalized.length() - 1);
+            }
+            // Compare case-insensitively so a path that differs only in case (a
+            // case-insensitive filesystem) is not reported as a stale entry.
+            return normalized.toLowerCase(Locale.ROOT);
+        }
+
         /**
          * Returns whether this entry accepts the given finding.
          *
@@ -227,19 +240,6 @@ public final class Whitelist {
             String candidate = normalizePath(actual.toString());
             String expected = normalizePath(file);
             return !expected.isEmpty() && (candidate.equals(expected) || candidate.endsWith("/" + expected));
-        }
-
-        private static String normalizePath(String path) {
-            String normalized = path.replace('\\', '/');
-            while (normalized.startsWith("./")) {
-                normalized = normalized.substring(2);
-            }
-            while (normalized.endsWith("/") && !normalized.isEmpty()) {
-                normalized = normalized.substring(0, normalized.length() - 1);
-            }
-            // Compare case-insensitively so a path that differs only in case (a
-            // case-insensitive filesystem) is not reported as a stale entry.
-            return normalized.toLowerCase(Locale.ROOT);
         }
 
         /**

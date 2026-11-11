@@ -208,7 +208,7 @@ public final class AuditColumnsCheck {
      * @param schema     the table's schema
      * @param table      the table to probe
      * @return the probe result, or empty when the table has no rows to probe or
-     *         is partitioned (where {@code ctid} is not a safe row identity)
+     * is partitioned (where {@code ctid} is not a safe row identity)
      * @throws SQLException if the probe cannot run
      */
     public static Optional<Probe> probeUpdate(Connection connection, String schema, String table)
