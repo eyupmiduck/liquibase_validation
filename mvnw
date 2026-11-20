@@ -149,13 +149,9 @@ exec_maven() {
   exec "$MAVEN_HOME/bin/$MVN_CMD" "$@" || die "cannot exec $MAVEN_HOME/bin/$MVN_CMD"
 }
 
-if [ -d "$MAVEN_HOME" ]; then
-  if [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
-    verbose "found existing MAVEN_HOME at $MAVEN_HOME"
-    exec_maven "$@"
-  fi
-  verbose "removing incomplete MAVEN_HOME at $MAVEN_HOME"
-  rm -rf -- "$MAVEN_HOME"
+if [ -d "$MAVEN_HOME" ] && [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
+  verbose "found existing MAVEN_HOME at $MAVEN_HOME"
+  exec_maven "$@"
 fi
 
 case "${distributionUrl-}" in
@@ -191,6 +187,14 @@ if ! mkdir -- "$LOCK_DIR" 2>/dev/null; then
     sleep 1
   done
   die "timed out waiting for another mvnw install to finish"
+fi
+
+# Only a process that holds the lock can see an incomplete MAVEN_HOME left by an
+# earlier failed install: a concurrent installer would still hold LOCK_DIR (or
+# have completed it), so deleting here cannot race another install.
+if [ -d "$MAVEN_HOME" ]; then
+  verbose "removing incomplete MAVEN_HOME at $MAVEN_HOME"
+  rm -rf -- "$MAVEN_HOME"
 fi
 
 # Download and Install Apache Maven
