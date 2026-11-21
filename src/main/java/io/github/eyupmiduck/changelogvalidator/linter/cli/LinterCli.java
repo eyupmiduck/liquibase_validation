@@ -34,7 +34,7 @@ import java.util.Set;
  */
 public final class LinterCli {
 
-    private static final java.util.Set<String> OPTION_NAMES = java.util.Set.of(
+    private static final Set<String> OPTION_NAMES = Set.of(
             "-r", "--changelog-root", "-m", "--master", "-c", "--config", "-w", "--whitelist",
             "--reporter", "--fail-on", "-h", "--help");
 
