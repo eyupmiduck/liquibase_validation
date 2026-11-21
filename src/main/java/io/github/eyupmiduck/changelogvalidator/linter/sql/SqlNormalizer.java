@@ -40,6 +40,16 @@ public final class SqlNormalizer {
      */
     private static final int MAX_SUBSTITUTED_LENGTH = 10_000_000;
 
+    /**
+     * Largest state remembered for cycle detection. A real circular reference
+     * manifests while the text is still small; memoising larger states would
+     * retain the sum of every intermediate state -- gigabytes for an expanding
+     * reference -- instead of the bounded per-state output limit. States above
+     * the cap are simply not remembered, and the pass limit still reports
+     * non-convergence.
+     */
+    private static final int CYCLE_CHECK_MAX_LENGTH = 4_096;
+
     private SqlNormalizer() {
     }
 
@@ -76,7 +86,7 @@ public final class SqlNormalizer {
         // A chain can visit each property at most once; a self-expanding value
         // changes the string forever, so the property count bounds the passes.
         for (int pass = 0; pass <= properties.size(); pass++) {
-            if (!seen.add(current)) {
+            if (current.length() <= CYCLE_CHECK_MAX_LENGTH && !seen.add(current)) {
                 throw new IllegalStateException(
                         "property substitution does not converge; check for a circular property reference");
             }
