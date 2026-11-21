@@ -162,9 +162,14 @@ esac
 # prepare tmp dir and an install lock
 if TMP_DOWNLOAD_DIR="$(mktemp -d)" && [ -d "$TMP_DOWNLOAD_DIR" ]; then
   LOCK_DIR="${MAVEN_HOME}.lock"
+  lock_acquired=false
   clean() {
     rm -rf -- "$TMP_DOWNLOAD_DIR"
-    rmdir -- "$LOCK_DIR" 2>/dev/null || :
+    # Only the owner may remove the lock: a waiter that times out or is
+    # interrupted must not delete the winner's (empty) lock directory.
+    if [ "$lock_acquired" = true ]; then
+      rmdir -- "$LOCK_DIR" 2>/dev/null || :
+    fi
   }
   trap clean HUP INT TERM EXIT
 else
@@ -188,6 +193,10 @@ if ! mkdir -- "$LOCK_DIR" 2>/dev/null; then
   done
   die "timed out waiting for another mvnw install to finish"
 fi
+
+# The wait loop above always ends in exec_maven or die, so reaching here means
+# this process created LOCK_DIR and may remove it in clean().
+lock_acquired=true
 
 # Only a process that holds the lock can see an incomplete MAVEN_HOME left by an
 # earlier failed install: a concurrent installer would still hold LOCK_DIR (or
