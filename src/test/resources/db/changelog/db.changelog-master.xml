@@ -4,6 +4,7 @@
         xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-5.0.xsd">
-    <!-- Keep this fixture on an exploded classpath; see ChangelogTestSupport. -->
+    <!-- Keep this fixture on an exploded classpath; see
+         io.github.eyupmiduck.changelogvalidator.testing.ChangelogTestSupport. -->
     <include file="changes/001-placeholder.xml" relativeToChangelogFile="true" errorIfMissing="true"/>
 </databaseChangeLog>
