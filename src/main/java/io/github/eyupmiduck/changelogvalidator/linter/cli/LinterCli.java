@@ -181,6 +181,8 @@ public final class LinterCli {
                             failOn = Severity.from(severity);
                         }
                     }
+                    // Repeating help is harmless; only value-taking options are
+                    // required to be unique.
                     case "-h", "--help" -> help = true;
                     default -> throw new IllegalArgumentException("unknown option: " + argument);
                 }
