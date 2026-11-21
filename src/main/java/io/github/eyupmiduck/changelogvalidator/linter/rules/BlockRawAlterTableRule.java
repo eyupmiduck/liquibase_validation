@@ -112,6 +112,12 @@ public final class BlockRawAlterTableRule implements Rule {
         if (hasClause(tokens, "ADD", "CHECK")) {
             return "use ddl_utils.add_check_constraint or ddl_utils.ensure_check_constraint";
         }
+        if (hasClause(tokens, "ADD", "PRIMARY", "KEY")) {
+            return "use ddl_utils.add_primary_key_using_index";
+        }
+        if (hasClause(tokens, "ADD", "UNIQUE")) {
+            return "use ddl_utils.add_unique_constraint_using_index";
+        }
         if (hasClause(tokens, "ADD")) {
             return "use ddl_utils.add_column or ddl_utils.add_columns";
         }

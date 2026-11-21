@@ -69,6 +69,10 @@ class BlockRawAlterTableRuleTest {
                 .get(0).message().contains("ddl_utils.add_primary_key_using_index"));
         assertTrue(check("ALTER TABLE t ADD CONSTRAINT uq UNIQUE (c);")
                 .get(0).message().contains("ddl_utils.add_unique_constraint_using_index"));
+        assertTrue(check("ALTER TABLE t ADD PRIMARY KEY (c);")
+                .get(0).message().contains("ddl_utils.add_primary_key_using_index"));
+        assertTrue(check("ALTER TABLE t ADD UNIQUE (c);")
+                .get(0).message().contains("ddl_utils.add_unique_constraint_using_index"));
         assertTrue(check("ALTER TABLE t SET (fillfactor = 70);").get(0).message().contains("matching ddl_utils"));
     }
 
