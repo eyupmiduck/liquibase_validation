@@ -163,8 +163,10 @@ esac
 if TMP_DOWNLOAD_DIR="$(mktemp -d)" && [ -d "$TMP_DOWNLOAD_DIR" ]; then
   LOCK_DIR="${MAVEN_HOME}.lock"
   lock_acquired=false
+  STAGING_DIR=''
   clean() {
     rm -rf -- "$TMP_DOWNLOAD_DIR"
+    [ -z "${STAGING_DIR-}" ] || rm -rf -- "$STAGING_DIR"
     # Only the owner may remove the lock: a waiter that times out or is
     # interrupted must not delete the winner's (empty) lock directory.
     if [ "$lock_acquired" = true ]; then
@@ -333,7 +335,37 @@ fi
 
 verbose "Found extracted Maven distribution directory: $actualDistributionDir"
 printf %s\\n "$distributionUrl" >"$TMP_DOWNLOAD_DIR/$actualDistributionDir/mvnw.url"
-mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$MAVEN_HOME" || [ -d "$MAVEN_HOME" ] || die "fail to move MAVEN_HOME"
+
+# Install atomically: stage the distribution on the destination filesystem and
+# finish with a rename. A cross-filesystem `mv` copies incrementally, so moving
+# straight into MAVEN_HOME can leave a half-populated tree that the reuse
+# fast-path (and a waiting wrapper) would accept as complete.
+STAGING_DIR="${MAVEN_HOME%/*}/.staging.$$"
+mkdir -- "$STAGING_DIR" 2>/dev/null || STAGING_DIR="$(mktemp -d "${MAVEN_HOME%/*}/.staging.XXXXXX")"
+if ! mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$STAGING_DIR/dist"; then
+  rm -rf -- "$STAGING_DIR" "$MAVEN_HOME"
+  STAGING_DIR=''
+  die "fail to stage MAVEN_HOME"
+fi
+if [ -e "$MAVEN_HOME" ]; then
+  # Another wrapper completed the install while this one waited. Keep a complete
+  # tree; replace an incomplete one explicitly (mv would move into a directory).
+  if [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
+    verbose "another mvnw completed the install; using $MAVEN_HOME"
+    rm -rf -- "$STAGING_DIR"
+    STAGING_DIR=''
+    clean || :
+    exec_maven "$@"
+  fi
+  rm -rf -- "$MAVEN_HOME"
+fi
+if ! mv -- "$STAGING_DIR/dist" "$MAVEN_HOME"; then
+  rm -rf -- "$STAGING_DIR" "$MAVEN_HOME"
+  STAGING_DIR=''
+  die "fail to move MAVEN_HOME"
+fi
+rmdir -- "$STAGING_DIR" 2>/dev/null || :
+STAGING_DIR=''
 
 clean || :
 exec_maven "$@"
