@@ -127,9 +127,10 @@ public final class ChangelogModel {
     }
 
     /**
-     * Maps each DOM element to the line of its start tag. The SAX parse and the
-     * DOM recursion both visit elements in document order, so each tag name's
-     * line queue supplies the matching element.
+     * Maps each DOM element to the line of its start tag (its closing line for a
+     * tag whose attributes wrap). The SAX parse and the DOM recursion both visit
+     * elements in document order, so each tag name's line queue supplies the
+     * matching element.
      */
     private static Map<Element, Integer> elementLines(Document document,
                                                       Map<String, Deque<Integer>> linesByTag) {

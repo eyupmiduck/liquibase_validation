@@ -66,8 +66,11 @@ public final class XmlDocuments {
     }
 
     /**
-     * Returns the one-based start-tag line of each element name, in document
-     * order. A namespace-prefixed name is keyed by its qualified name, matching
+     * Returns the line of each element's start tag, in document order. A SAX
+     * parser consumes the whole start tag before invoking the callback, so a
+     * single-line tag reports its (only) line and a tag whose attributes wrap
+     * over several lines reports the line of its closing {@code >}. A
+     * namespace-prefixed name is keyed by its qualified name, matching
      * {@link org.w3c.dom.Element#getTagName()}.
      *
      * @param documentFile the XML file
