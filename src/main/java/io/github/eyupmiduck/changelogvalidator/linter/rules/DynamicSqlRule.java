@@ -104,7 +104,13 @@ public final class DynamicSqlRule implements Rule {
                 bodies.add(new Body(body.text(), body.startOffset()));
             }
         }
-        return bodies.isEmpty() ? List.of(new Body(unit.sql(), 0)) : bodies;
+        // A declaration can hide dynamic SQL only in its AS bodies (a SQL-standard
+        // body cannot execute dynamic SQL at all), so the whole-unit fallback must
+        // not depend on whether an AS body was found. A bare body declares no
+        // routine and is scanned whole.
+        boolean declaration = tokens.stream()
+                .anyMatch(token -> token.matchesKeyword("FUNCTION") || token.matchesKeyword("PROCEDURE"));
+        return declaration ? bodies : List.of(new Body(unit.sql(), 0));
     }
 
     @Override

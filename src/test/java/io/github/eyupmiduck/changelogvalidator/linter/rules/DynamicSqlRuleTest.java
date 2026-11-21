@@ -112,6 +112,21 @@ class DynamicSqlRuleTest {
                 "CREATE FUNCTION execute() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
         assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
                 "CREATE FUNCTION f(execute int) RETURNS int AS $$ BEGIN RETURN $1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
+        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION execute() RETURNS int LANGUAGE sql RETURN 1;"))).isEmpty());
+    }
+
+    /**
+     * A bare routine body is scanned whole even when it contains an
+     * AS-introduced string, so dynamic SQL elsewhere in the body is reported.
+     */
+    @Test
+    void scansABareBodyWholeEvenWhenItContainsAnAsString() {
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "BEGIN SELECT 1 AS 'one'; EXECUTE format('DROP TABLE %I', 't'); END;")));
+
+        assertEquals(1, violations.size());
     }
 
     /**
