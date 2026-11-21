@@ -131,6 +131,11 @@ class LinterConfigLoaderTest {
                 failOn: warning
                 """));
         assertThrows(IllegalArgumentException.class, () -> load("""
+                ---
+                ---
+                failOn: warning
+                """));
+        assertThrows(IllegalArgumentException.class, () -> load("""
                 failOn: error
                 failOn: warning
                 """));
