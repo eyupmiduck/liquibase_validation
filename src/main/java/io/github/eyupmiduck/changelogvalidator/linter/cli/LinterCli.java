@@ -47,6 +47,7 @@ public final class LinterCli {
               -w, --whitelist FILE       accepted findings (default .liquibase-linter-whitelist.yml)
                   --reporter FORMAT      tty (default), json or sarif
                   --fail-on SEVERITY     error (default), warning, info or none
+                  --                 end of options; no operands are accepted
               -h, --help                 print this help
             
             """;
@@ -145,6 +146,8 @@ public final class LinterCli {
                     throw new IllegalArgumentException("unexpected argument after --: " + argument);
                 }
                 if ("--".equals(argument)) {
+                    // No operands are accepted: "--" only asserts that no more
+                    // options follow, and any later token is rejected above.
                     endOfOptions = true;
                     continue;
                 }
