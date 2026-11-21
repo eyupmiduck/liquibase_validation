@@ -116,8 +116,9 @@ The per-rule sections give an example of each.
 PostgreSQL rejects several statements inside a transaction block; running one in
 a changeset Liquibase wraps in a transaction fails at deploy time. This rule
 reports a transaction-forbidden statement (`CREATE [UNIQUE] INDEX CONCURRENTLY`,
-`DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `ALTER TABLE ... DETACH
-PARTITION ... CONCURRENTLY`, `VACUUM`, `CREATE`/`DROP DATABASE`, `ALTER SYSTEM`,
+`DROP INDEX CONCURRENTLY`, `REINDEX ... CONCURRENTLY`, `REINDEX
+SCHEMA`/`DATABASE`/`SYSTEM`, `ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY`,
+`VACUUM`, `CREATE`/`DROP DATABASE`, `CREATE`/`DROP TABLESPACE`, `ALTER SYSTEM`,
 and, before PostgreSQL 12, `ALTER TYPE ... ADD VALUE`) unless the changeset sets
 `runInTransaction="false"`. It checks forward and rollback SQL.
 
