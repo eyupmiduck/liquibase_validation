@@ -71,6 +71,16 @@ public final class SarifReporter implements Reporter {
         }
     }
 
+    /**
+     * Writes the SARIF v2.1.0 document.
+     *
+     * @param findings the findings
+     * @param out      the destination
+     * @throws IOException              if a finding URI cannot be resolved or
+     *                                  writing fails
+     * @throws IllegalArgumentException if one rule id is reported at two
+     *                                  different severities; no output is written
+     */
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         Map<String, Severity> ruleSeverities = new LinkedHashMap<>();
