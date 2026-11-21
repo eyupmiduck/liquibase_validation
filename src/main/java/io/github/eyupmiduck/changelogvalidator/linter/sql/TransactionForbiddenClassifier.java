@@ -89,7 +89,7 @@ public final class TransactionForbiddenClassifier {
         if (reindex.isPresent()) {
             return reindex;
         }
-        Optional<Family> detach = detachPartitionFamily(words);
+        Optional<Family> detach = detachPartitionFamily(statementTokens);
         if (detach.isPresent()) {
             return detach;
         }
@@ -151,25 +151,33 @@ public final class TransactionForbiddenClassifier {
     /**
      * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY} and
      * its {@code FINALIZE} variant, ignoring an object merely named
-     * {@code concurrently}.
+     * {@code concurrently}. The name is consumed as a qualified name (one token,
+     * or {@code schema.name}) so a quoted name is not mistaken for the option.
      */
-    private static Optional<Family> detachPartitionFamily(List<Token> words) {
-        if (!TokenWords.startsWith(words, "ALTER", "TABLE")) {
+    private static Optional<Family> detachPartitionFamily(List<Token> tokens) {
+        if (!TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
             return Optional.empty();
         }
-        for (int i = 2; i + 2 < words.size(); i++) {
-            if (words.get(i).matchesKeyword("DETACH") && words.get(i + 1).matchesKeyword("PARTITION")) {
-                if (i + 3 >= words.size()) {
-                    return Optional.empty();
-                }
-                if (words.get(i + 3).matchesKeyword("CONCURRENTLY")) {
-                    return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
-                }
-                if (words.get(i + 3).matchesKeyword("FINALIZE")) {
-                    return Optional.of(Family.DETACH_PARTITION_FINALIZE);
-                }
+        for (int i = 2; i + 2 < tokens.size(); i++) {
+            if (!tokens.get(i).matchesKeyword("DETACH") || !tokens.get(i + 1).matchesKeyword("PARTITION")) {
+                continue;
+            }
+            // Skip the partition name: a bare, quoted or schema-qualified name is
+            // one qualified_name, so its tokens must not be read as the option.
+            int next = i + 3;
+            if (next < tokens.size() && ".".equals(tokens.get(next).text())) {
+                next += 2;
+            }
+            if (next >= tokens.size()) {
                 return Optional.empty();
             }
+            if (tokens.get(next).matchesKeyword("CONCURRENTLY")) {
+                return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
+            }
+            if (tokens.get(next).matchesKeyword("FINALIZE")) {
+                return Optional.of(Family.DETACH_PARTITION_FINALIZE);
+            }
+            return Optional.empty();
         }
         return Optional.empty();
     }
