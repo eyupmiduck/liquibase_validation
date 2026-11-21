@@ -93,7 +93,7 @@ public final class ChangelogModel {
                     case "include" -> {
                         String file = child.getAttribute("file");
                         if (file.isBlank()) {
-                            continue;
+                            throw new IOException("include without a file attribute: " + normalized);
                         }
                         boolean relativeToChangelogFile =
                                 "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
@@ -375,7 +375,9 @@ public final class ChangelogModel {
                                               int line) throws IOException {
         String path = element.getAttribute("path");
         if (path.isBlank()) {
-            return List.of();
+            // fileSource is only reached for sqlFile (routineSource handles an inline
+            // body first), and Liquibase requires sqlFile/@path.
+            throw new IOException("sqlFile without a path attribute: " + changelogFile);
         }
         boolean relativeToChangelogFile = "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
         Path base = relativeToChangelogFile ? changelogFile.getParent() : root;

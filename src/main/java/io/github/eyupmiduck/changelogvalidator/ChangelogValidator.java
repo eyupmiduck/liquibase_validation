@@ -251,7 +251,7 @@ public final class ChangelogValidator {
                 Element include = (Element) includes.item(i);
                 String file = include.getAttribute("file");
                 if (file.isBlank()) {
-                    continue;
+                    throw new IOException("include without a file attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
@@ -295,7 +295,14 @@ public final class ChangelogValidator {
                 Element element = (Element) elements.item(i);
                 String path = element.getAttribute("path");
                 if (path.isBlank()) {
-                    continue;
+                    if (!"sqlFile".equals(elementName)) {
+                        // A routine body may be the element's inline text instead of a
+                        // path; only sqlFile requires the attribute.
+                        continue;
+                    }
+                    // Liquibase requires the path on sqlFile; a typo in the attribute
+                    // name must not drop the reference silently.
+                    throw new IOException(elementName + " without a path attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));

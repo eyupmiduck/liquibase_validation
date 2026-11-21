@@ -378,22 +378,50 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * Include and SQL reference elements without a path are ignored.
+     * An {@code <include>} or {@code <sqlFile>} without its required path
+     * attribute is rejected instead of being dropped from the graph, so an
+     * attribute-name typo cannot turn into silent under-validation.
      */
     @Test
-    void ignoresIncludesAndSqlFilesWithoutPath() throws IOException {
+    void rejectsIncludeAndSqlFileWithoutPath() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
         Files.writeString(master, ChangelogTestSupport.changelog("""
-                <include file="changes.xml" relativeToChangelogFile="true"/>
                 <include/>
                 """));
+
+        IOException includeFailure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertTrue(includeFailure.getMessage().contains("include without a file attribute"));
+
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile/>
+                </changeSet>
+                """));
+
+        IOException sqlFailure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertTrue(sqlFailure.getMessage().contains("sqlFile without a path attribute"));
+    }
+
+    /**
+     * A routine body given as the element's inline text (or an empty
+     * {@code <createProcedure/>}) carries no path and is not a broken reference.
+     */
+    @Test
+    void ignoresRoutineBodiesWithoutAPath() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("001-create.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
         Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
-                    <sqlFile/>
+                    <createProcedure>CREATE FUNCTION f() RETURNS integer LANGUAGE sql RETURN 1</createProcedure>
                     <createProcedure/>
                 </changeSet>
                 """));
