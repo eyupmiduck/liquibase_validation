@@ -372,7 +372,9 @@ public final class ChangelogModel {
                 SqlSource.Kind.ROUTINE_BODY,
                 null,
                 text,
-                booleanAttribute(element, "splitStatements", true),
+                // Liquibase executes a routine body as one statement and does not
+                // support splitStatements on these change types.
+                false,
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
                 optionalAttribute(element, "dbms"),
@@ -393,7 +395,10 @@ public final class ChangelogModel {
                 kind,
                 resolveWithin(root, base, path, "SQL file reference"),
                 null,
-                booleanAttribute(element, "splitStatements", true),
+                // Liquibase executes a routine body as one statement and does not
+                // support splitStatements on createProcedure/createFunction.
+                kind != SqlSource.Kind.ROUTINE_BODY
+                        && booleanAttribute(element, "splitStatements", true),
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
                 optionalAttribute(element, "dbms"),

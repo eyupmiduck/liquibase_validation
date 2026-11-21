@@ -11,10 +11,11 @@ import java.util.Objects;
  * <p>The split attributes are the effective values, following Liquibase:
  * {@code splitStatements} defaults to true, {@code endDelimiter} to {@code ;}
  * (an explicitly empty delimiter is preserved), and {@code stripComments} to
- * false. Liquibase's {@code stripComments} default is change-type dependent;
- * this model applies the {@code sql}/{@code sqlFile} default, so a
- * {@code createProcedure}/{@code createFunction} routine body inherits it too
- * (see ADR 0003).
+ * false. A routine body is never split, because Liquibase executes it as one
+ * statement and {@code createProcedure}/{@code createFunction} do not accept
+ * {@code splitStatements}. Liquibase's {@code stripComments} default is
+ * change-type dependent; this model applies the {@code sql}/{@code sqlFile}
+ * default, so a routine body inherits it too (see ADR 0003).
  *
  * @param kind            the source kind
  * @param path            the resolved file path for file kinds, otherwise null
