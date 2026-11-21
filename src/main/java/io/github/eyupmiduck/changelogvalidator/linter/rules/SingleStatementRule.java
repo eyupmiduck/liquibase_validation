@@ -9,7 +9,9 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenCl
 import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenClassifier.Classification;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Requires a non-transactional changeset that contains a statement PostgreSQL
@@ -81,8 +83,14 @@ public final class SingleStatementRule implements Rule {
         for (SqlUnit unit : applicable) {
             List<Classification> classifications = TransactionForbiddenClassifier.classify(
                     unit.tokens(), unit.commands(), pgVersion);
-            if (!classifications.isEmpty()) {
-                Classification classification = classifications.get(0);
+            Set<TransactionForbiddenClassifier.Family> reportedFamilies =
+                    EnumSet.noneOf(TransactionForbiddenClassifier.Family.class);
+            for (Classification classification : classifications) {
+                if (!reportedFamilies.add(classification.family())) {
+                    // Repeated statements of one family stay a single finding, so a
+                    // whitelisted family is still a complete suppression of that one.
+                    continue;
+                }
                 Token token = RuleSupport.firstToken(unit, classification.statement());
                 String statement = RuleSupport.display(classification.family());
                 violations.add(new Violation(

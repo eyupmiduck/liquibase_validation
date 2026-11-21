@@ -73,6 +73,20 @@ class SingleStatementRuleTest {
     }
 
     /**
+     * Two different forbidden families in one unsplit unit are both reported, so
+     * whitelisting one statement cannot hide the other.
+     */
+    @Test
+    void reportsEveryFamilyInOneUnit() {
+        List<Rule.Violation> violations = new SingleStatementRule().check(RuleTestSupport.context(false,
+                "CREATE INDEX CONCURRENTLY a ON t (c); VACUUM t;"));
+
+        assertEquals(2, violations.size());
+        assertTrue(violations.stream().anyMatch(v -> v.statement().equals("CREATE INDEX CONCURRENTLY")));
+        assertTrue(violations.stream().anyMatch(v -> v.statement().equals("VACUUM")));
+    }
+
+    /**
      * A non-transactional changeset with a single forbidden statement is fine.
      */
     @Test
