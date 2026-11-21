@@ -176,12 +176,13 @@ public final class TransactionForbiddenClassifier {
                 next += 2;
             }
             if (next >= tokens.size()) {
-                return Optional.empty();
+                // No room for a variant; a later DETACH action may still match.
+                continue;
             }
             if (tokens.get(next).matchesKeyword("CONCURRENTLY")) {
                 return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
             }
-            return Optional.empty();
+            // Not this action's variant: keep scanning for a later DETACH.
         }
         return Optional.empty();
     }

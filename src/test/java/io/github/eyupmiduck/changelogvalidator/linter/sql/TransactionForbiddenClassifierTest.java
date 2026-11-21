@@ -40,6 +40,8 @@ class TransactionForbiddenClassifierTest {
                         Family.DETACH_PARTITION_CONCURRENTLY),
                 Arguments.of("ALTER TABLE t DETACH PARTITION sch.p CONCURRENTLY;",
                         Family.DETACH_PARTITION_CONCURRENTLY),
+                Arguments.of("ALTER TABLE t DETACH PARTITION p1, DETACH PARTITION p2 CONCURRENTLY;",
+                        Family.DETACH_PARTITION_CONCURRENTLY),
                 Arguments.of("CREATE DATABASE d;", Family.CREATE_DATABASE),
                 Arguments.of("DROP DATABASE d;", Family.DROP_DATABASE),
                 Arguments.of("CREATE TABLESPACE ts LOCATION '/data/ts';", Family.CREATE_TABLESPACE),
