@@ -31,9 +31,9 @@ import java.util.regex.Pattern;
  * literal also triggers it, which is acceptable for an informational reminder.
  *
  * <p>The rule is opt-in (informational): dynamic SQL in a routine is normal, so
- * a project enables the rule when it wants the reminder. It only fires on
- * routine bodies; inline or file SQL has no dynamic string to hide statements
- * in.
+ * a project enables the rule when it wants the reminder. It deliberately covers
+ * only routine-body sources; a routine declared in inline or file SQL has the
+ * same blind spot (its body is one opaque string), but is out of scope.
  */
 public final class DynamicSqlRule implements Rule {
 
