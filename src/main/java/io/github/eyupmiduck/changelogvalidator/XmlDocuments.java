@@ -45,6 +45,9 @@ public final class XmlDocuments {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         try {
+            // Keep this feature list in step with startTagLines so the two entry
+            // points share one hardening policy.
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             // Reject a DOCTYPE outright; the external-entity flags are defence in
             // depth for a parser that accepts one despite the feature.
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -90,8 +93,9 @@ public final class XmlDocuments {
             // Element#getTagName().
             factory.setFeature("http://xml.org/sax/features/namespace-prefixes", true);
             TagLineHandler handler = new TagLineHandler();
+            // The factory's features apply to the reader it creates; setting them
+            // again on the reader would be redundant.
             XMLReader reader = factory.newSAXParser().getXMLReader();
-            reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
             reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             reader.setContentHandler(handler);
