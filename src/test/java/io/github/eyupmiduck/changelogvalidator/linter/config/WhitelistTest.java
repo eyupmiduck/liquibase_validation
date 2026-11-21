@@ -193,6 +193,30 @@ class WhitelistTest {
     }
 
     /**
+     * A {@code file} selector that names a directory can never match a finding,
+     * so it is rejected at load time instead of surfacing later as a stale entry.
+     */
+    @Test
+    void rejectsDirectoryShapedFileSelectors() {
+        assertThrows(IOException.class, () -> load("""
+                - file: /
+                  reason: accepted
+                """));
+        assertThrows(IOException.class, () -> load("""
+                - file: ./
+                  reason: accepted
+                """));
+        assertThrows(IOException.class, () -> load("""
+                - file: .
+                  reason: accepted
+                """));
+        assertThrows(IOException.class, () -> load("""
+                - file: db/
+                  reason: accepted
+                """));
+    }
+
+    /**
      * The file selector matches a path suffix case-insensitively, so a case
      * difference is not reported as a stale entry.
      */

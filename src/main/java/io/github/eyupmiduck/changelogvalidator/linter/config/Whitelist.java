@@ -114,7 +114,25 @@ public final class Whitelist {
             throw new IOException("linter whitelist entry " + index
                     + " must set at least one of rule, file, changeset or statement");
         }
+        requireFileSelector(index, entry.file());
         return entry;
+    }
+
+    /**
+     * Rejects a {@code file} selector that names a directory rather than a file:
+     * such a value can never match a finding, so it would surface as a
+     * misleading "stale whitelist entry" instead of a configuration error.
+     */
+    private static void requireFileSelector(int index, String file) throws IOException {
+        if (file == null) {
+            return;
+        }
+        String normalized = AllowedFinding.normalizePath(file);
+        if (normalized.isEmpty() || ".".equals(normalized) || "..".equals(normalized)
+                || file.endsWith("/") || file.endsWith("\\")) {
+            throw new IOException("linter whitelist entry " + index
+                    + " field file must name a file path, got: " + file);
+        }
     }
 
     private static String selector(int index, Map<?, ?> map, String key) throws IOException {
@@ -239,7 +257,7 @@ public final class Whitelist {
             }
             String candidate = normalizePath(actual.toString());
             String expected = normalizePath(file);
-            return !expected.isEmpty() && (candidate.equals(expected) || candidate.endsWith("/" + expected));
+            return candidate.equals(expected) || candidate.endsWith("/" + expected);
         }
 
         /**
