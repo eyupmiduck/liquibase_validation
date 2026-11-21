@@ -55,6 +55,10 @@ public final class PlpgsqlCheck {
                         SELECT tg.tgrelid AS relid
                         FROM pg_catalog.pg_trigger AS tg
                         WHERE tg.tgfoid = p.oid
+                          -- Internal rows are FK triggers and the clones propagated to
+                          -- each partition; the user-created parent row remains, so
+                          -- skipping them avoids re-analysing the body per partition.
+                          AND NOT tg.tgisinternal
                         UNION ALL
                         SELECT 0::oid
                         WHERE p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
