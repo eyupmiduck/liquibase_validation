@@ -224,6 +224,7 @@ public final class AuditColumnsCheck {
         } else {
             savepoint = connection.setSavepoint();
         }
+        SQLException failure = null;
         try {
             String ctid;
             OffsetDateTime createdAt;
@@ -264,17 +265,33 @@ public final class AuditColumnsCheck {
                     .compareTo(MAX_REFRESH_DRIFT) <= 0;
             boolean createdPreserved = createdAt != null && createdAt.equals(afterCreatedAt);
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
+        } catch (SQLException e) {
+            failure = e;
+            throw e;
         } finally {
-            if (autoCommit) {
-                connection.rollback();
-                // Changing to autocommit commits the current transaction, so do
-                // it only after the rollback has succeeded.
-                connection.setAutoCommit(true);
-            } else if (savepoint != null) {
-                connection.rollback(savepoint);
-                // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release it so a
-                // long-lived caller transaction does not accumulate savepoints.
-                connection.releaseSavepoint(savepoint);
+            try {
+                if (autoCommit) {
+                    connection.rollback();
+                    // Changing to autocommit commits the current transaction, so do
+                    // it only after the rollback has succeeded.
+                    connection.setAutoCommit(true);
+                } else if (savepoint != null) {
+                    try {
+                        connection.rollback(savepoint);
+                    } finally {
+                        // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release
+                        // it so a long-lived caller transaction does not accumulate
+                        // savepoints, even when the rollback itself failed.
+                        connection.releaseSavepoint(savepoint);
+                    }
+                }
+            } catch (SQLException cleanup) {
+                if (failure == null) {
+                    throw cleanup;
+                }
+                // The probe failure is the useful one; keep the cleanup failure as
+                // context instead of letting it replace the primary exception.
+                failure.addSuppressed(cleanup);
             }
         }
     }
