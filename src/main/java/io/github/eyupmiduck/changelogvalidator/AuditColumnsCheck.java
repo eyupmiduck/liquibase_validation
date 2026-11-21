@@ -352,10 +352,16 @@ public final class AuditColumnsCheck {
      * The result of {@link #probeUpdate}: whether an {@code UPDATE} refreshed
      * {@code updated_at} and preserved {@code created_at}.
      *
+     * <p>When a {@code BEFORE UPDATE} trigger suppresses the update, the
+     * post-update row is never observed, so both flags are reported as
+     * {@code false} even though {@code created_at} was in fact left unchanged.
+     *
      * @param schema             the probed table's schema
      * @param table              the probed table name
      * @param updatedAtRefreshed whether the trigger overwrote the sentinel
-     * @param createdAtPreserved whether {@code created_at} was left unchanged
+     * @param createdAtPreserved whether {@code created_at} was left unchanged, or
+     *                           {@code false} when a suppressed update meant the
+     *                           post-update row was never observed
      */
     public record Probe(String schema, String table, boolean updatedAtRefreshed, boolean createdAtPreserved) {
 
