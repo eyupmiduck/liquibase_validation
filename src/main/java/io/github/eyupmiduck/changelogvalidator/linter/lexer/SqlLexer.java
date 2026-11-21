@@ -191,6 +191,12 @@ public final class SqlLexer {
             type = TokenType.OPERATOR;
         } else {
             end = position + 1;
+            // A supplementary character is one character: keep the surrogate pair
+            // in a single ERROR token so it also counts as one column.
+            if (Character.isHighSurrogate(current) && position + 1 < length
+                    && Character.isLowSurrogate(sql.charAt(position + 1))) {
+                end++;
+            }
             type = TokenType.ERROR;
         }
         consumeTo(end);
