@@ -35,7 +35,8 @@ class SqlModificationTest {
 
     /**
      * An empty replacement is allowed (replacing with nothing), while a missing one
-     * is a data error, not a null pointer.
+     * is a data error, not a null pointer. A REGEXP_REPLACE pattern is compiled
+     * eagerly so an invalid regular expression fails when the changelog is read.
      */
     @Test
     void allowsAnEmptyWithAndRejectsAMissingOne() {
@@ -46,5 +47,8 @@ class SqlModificationTest {
                 () -> new SqlModification(SqlModification.Kind.REPLACE, "x", null, false, null));
         assertThrows(IllegalArgumentException.class,
                 () -> new SqlModification(SqlModification.Kind.APPEND, "x", "ignored", false, null));
+        IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+                () -> new SqlModification(SqlModification.Kind.REGEXP_REPLACE, "[[", "", false, null));
+        assertTrue(invalid.getMessage().contains("invalid regular expression"));
     }
 }

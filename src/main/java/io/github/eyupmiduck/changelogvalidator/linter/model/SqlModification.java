@@ -1,6 +1,8 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
 import java.util.Objects;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * One {@code <modifySql>} child: a transformation Liquibase applies to the SQL
@@ -40,6 +42,14 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             }
         } else if (with != null) {
             throw new IllegalArgumentException("a " + kind + " modification does not accept a with value");
+        }
+        if (kind == Kind.REGEXP_REPLACE) {
+            try {
+                Pattern.compile(value);
+            } catch (PatternSyntaxException e) {
+                throw new IllegalArgumentException(
+                        "a REGEXP_REPLACE modification has an invalid regular expression: " + value, e);
+            }
         }
     }
 
@@ -94,6 +104,9 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
      *
      * @param sql the SQL to transform
      * @return the transformed SQL
+     * @throws IndexOutOfBoundsException if a {@link Kind#REGEXP_REPLACE}
+     *                                   {@code with} value references a group the
+     *                                   pattern does not define
      */
     public String apply(String sql) {
         return switch (kind) {
