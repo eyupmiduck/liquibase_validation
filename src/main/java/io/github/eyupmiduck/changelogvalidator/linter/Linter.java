@@ -131,7 +131,7 @@ public final class Linter {
                 sql = "\n".repeat(source.line() - 1) + sql;
             }
             List<Token> tokens = SqlLexer.tokenize(sql);
-            List<SqlStatement> statements = SqlStatementSplitter.split(sql, source.splitStatements(),
+            List<SqlStatement> statements = SqlStatementSplitter.split(sql, tokens, source.splitStatements(),
                     source.endDelimiter(), source.stripComments());
             units.add(new SqlUnit(source, file, sql, tokens, statements));
         }

@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.sql;
 
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -38,6 +39,20 @@ class SqlStatementSplitterTest {
         assertEquals(2, statements.size());
         assertEquals("SELECT 1", statements.get(0).text());
         assertEquals("SELECT 2", statements.get(1).text());
+    }
+
+    /**
+     * Splitting with an already-lexed token list is equivalent to the
+     * string overload, so a caller that also needs the tokens can pass them in.
+     */
+    @Test
+    void reusesAnAlreadyLexedTokenList() {
+        String sql = "CREATE INDEX CONCURRENTLY i ON t (c); SELECT 1;";
+
+        List<SqlStatement> statements = SqlStatementSplitter.split(sql,
+                SqlLexer.tokenize(sql), true, ";", true);
+
+        assertEquals(SqlStatementSplitter.split(sql), statements);
     }
 
     /**

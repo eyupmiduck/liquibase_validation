@@ -68,15 +68,34 @@ public final class SqlStatementSplitter {
      */
     public static List<SqlStatement> split(String sql, boolean splitStatements, String endDelimiter,
                                            boolean stripComments) {
+        return split(sql, SqlLexer.tokenize(sql), splitStatements, endDelimiter, stripComments);
+    }
+
+    /**
+     * Splits {@code sql} into statements using an already-lexed token list, so a
+     * caller that also needs the tokens does not lex the text twice.
+     *
+     * @param sql             the SQL the tokens were lexed from
+     * @param tokens          the tokens of {@code sql}, in order
+     * @param splitStatements whether to split on the delimiter; when false the
+     *                        whole input is one statement
+     * @param endDelimiter    the delimiter, or {@code null} for {@code ;}; an
+     *                        empty string disables splitting
+     * @param stripComments   whether comments and directives inside the statement
+     *                        (between its first and last non-trivia tokens) are
+     *                        removed from the statement text
+     * @return the statements, in input order, without empty fragments
+     */
+    public static List<SqlStatement> split(String sql, List<Token> tokens, boolean splitStatements,
+                                           String endDelimiter, boolean stripComments) {
         String delimiter = endDelimiter == null ? DEFAULT_END_DELIMITER : endDelimiter.strip();
         List<SqlStatement> statements = new ArrayList<>();
-        List<Token> allTokens = SqlLexer.tokenize(sql);
         List<Token> current = new ArrayList<>();
         int start = -1;
         int lastEnd = -1;
-        for (int index = 0; index < allTokens.size(); index++) {
-            Token token = allTokens.get(index);
-            if (splitStatements && isDelimiter(allTokens, index, delimiter)) {
+        for (int index = 0; index < tokens.size(); index++) {
+            Token token = tokens.get(index);
+            if (splitStatements && isDelimiter(tokens, index, delimiter)) {
                 addIfNotEmpty(statements, sql, current, start, lastEnd, stripComments);
                 current = new ArrayList<>();
                 start = -1;
