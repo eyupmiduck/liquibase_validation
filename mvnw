@@ -258,8 +258,13 @@ elif set_java_home; then
   verbose " - Compiling Downloader.java ..."
   "$(native_path "$JAVACCMD")" "$(native_path "$javaSource")" || die "Failed to compile Downloader.java"
   verbose " - Running Downloader.java ..."
-  "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")"
+  "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")" \
+    || die "java: Failed to fetch $distributionUrl"
+else
+  die "no wget, no curl and no usable JDK (JAVA_HOME); cannot download $distributionUrl"
 fi
+
+[ -f "$TMP_DOWNLOAD_DIR/$distributionUrlName" ] || die "download did not produce $distributionUrlName"
 
 # If specified, validate the SHA-256 sum of the Maven distribution zip file
 if [ -n "${distributionSha256Sum-}" ]; then
