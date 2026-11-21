@@ -131,7 +131,7 @@ jobs:
     name: lint
     # Nothing in this job needs a token; deny all permissions instead of
     # inheriting the repository default.
-    permissions: {}
+    permissions: { }
     needs:
       - build
       - upload

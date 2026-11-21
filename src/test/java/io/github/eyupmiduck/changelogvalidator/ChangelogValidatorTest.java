@@ -20,6 +20,18 @@ class ChangelogValidatorTest {
     @TempDir
     Path tempDir;
 
+    /**
+     * Wraps {@code body} in a databaseChangeLog document that declares the
+     * Liquibase namespace under the {@code db} prefix.
+     */
+    private static String prefixedChangelog(String body) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <db:databaseChangeLog xmlns:db="http://www.liquibase.org/xml/ns/dbchangelog">
+                %s
+                </db:databaseChangeLog>
+                """.formatted(body);
+    }
 
     /**
      * A SQL file whose name does not start with a three-digit, zero-padded
@@ -570,18 +582,5 @@ class ChangelogValidatorTest {
                         changes.resolve("changes.xml"), "create-example")),
                 ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
         assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
-    }
-
-    /**
-     * Wraps {@code body} in a databaseChangeLog document that declares the
-     * Liquibase namespace under the {@code db} prefix.
-     */
-    private static String prefixedChangelog(String body) {
-        return """
-                <?xml version="1.0" encoding="UTF-8"?>
-                <db:databaseChangeLog xmlns:db="http://www.liquibase.org/xml/ns/dbchangelog">
-                %s
-                </db:databaseChangeLog>
-                """.formatted(body);
     }
 }
