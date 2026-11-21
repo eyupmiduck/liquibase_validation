@@ -1,3 +1,7 @@
+-- Parse-only negative fixture: intentionally omits DROP AGGREGATE for
+-- routine_parity.probe_sum(integer), because the rollback parity check ignores
+-- aggregates (prokind 'a'). Do not "complete" it; it is not executed against
+-- PostgreSQL.
 DO
 $$
     BEGIN
