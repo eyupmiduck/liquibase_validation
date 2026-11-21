@@ -154,13 +154,12 @@ public final class ChangelogValidator {
                                                                       Pattern changeSetIdPattern) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         List<InvalidChangeSet> invalid = new ArrayList<>();
-        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            Document document = parse(changelogFile);
-            NodeList changeSets = document.getElementsByTagNameNS("*", "changeSet");
+        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+            NodeList changeSets = changelog.getValue().getElementsByTagNameNS("*", "changeSet");
             for (int i = 0; i < changeSets.getLength(); i++) {
                 String id = ((Element) changeSets.item(i)).getAttribute("id");
                 if (!changeSetIdPattern.matcher(id).matches()) {
-                    invalid.add(new InvalidChangeSet(changelogFile, id));
+                    invalid.add(new InvalidChangeSet(changelog.getKey(), id));
                 }
             }
         }
@@ -210,8 +209,8 @@ public final class ChangelogValidator {
     public static List<Path> findReferencedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         Set<Path> referenced = new HashSet<>();
-        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            referenced.addAll(referencedSqlFiles(root, changelogFile));
+        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+            referenced.addAll(referencedSqlFiles(root, changelog.getKey(), changelog.getValue()));
         }
         List<Path> result = new ArrayList<>(referenced);
         result.sort(Path::compareTo);
@@ -235,15 +234,19 @@ public final class ChangelogValidator {
      */
     public static List<Path> findReachableChangelogFiles(Path changelogRoot, Path masterChangelog)
             throws IOException {
-        return reachableChangelogFiles(changelogRoot.toAbsolutePath().normalize(), masterChangelog);
+        Path root = changelogRoot.toAbsolutePath().normalize();
+        return List.copyOf(parsedReachableChangelogFiles(root, masterChangelog).keySet());
     }
 
     /**
      * Collects the changelog files reachable from {@code masterChangelog} by
-     * following nested {@code <include>} elements, guarding against cycles.
+     * following nested {@code <include>} elements, guarding against cycles, and
+     * returns the document parsed for each so callers do not parse it again.
      */
-    private static List<Path> reachableChangelogFiles(Path root, Path masterChangelog) throws IOException {
+    private static Map<Path, Document> parsedReachableChangelogFiles(Path root, Path masterChangelog)
+            throws IOException {
         Set<Path> visited = new LinkedHashSet<>();
+        Map<Path, Document> documents = new LinkedHashMap<>();
         Deque<Path> pending = new ArrayDeque<>();
         pending.add(masterChangelog.toAbsolutePath().normalize());
         while (!pending.isEmpty()) {
@@ -270,8 +273,9 @@ public final class ChangelogValidator {
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 pending.add(resolveWithin(root, base, file, "include"));
             }
+            documents.put(changelogFile, document);
         }
-        return List.copyOf(visited);
+        return documents;
     }
 
     /**
@@ -298,9 +302,8 @@ public final class ChangelogValidator {
         return result;
     }
 
-    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile) throws IOException {
+    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile, Document document) throws IOException {
         Set<Path> result = new HashSet<>();
-        Document document = parse(changelogFile);
         for (String elementName : SQL_REFERENCE_ELEMENTS) {
             NodeList elements = document.getElementsByTagNameNS("*", elementName);
             for (int i = 0; i < elements.getLength(); i++) {
