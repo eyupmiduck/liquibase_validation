@@ -63,4 +63,8 @@ Thumbs.db
 .envrc
 application-local.properties
 application-*-local.properties
+application-local.yml
+application-local.yaml
+application-*-local.yml
+application-*-local.yaml
 !application-local.properties.example
