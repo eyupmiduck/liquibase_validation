@@ -38,8 +38,10 @@ public final class XmlDocuments {
      *
      * @param documentFile the XML file
      * @return the parsed document
-     * @throws IOException if the file cannot be read or parsed, including when
-     *                     it declares a {@code DOCTYPE}
+     * @throws IOException           if the file cannot be read or parsed, including
+     *                               when it declares a {@code DOCTYPE}
+     * @throws IllegalStateException if the installed JAXP implementation does not
+     *                               support the required hardening features
      */
     public static Document parse(Path documentFile) throws IOException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -78,7 +80,9 @@ public final class XmlDocuments {
      *
      * @param documentFile the XML file
      * @return the line numbers by element name, in document order
-     * @throws IOException if the file cannot be read or parsed
+     * @throws IOException           if the file cannot be read or parsed
+     * @throws IllegalStateException if the installed JAXP implementation does not
+     *                               support the required hardening features
      */
     public static Map<String, Deque<Integer>> startTagLines(Path documentFile) throws IOException {
         SAXParserFactory factory = SAXParserFactory.newInstance();
