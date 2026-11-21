@@ -144,7 +144,7 @@ public final class ChangelogValidator {
         List<InvalidChangeSet> invalid = new ArrayList<>();
         for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
             Document document = parse(changelogFile);
-            NodeList changeSets = document.getElementsByTagName("changeSet");
+            NodeList changeSets = document.getElementsByTagNameNS("*", "changeSet");
             for (int i = 0; i < changeSets.getLength(); i++) {
                 String id = ((Element) changeSets.item(i)).getAttribute("id");
                 if (!changeSetIdPattern.matcher(id).matches()) {
@@ -240,11 +240,13 @@ public final class ChangelogValidator {
                 continue;
             }
             Document document = parse(changelogFile);
-            if (document.getElementsByTagName("includeAll").getLength() > 0) {
+            // Match by local name so a prefixed Liquibase namespace (<db:include>)
+            // is traversed like the default namespace, as Liquibase itself does.
+            if (document.getElementsByTagNameNS("*", "includeAll").getLength() > 0) {
                 throw new IOException("includeAll is not supported; list the included changelogs explicitly: "
                         + changelogFile);
             }
-            NodeList includes = document.getElementsByTagName("include");
+            NodeList includes = document.getElementsByTagNameNS("*", "include");
             for (int i = 0; i < includes.getLength(); i++) {
                 Element include = (Element) includes.item(i);
                 String file = include.getAttribute("file");
@@ -288,7 +290,7 @@ public final class ChangelogValidator {
         Set<Path> result = new HashSet<>();
         Document document = parse(changelogFile);
         for (String elementName : SQL_REFERENCE_ELEMENTS) {
-            NodeList elements = document.getElementsByTagName(elementName);
+            NodeList elements = document.getElementsByTagNameNS("*", elementName);
             for (int i = 0; i < elements.getLength(); i++) {
                 Element element = (Element) elements.item(i);
                 String path = element.getAttribute("path");

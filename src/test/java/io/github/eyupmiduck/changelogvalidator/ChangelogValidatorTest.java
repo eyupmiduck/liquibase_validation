@@ -496,4 +496,43 @@ class ChangelogValidatorTest {
 
         assertThrows(IOException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
     }
+
+    /**
+     * A changelog that uses a prefixed Liquibase namespace is traversed exactly
+     * like the default namespace: includes are followed, and changeSet and
+     * sqlFile elements are found.
+     */
+    @Test
+    void traversesAPrefixedLiquibaseNamespace() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
+        Files.writeString(sqlChanges.resolve("001-create.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, prefixedChangelog("""
+                <db:include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), prefixedChangelog("""
+                <db:changeSet id="create-example" author="test">
+                    <db:sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
+                </db:changeSet>
+                """));
+
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(
+                        changes.resolve("changes.xml"), "create-example")),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
+    }
+
+    /**
+     * Wraps {@code body} in a databaseChangeLog document that declares the
+     * Liquibase namespace under the {@code db} prefix.
+     */
+    private static String prefixedChangelog(String body) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <db:databaseChangeLog xmlns:db="http://www.liquibase.org/xml/ns/dbchangelog">
+                %s
+                </db:databaseChangeLog>
+                """.formatted(body);
+    }
 }
