@@ -59,10 +59,12 @@ public final class Whitelist {
     /**
      * Loads a whitelist from a YAML document: a list of mappings with
      * {@code rule}, {@code file}, {@code changeset}, {@code statement} and
-     * {@code reason} keys. The reason is required and non-empty; unknown keys and
-     * an entry that sets none of the selector keys fail fast. Ambiguity is
-     * detected when the whitelist is applied to findings, because overlap
-     * depends on the finding values.
+     * {@code reason} keys. The {@code file} selector matches a case-insensitive
+     * path suffix of the finding's file, so include a directory component to keep
+     * the match narrow; it must name a file, not a directory. The reason is
+     * required and non-empty; unknown keys and an entry that sets none of the
+     * selector keys fail fast. Ambiguity is detected when the whitelist is applied
+     * to findings, because overlap depends on the finding values.
      *
      * @param input the YAML document; an empty document yields the empty whitelist
      * @return the whitelist
