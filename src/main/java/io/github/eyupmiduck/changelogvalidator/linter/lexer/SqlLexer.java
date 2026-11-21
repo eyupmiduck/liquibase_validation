@@ -135,7 +135,8 @@ public final class SqlLexer {
                 wordStart++;
             }
             String word = wordAt(wordStart, end);
-            type = DIRECTIVES.contains(word) ? TokenType.DIRECTIVE : TokenType.LINE_COMMENT;
+            type = DIRECTIVES.contains(word) && startsLine(start)
+                    ? TokenType.DIRECTIVE : TokenType.LINE_COMMENT;
         } else if (current == '/' && peek(1) == '*') {
             int blockEnd = endOfBlockComment(position);
             type = blockEnd < 0 ? TokenType.ERROR : TokenType.BLOCK_COMMENT;
@@ -199,6 +200,24 @@ public final class SqlLexer {
     private char peek(int ahead) {
         int index = position + ahead;
         return index < length ? sql.charAt(index) : '\0';
+    }
+
+    /**
+     * Returns whether only horizontal whitespace precedes {@code index} on its
+     * line, so a marker in a trailing comment is not read as a Liquibase
+     * directive.
+     */
+    private boolean startsLine(int index) {
+        for (int i = index - 1; i >= 0; i--) {
+            char previous = sql.charAt(i);
+            if (previous == '\n' || previous == '\r') {
+                return true;
+            }
+            if (previous != ' ' && previous != '\t') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void consumeTo(int target) {

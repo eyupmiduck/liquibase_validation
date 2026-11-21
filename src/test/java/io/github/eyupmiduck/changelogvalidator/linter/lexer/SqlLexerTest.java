@@ -250,6 +250,18 @@ class SqlLexerTest {
     }
 
     /**
+     * A directive marker is only a DIRECTIVE at the start of a line; in a
+     * trailing comment it is ordinary commentary.
+     */
+    @Test
+    void treatsATrailingDirectiveMarkerAsAComment() {
+        List<Token> tokens = SqlLexer.tokenize("SELECT 1 -- rollback re-insert rows");
+
+        assertEquals(TokenType.LINE_COMMENT, tokens.get(tokens.size() - 1).type());
+        assertTrue(tokens.stream().noneMatch(token -> token.type() == TokenType.DIRECTIVE));
+    }
+
+    /**
      * A dollar-quoted routine body is one token, so the semicolons and quotes
      * inside it are not statement boundaries.
      */
