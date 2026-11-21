@@ -149,10 +149,11 @@ public final class TransactionForbiddenClassifier {
     }
 
     /**
-     * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY} and
-     * its {@code FINALIZE} variant, ignoring an object merely named
-     * {@code concurrently}. The name is consumed as a qualified name (one token,
-     * or {@code schema.name}) so a quoted name is not mistaken for the option.
+     * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY},
+     * ignoring an object merely named {@code concurrently}. The name is consumed
+     * as a qualified name (one token, or {@code schema.name}) so a quoted name is
+     * not mistaken for the option. FINALIZE is a transactional catalog step and
+     * is not transaction-forbidden.
      */
     private static Optional<Family> detachPartitionFamily(List<Token> tokens) {
         if (!TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
@@ -173,9 +174,6 @@ public final class TransactionForbiddenClassifier {
             }
             if (tokens.get(next).matchesKeyword("CONCURRENTLY")) {
                 return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
-            }
-            if (tokens.get(next).matchesKeyword("FINALIZE")) {
-                return Optional.of(Family.DETACH_PARTITION_FINALIZE);
             }
             return Optional.empty();
         }
@@ -216,11 +214,6 @@ public final class TransactionForbiddenClassifier {
          * {@code ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY}.
          */
         DETACH_PARTITION_CONCURRENTLY,
-
-        /**
-         * {@code ALTER TABLE ... DETACH PARTITION ... FINALIZE}.
-         */
-        DETACH_PARTITION_FINALIZE,
 
         /**
          * {@code CREATE DATABASE}.
