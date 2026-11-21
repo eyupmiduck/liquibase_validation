@@ -96,6 +96,14 @@ public final class SqlNormalizer {
                 String value = properties.get(matcher.group(1));
                 matcher.appendReplacement(replaced,
                         Matcher.quoteReplacement(value == null ? matcher.group() : value));
+                // Check inside the pass: a single pass can expand the text by
+                // (placeholders x value length), so waiting for the finished string
+                // can exhaust the heap before the bound is examined.
+                if (replaced.length() > MAX_SUBSTITUTED_LENGTH) {
+                    throw new IllegalStateException(
+                            "property substitution exceeded " + MAX_SUBSTITUTED_LENGTH
+                                    + " characters; check for an expanding property reference");
+                }
             }
             matcher.appendTail(replaced);
             String next = replaced.toString();

@@ -179,4 +179,16 @@ class SqlNormalizerTest {
         assertThrows(IllegalStateException.class,
                 () -> SqlNormalizer.normalise("${a}", normalisation, false));
     }
+
+    /**
+     * A single pass that would build an oversized string is stopped while it is
+     * being built, before the whole output is materialised.
+     */
+    @Test
+    void failsWhenASinglePassExceedsTheOutputBound() {
+        Normalisation normalisation = new Normalisation(Map.of("a", "x".repeat(10_000_001)), List.of());
+
+        assertThrows(IllegalStateException.class,
+                () -> SqlNormalizer.normalise("${a}", normalisation, false));
+    }
 }
