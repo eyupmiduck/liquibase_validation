@@ -51,7 +51,7 @@ public final class ChangelogValidator {
      * {@code NNN_name.sql}, where {@code NNN} is a three-digit, zero-padded
      * integer.
      */
-    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql");
+    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql", Pattern.CASE_INSENSITIVE);
 
     /**
      * Change types that load SQL from an external file through a {@code path}
@@ -86,7 +86,7 @@ public final class ChangelogValidator {
         List<Path> invalid = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .filter(ChangelogValidator::hasSqlExtension)
                     .filter(p -> !isExemptSqlFile(root, p))
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
@@ -98,10 +98,22 @@ public final class ChangelogValidator {
         return invalid;
     }
 
+    /**
+     * Returns whether the file name ends in {@code .sql}, ignoring case: a
+     * {@code .SQL} file on a case-insensitive filesystem is otherwise invisible
+     * to both the naming rule and the orphan check.
+     */
+    private static boolean hasSqlExtension(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".sql");
+    }
+
     private static boolean isExemptSqlFile(Path root, Path sqlFile) {
         for (Path segment : root.relativize(sqlFile)) {
-            if (EXEMPT_DIRECTORIES.contains(segment.toString())) {
-                return true;
+            String name = segment.toString();
+            for (String exempt : EXEMPT_DIRECTORIES) {
+                if (exempt.equalsIgnoreCase(name)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -275,7 +287,7 @@ public final class ChangelogValidator {
         List<Path> result = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .filter(ChangelogValidator::hasSqlExtension)
                     .map(root::relativize)
                     .map(Path::normalize)
                     .forEach(result::add);

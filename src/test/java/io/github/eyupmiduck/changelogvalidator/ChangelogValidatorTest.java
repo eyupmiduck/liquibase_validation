@@ -526,6 +526,27 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * The SQL extension and the exempt-directory names are matched
+     * case-insensitively, so a {@code .SQL} file and a {@code Functions}
+     * directory behave like their lower-case forms.
+     */
+    @Test
+    void matchesSqlExtensionsAndExemptDirectoriesCaseInsensitively() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Files.writeString(changes.resolve("001-create.SQL"), "");
+        Files.writeString(changes.resolve("create.SQL"), "");
+        Path functions = Files.createDirectories(changes.resolve("Functions"));
+        Files.writeString(functions.resolve("alter_table.SQL"), "");
+
+        assertEquals(List.of(Path.of("create.SQL")), ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+        assertEquals(List.of(
+                        Path.of("001-create.SQL"),
+                        Path.of("Functions/alter_table.SQL"),
+                        Path.of("create.SQL")),
+                ChangelogValidator.findSqlFiles(changes));
+    }
+
+    /**
      * A changelog that uses a prefixed Liquibase namespace is traversed exactly
      * like the default namespace: includes are followed, and changeSet and
      * sqlFile elements are found.
