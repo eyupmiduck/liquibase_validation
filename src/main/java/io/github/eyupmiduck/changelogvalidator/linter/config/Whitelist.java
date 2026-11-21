@@ -230,7 +230,7 @@ public final class Whitelist {
             while (normalized.startsWith("./")) {
                 normalized = normalized.substring(2);
             }
-            while (normalized.endsWith("/") && !normalized.isEmpty()) {
+            while (normalized.endsWith("/")) {
                 normalized = normalized.substring(0, normalized.length() - 1);
             }
             // Compare case-insensitively so a path that differs only in case (a
