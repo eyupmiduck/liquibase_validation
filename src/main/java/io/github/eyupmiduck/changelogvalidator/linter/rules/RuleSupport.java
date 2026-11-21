@@ -196,6 +196,8 @@ final class RuleSupport {
             case DETACH_PARTITION_CONCURRENTLY -> "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";
             case CREATE_DATABASE -> "CREATE DATABASE";
             case DROP_DATABASE -> "DROP DATABASE";
+            case CREATE_TABLESPACE -> "CREATE TABLESPACE";
+            case DROP_TABLESPACE -> "DROP TABLESPACE";
             case ALTER_SYSTEM -> "ALTER SYSTEM";
             case VACUUM -> "VACUUM";
             case ALTER_TYPE_ADD_VALUE -> "ALTER TYPE ... ADD VALUE";

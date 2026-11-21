@@ -76,6 +76,12 @@ public final class TransactionForbiddenClassifier {
         if (TokenWords.startsWith(words, "DROP", "DATABASE")) {
             return Optional.of(Family.DROP_DATABASE);
         }
+        if (TokenWords.startsWith(words, "CREATE", "TABLESPACE")) {
+            return Optional.of(Family.CREATE_TABLESPACE);
+        }
+        if (TokenWords.startsWith(words, "DROP", "TABLESPACE")) {
+            return Optional.of(Family.DROP_TABLESPACE);
+        }
         if (TokenWords.startsWith(words, "ALTER", "SYSTEM")) {
             return Optional.of(Family.ALTER_SYSTEM);
         }
@@ -224,6 +230,16 @@ public final class TransactionForbiddenClassifier {
          * {@code DROP DATABASE}.
          */
         DROP_DATABASE,
+
+        /**
+         * {@code CREATE TABLESPACE}.
+         */
+        CREATE_TABLESPACE,
+
+        /**
+         * {@code DROP TABLESPACE}.
+         */
+        DROP_TABLESPACE,
 
         /**
          * {@code ALTER SYSTEM}.

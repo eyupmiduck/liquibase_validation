@@ -42,6 +42,8 @@ class TransactionForbiddenClassifierTest {
                         Family.DETACH_PARTITION_CONCURRENTLY),
                 Arguments.of("CREATE DATABASE d;", Family.CREATE_DATABASE),
                 Arguments.of("DROP DATABASE d;", Family.DROP_DATABASE),
+                Arguments.of("CREATE TABLESPACE ts LOCATION '/data/ts';", Family.CREATE_TABLESPACE),
+                Arguments.of("DROP TABLESPACE ts;", Family.DROP_TABLESPACE),
                 Arguments.of("ALTER SYSTEM SET x = '1';", Family.ALTER_SYSTEM),
                 Arguments.of("VACUUM;", Family.VACUUM),
                 Arguments.of("VACUUM FULL t;", Family.VACUUM));
