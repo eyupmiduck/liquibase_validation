@@ -295,8 +295,12 @@ public final class ChangelogModel {
             columns.add(type.isBlank() ? column.getAttribute("name")
                     : column.getAttribute("name") + " " + type);
         }
-        String body = columns.isEmpty() ? "" : " (" + String.join(", ", columns) + ")";
-        return "CREATE TABLE " + table + body + ";";
+        if (columns.isEmpty()) {
+            // A table needs a column list; rendering "CREATE TABLE t;" would feed
+            // invalid SQL to the token rules. ADR 0003: no render, no source.
+            return null;
+        }
+        return "CREATE TABLE " + table + " (" + String.join(", ", columns) + ");";
     }
 
     private static String createIndexSql(Element change) {
@@ -312,9 +316,12 @@ public final class ChangelogModel {
                 columns.add(column.getAttribute("name"));
             }
         }
+        if (columns.isEmpty()) {
+            // An index needs a column list; "CREATE INDEX i ON t;" is invalid SQL.
+            return null;
+        }
         String unique = booleanAttribute(change, "unique", false) ? "CREATE UNIQUE INDEX " : "CREATE INDEX ";
-        String columnsText = columns.isEmpty() ? "" : " (" + String.join(", ", columns) + ")";
-        return unique + index + " ON " + table + columnsText + ";";
+        return unique + index + " ON " + table + " (" + String.join(", ", columns) + ");";
     }
 
     private static String dropIndexSql(Element change) {

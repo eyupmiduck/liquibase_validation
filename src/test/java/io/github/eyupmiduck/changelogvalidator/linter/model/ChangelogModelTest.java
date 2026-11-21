@@ -345,6 +345,27 @@ class ChangelogModelTest {
     }
 
     /**
+     * A structured change with no usable column list renders no source, matching
+     * ADR 0003, instead of malformed SQL.
+     */
+    @Test
+    void rendersNoSourceForStructuredChangesWithoutColumns() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-empty-table" author="a">
+                    <createTable tableName="t"/>
+                </changeSet>
+                <changeSet id="002-empty-index" author="a">
+                    <createIndex indexName="i" tableName="t"/>
+                </changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
+
+        assertTrue(ChangelogTestSupport.byId(changesets, "001-empty-table").sqlSources().isEmpty());
+        assertTrue(ChangelogTestSupport.byId(changesets, "002-empty-index").sqlSources().isEmpty());
+    }
+
+    /**
      * A SQL reference that escapes the changelog root is rejected, matching the
      * validator's containment policy instead of reading an arbitrary file.
      */
