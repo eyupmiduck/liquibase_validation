@@ -84,6 +84,8 @@ class ChangelogModelRollbackAndRoutineTest {
         assertEquals(SqlSource.Kind.ROUTINE_BODY, source.kind());
         assertTrue(source.isInline());
         assertTrue(source.text().contains("PERFORM 1"));
+        assertFalse(source.splitStatements(),
+                "Liquibase executes a routine body as one statement");
     }
 
     /**

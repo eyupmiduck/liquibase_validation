@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.lexer;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -28,10 +29,18 @@ public final class TokenWords {
      * @return the non-trivia tokens in the range, in order
      */
     public static List<Token> within(List<Token> tokens, int startOffset, int endOffset) {
-        return tokens.stream()
-                .filter(token -> !token.isTrivia())
-                .filter(token -> token.startOffset() >= startOffset && token.endOffset() <= endOffset)
-                .toList();
+        List<Token> result = new ArrayList<>();
+        for (Token token : tokens) {
+            // Tokens are ordered and non-overlapping, so no later token can start
+            // before the range once this one starts at or after its end.
+            if (token.startOffset() >= endOffset) {
+                break;
+            }
+            if (!token.isTrivia() && token.startOffset() >= startOffset && token.endOffset() <= endOffset) {
+                result.add(token);
+            }
+        }
+        return List.copyOf(result);
     }
 
     /**

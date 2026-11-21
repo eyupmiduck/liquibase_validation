@@ -250,6 +250,32 @@ class SqlLexerTest {
     }
 
     /**
+     * A supplementary character is one ERROR token and counts as one column, so
+     * later tokens on the line are not shifted.
+     */
+    @Test
+    void keepsASupplementaryCharacterInOneErrorToken() {
+        List<Token> tokens = SqlLexer.tokenize("😀 x");
+
+        assertEquals(TokenType.ERROR, tokens.get(0).type());
+        assertEquals("😀", tokens.get(0).text());
+        Token word = tokens.stream().filter(token -> token.type() == TokenType.WORD).findFirst().orElseThrow();
+        assertEquals(3, word.column());
+    }
+
+    /**
+     * A directive marker is only a DIRECTIVE at the start of a line; in a
+     * trailing comment it is ordinary commentary.
+     */
+    @Test
+    void treatsATrailingDirectiveMarkerAsAComment() {
+        List<Token> tokens = SqlLexer.tokenize("SELECT 1 -- rollback re-insert rows");
+
+        assertEquals(TokenType.LINE_COMMENT, tokens.get(tokens.size() - 1).type());
+        assertTrue(tokens.stream().noneMatch(token -> token.type() == TokenType.DIRECTIVE));
+    }
+
+    /**
      * A dollar-quoted routine body is one token, so the semicolons and quotes
      * inside it are not statement boundaries.
      */

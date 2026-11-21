@@ -38,13 +38,18 @@ public final class XmlDocuments {
      *
      * @param documentFile the XML file
      * @return the parsed document
-     * @throws IOException if the file cannot be read or parsed, including when
-     *                     it declares a {@code DOCTYPE}
+     * @throws IOException           if the file cannot be read or parsed, including
+     *                               when it declares a {@code DOCTYPE}
+     * @throws IllegalStateException if the installed JAXP implementation does not
+     *                               support the required hardening features
      */
     public static Document parse(Path documentFile) throws IOException {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         try {
+            // Keep this feature list in step with startTagLines so the two entry
+            // points share one hardening policy.
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             // Reject a DOCTYPE outright; the external-entity flags are defence in
             // depth for a parser that accepts one despite the feature.
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -66,13 +71,18 @@ public final class XmlDocuments {
     }
 
     /**
-     * Returns the one-based start-tag line of each element name, in document
-     * order. A namespace-prefixed name is keyed by its qualified name, matching
+     * Returns the line of each element's start tag, in document order. A SAX
+     * parser consumes the whole start tag before invoking the callback, so a
+     * single-line tag reports its (only) line and a tag whose attributes wrap
+     * over several lines reports the line of its closing {@code >}. A
+     * namespace-prefixed name is keyed by its qualified name, matching
      * {@link org.w3c.dom.Element#getTagName()}.
      *
      * @param documentFile the XML file
      * @return the line numbers by element name, in document order
-     * @throws IOException if the file cannot be read or parsed
+     * @throws IOException           if the file cannot be read or parsed
+     * @throws IllegalStateException if the installed JAXP implementation does not
+     *                               support the required hardening features
      */
     public static Map<String, Deque<Integer>> startTagLines(Path documentFile) throws IOException {
         SAXParserFactory factory = SAXParserFactory.newInstance();
@@ -87,8 +97,9 @@ public final class XmlDocuments {
             // Element#getTagName().
             factory.setFeature("http://xml.org/sax/features/namespace-prefixes", true);
             TagLineHandler handler = new TagLineHandler();
+            // The factory's features apply to the reader it creates; setting them
+            // again on the reader would be redundant.
             XMLReader reader = factory.newSAXParser().getXMLReader();
-            reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
             reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
             reader.setContentHandler(handler);

@@ -47,9 +47,12 @@ public final class SarifReporter implements Reporter {
     }
 
     /**
-     * Returns a repo-root-relative, percent-encoded URI for a finding file, so
-     * GitHub code scanning can attach the result. A file outside the working
-     * directory keeps its (encoded) absolute path.
+     * Returns a working-directory-relative, percent-encoded URI for a finding
+     * file, so GitHub code scanning can attach the result. The working directory
+     * is assumed to be the repository root, so run the tool from the checkout
+     * root: GitHub resolves a relative URI against the repository root, and a
+     * URI built from a subdirectory would point elsewhere. A file outside the
+     * working directory keeps its (encoded) absolute path.
      */
     private static String uri(Path file) throws IOException {
         Path absolute = file.toAbsolutePath().normalize();
@@ -68,6 +71,16 @@ public final class SarifReporter implements Reporter {
         }
     }
 
+    /**
+     * Writes the SARIF v2.1.0 document.
+     *
+     * @param findings the findings
+     * @param out      the destination
+     * @throws IOException              if a finding URI cannot be resolved or
+     *                                  writing fails
+     * @throws IllegalArgumentException if one rule id is reported at two
+     *                                  different severities; no output is written
+     */
     @Override
     public void report(List<Finding> findings, Appendable out) throws IOException {
         Map<String, Severity> ruleSeverities = new LinkedHashMap<>();

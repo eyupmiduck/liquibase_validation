@@ -224,6 +224,7 @@ public final class AuditColumnsCheck {
         } else {
             savepoint = connection.setSavepoint();
         }
+        SQLException failure = null;
         try {
             String ctid;
             OffsetDateTime createdAt;
@@ -264,17 +265,33 @@ public final class AuditColumnsCheck {
                     .compareTo(MAX_REFRESH_DRIFT) <= 0;
             boolean createdPreserved = createdAt != null && createdAt.equals(afterCreatedAt);
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
+        } catch (SQLException e) {
+            failure = e;
+            throw e;
         } finally {
-            if (autoCommit) {
-                connection.rollback();
-                // Changing to autocommit commits the current transaction, so do
-                // it only after the rollback has succeeded.
-                connection.setAutoCommit(true);
-            } else if (savepoint != null) {
-                connection.rollback(savepoint);
-                // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release it so a
-                // long-lived caller transaction does not accumulate savepoints.
-                connection.releaseSavepoint(savepoint);
+            try {
+                if (autoCommit) {
+                    connection.rollback();
+                    // Changing to autocommit commits the current transaction, so do
+                    // it only after the rollback has succeeded.
+                    connection.setAutoCommit(true);
+                } else if (savepoint != null) {
+                    try {
+                        connection.rollback(savepoint);
+                    } finally {
+                        // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release
+                        // it so a long-lived caller transaction does not accumulate
+                        // savepoints, even when the rollback itself failed.
+                        connection.releaseSavepoint(savepoint);
+                    }
+                }
+            } catch (SQLException cleanup) {
+                if (failure == null) {
+                    throw cleanup;
+                }
+                // The probe failure is the useful one; keep the cleanup failure as
+                // context instead of letting it replace the primary exception.
+                failure.addSuppressed(cleanup);
             }
         }
     }
@@ -335,10 +352,16 @@ public final class AuditColumnsCheck {
      * The result of {@link #probeUpdate}: whether an {@code UPDATE} refreshed
      * {@code updated_at} and preserved {@code created_at}.
      *
+     * <p>When a {@code BEFORE UPDATE} trigger suppresses the update, the
+     * post-update row is never observed, so both flags are reported as
+     * {@code false} even though {@code created_at} was in fact left unchanged.
+     *
      * @param schema             the probed table's schema
      * @param table              the probed table name
      * @param updatedAtRefreshed whether the trigger overwrote the sentinel
-     * @param createdAtPreserved whether {@code created_at} was left unchanged
+     * @param createdAtPreserved whether {@code created_at} was left unchanged, or
+     *                           {@code false} when a suppressed update meant the
+     *                           post-update row was never observed
      */
     public record Probe(String schema, String table, boolean updatedAtRefreshed, boolean createdAtPreserved) {
 

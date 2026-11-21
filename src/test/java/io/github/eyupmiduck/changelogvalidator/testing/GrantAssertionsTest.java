@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Exercises {@link GrantAssertions} against a real PostgreSQL: the ACL
@@ -113,9 +114,14 @@ class GrantAssertionsTest extends PostgresTestBase {
 
         assertThrows(AssertionError.class, () -> GrantAssertions.assertGrantRollbackMirrors(
                 "testing/grants-forward-extra.sql", "app_caller", "testing/grants-rollback-one.sql"));
-        assertThrows(AssertionError.class, () -> GrantAssertions.assertGrantRollbackMirrors(
-                "testing/grants-forward-both.sql", "app_caller",
-                "testing/grants-rollback-public-missing.sql"));
+        AssertionError publicFailure = assertThrows(AssertionError.class,
+                () -> GrantAssertions.assertGrantRollbackMirrors(
+                        "testing/grants-forward-both.sql", "app_caller",
+                        "testing/grants-rollback-public-missing.sql"));
+        assertTrue(publicFailure.getMessage().contains("PUBLIC"),
+                () -> "the PUBLIC-restore branch should fail: " + publicFailure.getMessage());
+        assertTrue(publicFailure.getMessage().contains("grants.b(integer)"),
+                () -> "the missing entry should be grants.b: " + publicFailure.getMessage());
         GrantAssertions.assertGrantRollbackMirrors(
                 "testing/grants-variants-forward.sql", "app_caller",
                 "testing/grants-variants-rollback.sql");

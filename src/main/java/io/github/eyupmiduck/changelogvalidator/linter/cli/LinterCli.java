@@ -34,7 +34,7 @@ import java.util.Set;
  */
 public final class LinterCli {
 
-    private static final java.util.Set<String> OPTION_NAMES = java.util.Set.of(
+    private static final Set<String> OPTION_NAMES = Set.of(
             "-r", "--changelog-root", "-m", "--master", "-c", "--config", "-w", "--whitelist",
             "--reporter", "--fail-on", "-h", "--help");
 
@@ -47,6 +47,7 @@ public final class LinterCli {
               -w, --whitelist FILE       accepted findings (default .liquibase-linter-whitelist.yml)
                   --reporter FORMAT      tty (default), json or sarif
                   --fail-on SEVERITY     error (default), warning, info or none
+                  --                 end of options; no operands are accepted
               -h, --help                 print this help
             
             """;
@@ -145,6 +146,8 @@ public final class LinterCli {
                     throw new IllegalArgumentException("unexpected argument after --: " + argument);
                 }
                 if ("--".equals(argument)) {
+                    // No operands are accepted: "--" only asserts that no more
+                    // options follow, and any later token is rejected above.
                     endOfOptions = true;
                     continue;
                 }
@@ -178,6 +181,8 @@ public final class LinterCli {
                             failOn = Severity.from(severity);
                         }
                     }
+                    // Repeating help is harmless; only value-taking options are
+                    // required to be unique.
                     case "-h", "--help" -> help = true;
                     default -> throw new IllegalArgumentException("unknown option: " + argument);
                 }

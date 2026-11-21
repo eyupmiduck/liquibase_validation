@@ -52,6 +52,24 @@ class XmlDocumentsTest {
     }
 
     /**
+     * A start tag that spans several lines is reported at its closing line: the
+     * SAX parser consumes the whole tag before {@code startElement} fires.
+     */
+    @Test
+    void reportsTheClosingLineOfAMultiLineStartTag() throws IOException {
+        Path file = write("""
+                <root>
+                  <changeSet
+                      id="1"
+                      author="me">
+                  </changeSet>
+                </root>
+                """);
+
+        assertEquals(4, XmlDocuments.startTagLines(file).get("changeSet").getFirst());
+    }
+
+    /**
      * Repeated elements keep each occurrence's line in document order.
      */
     @Test

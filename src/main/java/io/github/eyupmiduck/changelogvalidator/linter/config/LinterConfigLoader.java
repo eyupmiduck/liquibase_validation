@@ -41,11 +41,11 @@ public final class LinterConfigLoader {
             } catch (YAMLException e) {
                 throw new IllegalArgumentException("config is not valid YAML: " + configFile, e);
             }
-            if (documents.isEmpty() || documents.get(0) == null) {
-                return LinterConfig.defaults();
-            }
             if (documents.size() > 1) {
                 throw new IllegalArgumentException("config must contain exactly one YAML document: " + configFile);
+            }
+            if (documents.isEmpty() || documents.get(0) == null) {
+                return LinterConfig.defaults();
             }
             if (!(documents.get(0) instanceof Map<?, ?> map)) {
                 throw new IllegalArgumentException("config must be a mapping: " + configFile);

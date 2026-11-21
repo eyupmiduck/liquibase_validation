@@ -59,9 +59,6 @@ class ChangelogModelTest {
                 <changeSet id="006-empty-delimiter" author="a">
                     <sql endDelimiter="">SELECT 1</sql>
                 </changeSet>
-                <changeSet id="007-blank-path" author="a">
-                    <sqlFile path=""/>
-                </changeSet>
                 """));
         write("functions.xml", ChangelogTestSupport.changelog("""
                 <changeSet id="function-ddl_utils.foo" author="a" runOnChange="true">
@@ -90,7 +87,7 @@ class ChangelogModelTest {
     void readsEveryChangeSet() throws IOException {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
 
-        assertEquals(9, changesets.size());
+        assertEquals(8, changesets.size());
         assertEquals("001-create", ChangelogTestSupport.byId(changesets, "001-create").id());
         assertEquals("function-ddl_utils.bar", ChangelogTestSupport.byId(changesets, "function-ddl_utils.bar").id());
     }
@@ -272,8 +269,7 @@ class ChangelogModelTest {
 
     /**
      * Without {@code relativeToChangelogFile}, a path resolves against the
-     * changelog root, an explicit empty delimiter is preserved, and a blank path
-     * produces no source.
+     * changelog root and an explicit empty delimiter is preserved.
      */
     @Test
     void resolvesPathsAndDelimiterEdges() throws IOException {
@@ -282,7 +278,6 @@ class ChangelogModelTest {
         assertEquals(changelogRoot.resolve("sql_changes/005-root.sql").normalize(),
                 ChangelogTestSupport.byId(changesets, "005-root-relative").sqlSources().get(0).path());
         assertEquals("", ChangelogTestSupport.byId(changesets, "006-empty-delimiter").sqlSources().get(0).endDelimiter());
-        assertTrue(ChangelogTestSupport.byId(changesets, "007-blank-path").sqlSources().isEmpty());
     }
 
     /**
@@ -350,6 +345,27 @@ class ChangelogModelTest {
     }
 
     /**
+     * A structured change with no usable column list renders no source, matching
+     * ADR 0003, instead of malformed SQL.
+     */
+    @Test
+    void rendersNoSourceForStructuredChangesWithoutColumns() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-empty-table" author="a">
+                    <createTable tableName="t"/>
+                </changeSet>
+                <changeSet id="002-empty-index" author="a">
+                    <createIndex indexName="i" tableName="t"/>
+                </changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
+
+        assertTrue(ChangelogTestSupport.byId(changesets, "001-empty-table").sqlSources().isEmpty());
+        assertTrue(ChangelogTestSupport.byId(changesets, "002-empty-index").sqlSources().isEmpty());
+    }
+
+    /**
      * A SQL reference that escapes the changelog root is rejected, matching the
      * validator's containment policy instead of reading an arbitrary file.
      */
@@ -364,6 +380,35 @@ class ChangelogModelTest {
         IOException failure = assertThrows(IOException.class,
                 () -> ChangelogModel.changesets(changelogRoot, master));
         assertTrue(failure.getMessage().contains("escapes the changelog root"));
+    }
+
+    /**
+     * An {@code <include>} or {@code <sqlFile>} without its required path
+     * attribute is rejected instead of silently contributing nothing, matching
+     * the validator's policy.
+     */
+    @Test
+    void rejectsIncludeAndSqlFileWithoutPath() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include/>
+                """));
+
+        IOException includeFailure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(includeFailure.getMessage().contains("include without a file attribute"));
+
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="a">
+                    <sqlFile/>
+                </changeSet>
+                """));
+
+        IOException sqlFailure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, master));
+        assertTrue(sqlFailure.getMessage().contains("sqlFile without a path attribute"));
     }
 
     /**

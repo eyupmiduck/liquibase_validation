@@ -51,7 +51,7 @@ public final class ChangelogValidator {
      * {@code NNN_name.sql}, where {@code NNN} is a three-digit, zero-padded
      * integer.
      */
-    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql");
+    private static final Pattern SQL_FILE_NAME = Pattern.compile(NNN_NAME + "\\.sql", Pattern.CASE_INSENSITIVE);
 
     /**
      * Change types that load SQL from an external file through a {@code path}
@@ -86,7 +86,7 @@ public final class ChangelogValidator {
         List<Path> invalid = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .filter(ChangelogValidator::hasSqlExtension)
                     .filter(p -> !isExemptSqlFile(root, p))
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
@@ -98,10 +98,22 @@ public final class ChangelogValidator {
         return invalid;
     }
 
+    /**
+     * Returns whether the file name ends in {@code .sql}, ignoring case: a
+     * {@code .SQL} file on a case-insensitive filesystem is otherwise invisible
+     * to both the naming rule and the orphan check.
+     */
+    private static boolean hasSqlExtension(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".sql");
+    }
+
     private static boolean isExemptSqlFile(Path root, Path sqlFile) {
         for (Path segment : root.relativize(sqlFile)) {
-            if (EXEMPT_DIRECTORIES.contains(segment.toString())) {
-                return true;
+            String name = segment.toString();
+            for (String exempt : EXEMPT_DIRECTORIES) {
+                if (exempt.equalsIgnoreCase(name)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -142,13 +154,12 @@ public final class ChangelogValidator {
                                                                       Pattern changeSetIdPattern) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         List<InvalidChangeSet> invalid = new ArrayList<>();
-        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            Document document = parse(changelogFile);
-            NodeList changeSets = document.getElementsByTagName("changeSet");
+        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+            NodeList changeSets = changelog.getValue().getElementsByTagNameNS("*", "changeSet");
             for (int i = 0; i < changeSets.getLength(); i++) {
                 String id = ((Element) changeSets.item(i)).getAttribute("id");
                 if (!changeSetIdPattern.matcher(id).matches()) {
-                    invalid.add(new InvalidChangeSet(changelogFile, id));
+                    invalid.add(new InvalidChangeSet(changelog.getKey(), id));
                 }
             }
         }
@@ -198,8 +209,8 @@ public final class ChangelogValidator {
     public static List<Path> findReferencedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         Set<Path> referenced = new HashSet<>();
-        for (Path changelogFile : reachableChangelogFiles(root, masterChangelog)) {
-            referenced.addAll(referencedSqlFiles(root, changelogFile));
+        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+            referenced.addAll(referencedSqlFiles(root, changelog.getKey(), changelog.getValue()));
         }
         List<Path> result = new ArrayList<>(referenced);
         result.sort(Path::compareTo);
@@ -223,15 +234,19 @@ public final class ChangelogValidator {
      */
     public static List<Path> findReachableChangelogFiles(Path changelogRoot, Path masterChangelog)
             throws IOException {
-        return reachableChangelogFiles(changelogRoot.toAbsolutePath().normalize(), masterChangelog);
+        Path root = changelogRoot.toAbsolutePath().normalize();
+        return List.copyOf(parsedReachableChangelogFiles(root, masterChangelog).keySet());
     }
 
     /**
      * Collects the changelog files reachable from {@code masterChangelog} by
-     * following nested {@code <include>} elements, guarding against cycles.
+     * following nested {@code <include>} elements, guarding against cycles, and
+     * returns the document parsed for each so callers do not parse it again.
      */
-    private static List<Path> reachableChangelogFiles(Path root, Path masterChangelog) throws IOException {
+    private static Map<Path, Document> parsedReachableChangelogFiles(Path root, Path masterChangelog)
+            throws IOException {
         Set<Path> visited = new LinkedHashSet<>();
+        Map<Path, Document> documents = new LinkedHashMap<>();
         Deque<Path> pending = new ArrayDeque<>();
         pending.add(masterChangelog.toAbsolutePath().normalize());
         while (!pending.isEmpty()) {
@@ -240,24 +255,27 @@ public final class ChangelogValidator {
                 continue;
             }
             Document document = parse(changelogFile);
-            if (document.getElementsByTagName("includeAll").getLength() > 0) {
+            // Match by local name so a prefixed Liquibase namespace (<db:include>)
+            // is traversed like the default namespace, as Liquibase itself does.
+            if (document.getElementsByTagNameNS("*", "includeAll").getLength() > 0) {
                 throw new IOException("includeAll is not supported; list the included changelogs explicitly: "
                         + changelogFile);
             }
-            NodeList includes = document.getElementsByTagName("include");
+            NodeList includes = document.getElementsByTagNameNS("*", "include");
             for (int i = 0; i < includes.getLength(); i++) {
                 Element include = (Element) includes.item(i);
                 String file = include.getAttribute("file");
                 if (file.isBlank()) {
-                    continue;
+                    throw new IOException("include without a file attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 pending.add(resolveWithin(root, base, file, "include"));
             }
+            documents.put(changelogFile, document);
         }
-        return List.copyOf(visited);
+        return documents;
     }
 
     /**
@@ -273,7 +291,7 @@ public final class ChangelogValidator {
         List<Path> result = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .filter(ChangelogValidator::hasSqlExtension)
                     .map(root::relativize)
                     .map(Path::normalize)
                     .forEach(result::add);
@@ -284,16 +302,22 @@ public final class ChangelogValidator {
         return result;
     }
 
-    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile) throws IOException {
+    private static Set<Path> referencedSqlFiles(Path root, Path changelogFile, Document document) throws IOException {
         Set<Path> result = new HashSet<>();
-        Document document = parse(changelogFile);
         for (String elementName : SQL_REFERENCE_ELEMENTS) {
-            NodeList elements = document.getElementsByTagName(elementName);
+            NodeList elements = document.getElementsByTagNameNS("*", elementName);
             for (int i = 0; i < elements.getLength(); i++) {
                 Element element = (Element) elements.item(i);
                 String path = element.getAttribute("path");
                 if (path.isBlank()) {
-                    continue;
+                    if (!"sqlFile".equals(elementName)) {
+                        // A routine body may be the element's inline text instead of a
+                        // path; only sqlFile requires the attribute.
+                        continue;
+                    }
+                    // Liquibase requires the path on sqlFile; a typo in the attribute
+                    // name must not drop the reference silently.
+                    throw new IOException(elementName + " without a path attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));

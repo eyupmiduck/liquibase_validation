@@ -72,4 +72,15 @@ class TokenWordsTest {
 
         assertEquals(List.of("SELECT"), TokenWords.within(all, 0, 6).stream().map(Token::text).toList());
     }
+
+    /**
+     * A token that straddles the end of the range is excluded, and the scan
+     * stops at the first token that starts at or after the range end.
+     */
+    @Test
+    void withinStopsAtTheRangeEnd() {
+        List<Token> all = SqlLexer.tokenize("SELECT abc, def");
+
+        assertEquals(List.of("SELECT"), TokenWords.within(all, 0, 8).stream().map(Token::text).toList());
+    }
 }

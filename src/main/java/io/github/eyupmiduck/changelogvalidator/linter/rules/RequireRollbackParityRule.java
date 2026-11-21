@@ -20,11 +20,13 @@ import java.util.List;
  *
  * <p>The rule is opt-in. It only runs when a rollback is defined and is not an
  * empty {@code <rollback/>} block; a missing rollback is
- * {@link RequireRollbackRule}'s concern. A defined rollback that contributes no
- * executable statement (blank or comment-only SQL) is reported, because it
- * reverses nothing. A rollback that references another changeset
- * ({@code <rollback changeSetId="..."/>}), contains a routine body, or has no
- * source applicable to PostgreSQL is opaque and is not counted.
+ * {@link RequireRollbackRule}'s concern. A rollback whose SQL is blank produces
+ * no source and is skipped, like an empty block; one that contributes no
+ * executable statement (comment-only SQL) is reported, because it reverses
+ * nothing. A rollback that references another changeset
+ * ({@code <rollback changeSetId="..."/>}), contains a routine body but
+ * contributes no counted statement, or has no source applicable to PostgreSQL
+ * is opaque and is not counted.
  */
 public final class RequireRollbackParityRule implements Rule {
 

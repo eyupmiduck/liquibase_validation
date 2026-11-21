@@ -129,6 +129,9 @@ jobs:
   # an aggregate job that only passes when both succeed.
   lint:
     name: lint
+    # Nothing in this job needs a token; deny all permissions instead of
+    # inheriting the repository default.
+    permissions: { }
     needs:
       - build
       - upload

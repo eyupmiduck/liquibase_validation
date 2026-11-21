@@ -165,4 +165,30 @@ class SqlNormalizerTest {
         assertThrows(IllegalStateException.class,
                 () -> SqlNormalizer.normalise("${a}", normalisation, false));
     }
+
+    /**
+     * A state larger than the cycle-check bound is not memoised; an expanding
+     * reference still fails through the pass limit instead of retaining every
+     * intermediate state.
+     */
+    @Test
+    void doesNotRetainStatesAboveTheCycleCheckBound() {
+        String padding = "x".repeat(5_000);
+        Normalisation normalisation = new Normalisation(Map.of("a", padding + "${a}"), List.of());
+
+        assertThrows(IllegalStateException.class,
+                () -> SqlNormalizer.normalise("${a}", normalisation, false));
+    }
+
+    /**
+     * A single pass that would build an oversized string is stopped while it is
+     * being built, before the whole output is materialised.
+     */
+    @Test
+    void failsWhenASinglePassExceedsTheOutputBound() {
+        Normalisation normalisation = new Normalisation(Map.of("a", "x".repeat(10_000_001)), List.of());
+
+        assertThrows(IllegalStateException.class,
+                () -> SqlNormalizer.normalise("${a}", normalisation, false));
+    }
 }

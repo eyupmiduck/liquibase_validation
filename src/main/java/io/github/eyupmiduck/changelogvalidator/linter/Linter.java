@@ -74,7 +74,10 @@ public final class Linter {
      *
      * @param changeSets the changesets
      * @return the findings, in changeset then rule order
-     * @throws IOException if a SQL file cannot be read
+     * @throws IOException           if a SQL file cannot be read
+     * @throws IllegalStateException if property substitution in a changeset's SQL
+     *                               cycles, does not converge, or exceeds the
+     *                               safety bound
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
         if (rules.stream().noneMatch(config::isEnabled)) {
@@ -131,7 +134,7 @@ public final class Linter {
                 sql = "\n".repeat(source.line() - 1) + sql;
             }
             List<Token> tokens = SqlLexer.tokenize(sql);
-            List<SqlStatement> statements = SqlStatementSplitter.split(sql, source.splitStatements(),
+            List<SqlStatement> statements = SqlStatementSplitter.split(sql, tokens, source.splitStatements(),
                     source.endDelimiter(), source.stripComments());
             units.add(new SqlUnit(source, file, sql, tokens, statements));
         }

@@ -543,6 +543,42 @@ class AuditColumnsCheckTest {
     }
 
     /**
+     * A cleanup failure is attached to the probe failure instead of replacing
+     * it, so the caller still sees the original cause.
+     */
+    @Test
+    void keepsTheProbeFailureWhenCleanupAlsoFails() throws Exception {
+        createAuditedTable("orders");
+        execute("INSERT INTO audited.orders (id) VALUES (1)");
+
+        try (Connection delegate = openConnection()) {
+            Connection failing = (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("prepareStatement") && args != null && args.length > 0
+                                && String.valueOf(args[0]).startsWith("UPDATE ")) {
+                            throw new SQLException("update failed");
+                        }
+                        if (method.getName().equals("rollback") && (args == null || args.length == 0)) {
+                            throw new SQLException("rollback failed");
+                        }
+                        try {
+                            return method.invoke(delegate, args);
+                        } catch (InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    });
+
+            SQLException failure = assertThrows(SQLException.class,
+                    () -> AuditColumnsCheck.probeUpdate(failing, "audited", "orders"));
+            assertEquals("update failed", failure.getMessage());
+            assertEquals(1, failure.getSuppressed().length);
+            assertEquals("rollback failed", failure.getSuppressed()[0].getMessage());
+        }
+    }
+
+    /**
      * A quoted, mixed-case table name is probed correctly.
      */
     @Test

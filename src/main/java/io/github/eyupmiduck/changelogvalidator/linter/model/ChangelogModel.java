@@ -93,7 +93,7 @@ public final class ChangelogModel {
                     case "include" -> {
                         String file = child.getAttribute("file");
                         if (file.isBlank()) {
-                            continue;
+                            throw new IOException("include without a file attribute: " + normalized);
                         }
                         boolean relativeToChangelogFile =
                                 "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
@@ -127,9 +127,10 @@ public final class ChangelogModel {
     }
 
     /**
-     * Maps each DOM element to the line of its start tag. The SAX parse and the
-     * DOM recursion both visit elements in document order, so each tag name's
-     * line queue supplies the matching element.
+     * Maps each DOM element to the line of its start tag (its closing line for a
+     * tag whose attributes wrap). The SAX parse and the DOM recursion both visit
+     * elements in document order, so each tag name's line queue supplies the
+     * matching element.
      */
     private static Map<Element, Integer> elementLines(Document document,
                                                       Map<String, Deque<Integer>> linesByTag) {
@@ -294,8 +295,12 @@ public final class ChangelogModel {
             columns.add(type.isBlank() ? column.getAttribute("name")
                     : column.getAttribute("name") + " " + type);
         }
-        String body = columns.isEmpty() ? "" : " (" + String.join(", ", columns) + ")";
-        return "CREATE TABLE " + table + body + ";";
+        if (columns.isEmpty()) {
+            // A table needs a column list; rendering "CREATE TABLE t;" would feed
+            // invalid SQL to the token rules. ADR 0003: no render, no source.
+            return null;
+        }
+        return "CREATE TABLE " + table + " (" + String.join(", ", columns) + ");";
     }
 
     private static String createIndexSql(Element change) {
@@ -311,9 +316,12 @@ public final class ChangelogModel {
                 columns.add(column.getAttribute("name"));
             }
         }
+        if (columns.isEmpty()) {
+            // An index needs a column list; "CREATE INDEX i ON t;" is invalid SQL.
+            return null;
+        }
         String unique = booleanAttribute(change, "unique", false) ? "CREATE UNIQUE INDEX " : "CREATE INDEX ";
-        String columnsText = columns.isEmpty() ? "" : " (" + String.join(", ", columns) + ")";
-        return unique + index + " ON " + table + columnsText + ";";
+        return unique + index + " ON " + table + " (" + String.join(", ", columns) + ");";
     }
 
     private static String dropIndexSql(Element change) {
@@ -364,7 +372,9 @@ public final class ChangelogModel {
                 SqlSource.Kind.ROUTINE_BODY,
                 null,
                 text,
-                booleanAttribute(element, "splitStatements", true),
+                // Liquibase executes a routine body as one statement and does not
+                // support splitStatements on these change types.
+                false,
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
                 optionalAttribute(element, "dbms"),
@@ -375,7 +385,9 @@ public final class ChangelogModel {
                                               int line) throws IOException {
         String path = element.getAttribute("path");
         if (path.isBlank()) {
-            return List.of();
+            // fileSource is only reached for sqlFile (routineSource handles an inline
+            // body first), and Liquibase requires sqlFile/@path.
+            throw new IOException("sqlFile without a path attribute: " + changelogFile);
         }
         boolean relativeToChangelogFile = "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
         Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
@@ -383,7 +395,10 @@ public final class ChangelogModel {
                 kind,
                 resolveWithin(root, base, path, "SQL file reference"),
                 null,
-                booleanAttribute(element, "splitStatements", true),
+                // Liquibase executes a routine body as one statement and does not
+                // support splitStatements on createProcedure/createFunction.
+                kind != SqlSource.Kind.ROUTINE_BODY
+                        && booleanAttribute(element, "splitStatements", true),
                 delimiterAttribute(element),
                 booleanAttribute(element, "stripComments", false),
                 optionalAttribute(element, "dbms"),

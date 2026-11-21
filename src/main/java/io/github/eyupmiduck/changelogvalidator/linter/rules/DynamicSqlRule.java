@@ -31,9 +31,9 @@ import java.util.regex.Pattern;
  * literal also triggers it, which is acceptable for an informational reminder.
  *
  * <p>The rule is opt-in (informational): dynamic SQL in a routine is normal, so
- * a project enables the rule when it wants the reminder. It only fires on
- * routine bodies; inline or file SQL has no dynamic string to hide statements
- * in.
+ * a project enables the rule when it wants the reminder. It deliberately covers
+ * only routine-body sources; a routine declared in inline or file SQL has the
+ * same blind spot (its body is one opaque string), but is out of scope.
  */
 public final class DynamicSqlRule implements Rule {
 
@@ -104,7 +104,13 @@ public final class DynamicSqlRule implements Rule {
                 bodies.add(new Body(body.text(), body.startOffset()));
             }
         }
-        return bodies.isEmpty() ? List.of(new Body(unit.sql(), 0)) : bodies;
+        // A declaration can hide dynamic SQL only in its AS bodies (a SQL-standard
+        // body cannot execute dynamic SQL at all), so the whole-unit fallback must
+        // not depend on whether an AS body was found. A bare body declares no
+        // routine and is scanned whole.
+        boolean declaration = tokens.stream()
+                .anyMatch(token -> token.matchesKeyword("FUNCTION") || token.matchesKeyword("PROCEDURE"));
+        return declaration ? bodies : List.of(new Body(unit.sql(), 0));
     }
 
     @Override

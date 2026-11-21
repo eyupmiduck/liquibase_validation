@@ -36,10 +36,11 @@ import java.util.regex.Pattern;
  * on by default: a PostgreSQL-only changelog without the gate is a deployment
  * hazard, not a style nit.
  *
- * <p>It is a token-level heuristic: a construct inside a dollar-quoted routine
- * body is examined through the body's own tokens, and a mention in a string or
- * comment does not count. An unlisted PostgreSQL-only construct is a false
- * negative, which is acceptable (the rule is a guard, not a parser).
+ * <p>It is a token-level heuristic: a mention in a string or comment does not
+ * count, and a dollar-quoted routine body is a single opaque token, so a
+ * construct inside it is not examined and is an accepted false negative. An
+ * unlisted PostgreSQL-only construct is a false negative too, which is
+ * acceptable (the rule is a guard, not a parser).
  */
 public final class RequireDbmsPostgresqlRule implements Rule {
 

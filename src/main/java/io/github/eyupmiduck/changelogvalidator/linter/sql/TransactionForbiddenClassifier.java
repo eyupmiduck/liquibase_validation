@@ -76,6 +76,12 @@ public final class TransactionForbiddenClassifier {
         if (TokenWords.startsWith(words, "DROP", "DATABASE")) {
             return Optional.of(Family.DROP_DATABASE);
         }
+        if (TokenWords.startsWith(words, "CREATE", "TABLESPACE")) {
+            return Optional.of(Family.CREATE_TABLESPACE);
+        }
+        if (TokenWords.startsWith(words, "DROP", "TABLESPACE")) {
+            return Optional.of(Family.DROP_TABLESPACE);
+        }
         if (TokenWords.startsWith(words, "ALTER", "SYSTEM")) {
             return Optional.of(Family.ALTER_SYSTEM);
         }
@@ -89,7 +95,7 @@ public final class TransactionForbiddenClassifier {
         if (reindex.isPresent()) {
             return reindex;
         }
-        Optional<Family> detach = detachPartitionFamily(words);
+        Optional<Family> detach = detachPartitionFamily(statementTokens);
         if (detach.isPresent()) {
             return detach;
         }
@@ -149,27 +155,34 @@ public final class TransactionForbiddenClassifier {
     }
 
     /**
-     * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY} and
-     * its {@code FINALIZE} variant, ignoring an object merely named
-     * {@code concurrently}.
+     * Classifies {@code ALTER TABLE ... DETACH PARTITION name CONCURRENTLY},
+     * ignoring an object merely named {@code concurrently}. The name is consumed
+     * as a qualified name (one token, or {@code schema.name}) so a quoted name is
+     * not mistaken for the option. FINALIZE is a transactional catalog step and
+     * is not transaction-forbidden.
      */
-    private static Optional<Family> detachPartitionFamily(List<Token> words) {
-        if (!TokenWords.startsWith(words, "ALTER", "TABLE")) {
+    private static Optional<Family> detachPartitionFamily(List<Token> tokens) {
+        if (!TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
             return Optional.empty();
         }
-        for (int i = 2; i + 2 < words.size(); i++) {
-            if (words.get(i).matchesKeyword("DETACH") && words.get(i + 1).matchesKeyword("PARTITION")) {
-                if (i + 3 >= words.size()) {
-                    return Optional.empty();
-                }
-                if (words.get(i + 3).matchesKeyword("CONCURRENTLY")) {
-                    return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
-                }
-                if (words.get(i + 3).matchesKeyword("FINALIZE")) {
-                    return Optional.of(Family.DETACH_PARTITION_FINALIZE);
-                }
-                return Optional.empty();
+        for (int i = 2; i + 2 < tokens.size(); i++) {
+            if (!tokens.get(i).matchesKeyword("DETACH") || !tokens.get(i + 1).matchesKeyword("PARTITION")) {
+                continue;
             }
+            // Skip the partition name: a bare, quoted or schema-qualified name is
+            // one qualified_name, so its tokens must not be read as the option.
+            int next = i + 3;
+            if (next < tokens.size() && ".".equals(tokens.get(next).text())) {
+                next += 2;
+            }
+            if (next >= tokens.size()) {
+                // No room for a variant; a later DETACH action may still match.
+                continue;
+            }
+            if (tokens.get(next).matchesKeyword("CONCURRENTLY")) {
+                return Optional.of(Family.DETACH_PARTITION_CONCURRENTLY);
+            }
+            // Not this action's variant: keep scanning for a later DETACH.
         }
         return Optional.empty();
     }
@@ -210,11 +223,6 @@ public final class TransactionForbiddenClassifier {
         DETACH_PARTITION_CONCURRENTLY,
 
         /**
-         * {@code ALTER TABLE ... DETACH PARTITION ... FINALIZE}.
-         */
-        DETACH_PARTITION_FINALIZE,
-
-        /**
          * {@code CREATE DATABASE}.
          */
         CREATE_DATABASE,
@@ -223,6 +231,16 @@ public final class TransactionForbiddenClassifier {
          * {@code DROP DATABASE}.
          */
         DROP_DATABASE,
+
+        /**
+         * {@code CREATE TABLESPACE}.
+         */
+        CREATE_TABLESPACE,
+
+        /**
+         * {@code DROP TABLESPACE}.
+         */
+        DROP_TABLESPACE,
 
         /**
          * {@code ALTER SYSTEM}.

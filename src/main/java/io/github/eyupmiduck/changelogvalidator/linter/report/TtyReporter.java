@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Renders findings as one line per finding in a compiler-like format:
@@ -15,8 +16,10 @@ import java.util.Locale;
  */
 public final class TtyReporter implements Reporter {
 
+    private static final Pattern LINE_BREAK = Pattern.compile("\\R");
+
     private static String oneLine(String value) {
-        return value.replaceAll("\\R", " ");
+        return LINE_BREAK.matcher(value).replaceAll(" ");
     }
 
     @Override

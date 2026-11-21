@@ -20,6 +20,18 @@ class ChangelogValidatorTest {
     @TempDir
     Path tempDir;
 
+    /**
+     * Wraps {@code body} in a databaseChangeLog document that declares the
+     * Liquibase namespace under the {@code db} prefix.
+     */
+    private static String prefixedChangelog(String body) {
+        return """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <db:databaseChangeLog xmlns:db="http://www.liquibase.org/xml/ns/dbchangelog">
+                %s
+                </db:databaseChangeLog>
+                """.formatted(body);
+    }
 
     /**
      * A SQL file whose name does not start with a three-digit, zero-padded
@@ -378,22 +390,50 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * Include and SQL reference elements without a path are ignored.
+     * An {@code <include>} or {@code <sqlFile>} without its required path
+     * attribute is rejected instead of being dropped from the graph, so an
+     * attribute-name typo cannot turn into silent under-validation.
      */
     @Test
-    void ignoresIncludesAndSqlFilesWithoutPath() throws IOException {
+    void rejectsIncludeAndSqlFileWithoutPath() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
         Files.writeString(master, ChangelogTestSupport.changelog("""
-                <include file="changes.xml" relativeToChangelogFile="true"/>
                 <include/>
                 """));
+
+        IOException includeFailure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertTrue(includeFailure.getMessage().contains("include without a file attribute"));
+
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile/>
+                </changeSet>
+                """));
+
+        IOException sqlFailure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertTrue(sqlFailure.getMessage().contains("sqlFile without a path attribute"));
+    }
+
+    /**
+     * A routine body given as the element's inline text (or an empty
+     * {@code <createProcedure/>}) carries no path and is not a broken reference.
+     */
+    @Test
+    void ignoresRoutineBodiesWithoutAPath() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
         Files.writeString(sqlChanges.resolve("001-create.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
         Files.writeString(changes.resolve("changes.xml"), ChangelogTestSupport.changelog("""
                 <changeSet id="001-create" author="test">
                     <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
-                    <sqlFile/>
+                    <createProcedure>CREATE FUNCTION f() RETURNS integer LANGUAGE sql RETURN 1</createProcedure>
                     <createProcedure/>
                 </changeSet>
                 """));
@@ -495,5 +535,52 @@ class ChangelogValidatorTest {
                 """));
 
         assertThrows(IOException.class, () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
+    }
+
+    /**
+     * The SQL extension and the exempt-directory names are matched
+     * case-insensitively, so a {@code .SQL} file and a {@code Functions}
+     * directory behave like their lower-case forms.
+     */
+    @Test
+    void matchesSqlExtensionsAndExemptDirectoriesCaseInsensitively() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Files.writeString(changes.resolve("001-create.SQL"), "");
+        Files.writeString(changes.resolve("create.SQL"), "");
+        Path functions = Files.createDirectories(changes.resolve("Functions"));
+        Files.writeString(functions.resolve("alter_table.SQL"), "");
+
+        assertEquals(List.of(Path.of("create.SQL")), ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+        assertEquals(List.of(
+                        Path.of("001-create.SQL"),
+                        Path.of("Functions/alter_table.SQL"),
+                        Path.of("create.SQL")),
+                ChangelogValidator.findSqlFiles(changes));
+    }
+
+    /**
+     * A changelog that uses a prefixed Liquibase namespace is traversed exactly
+     * like the default namespace: includes are followed, and changeSet and
+     * sqlFile elements are found.
+     */
+    @Test
+    void traversesAPrefixedLiquibaseNamespace() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path sqlChanges = Files.createDirectories(changes.resolve("sql_changes"));
+        Files.writeString(sqlChanges.resolve("001-create.sql"), "");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, prefixedChangelog("""
+                <db:include file="changes.xml" relativeToChangelogFile="true"/>
+                """));
+        Files.writeString(changes.resolve("changes.xml"), prefixedChangelog("""
+                <db:changeSet id="create-example" author="test">
+                    <db:sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
+                </db:changeSet>
+                """));
+
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(
+                        changes.resolve("changes.xml"), "create-example")),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
     }
 }
