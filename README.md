@@ -427,8 +427,8 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
-`RoutineDocumentationContract`, `UpgradeContract`) that a project subclasses to
-inherit the tests themselves, so
+`RoutineDocumentationContract`, `PrivilegeContract`, `UpgradeContract`) that a
+project subclasses to inherit the tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
 one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
@@ -561,6 +561,28 @@ and procedures READMEs under the profile's changelog root and is non-vacuous.
 
 The contracts are separate because a project may adopt the signature check
 before its routine READMEs are complete.
+
+### Privileges
+
+`PrivilegeContract` checks the caller grants and the default-privilege hardening:
+
+- no routine in the profile's routine schemas is executable by `PUBLIC`
+- the caller role can execute every callable routine (procedures and
+  non-trigger functions)
+- every configured `applicationTypes()` entry is not usable by `PUBLIC`, and
+  the caller has an explicit `USAGE` grant on it
+- a routine and an enum type created after the default-privilege changeset do
+  not regain `PUBLIC` access (skipped when `defaultPrivilegesExpected()` is
+  false)
+- the grant changeset rollback mirrors the forward grants and has no stale
+  revoke or stale `PUBLIC` restore
+
+`applicationTypes()` is the configured type/domain list and must be non-empty.
+The routine checks fail when the routine schemas contain no routine. The default
+grant resources are
+`<changes>/sql_changes/999-grant-privileges.sql` and
+`<changes>/rollback/999-grant-privileges-rollback.sql`; override them for a
+different name.
 
 ### Incremental upgrade from the previous release
 

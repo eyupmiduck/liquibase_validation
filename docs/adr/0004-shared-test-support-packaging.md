@@ -294,6 +294,24 @@ and procedures READMEs under the profile's changelog root.
 The two contracts are separate so a project can adopt the signature check while
 its routine documentation is still being completed.
 
+## Update (1.18.0): privilege contract
+
+Add `PrivilegeContract` over `GrantAssertions`. It checks that no routine is
+executable by `PUBLIC`, that the caller can execute every callable routine, that
+each configured `applicationTypes()` entry is not usable by `PUBLIC` and has an
+explicit caller `USAGE` grant, that a routine and an enum type created after the
+default-privilege changeset do not regain `PUBLIC` access, and that the grant
+rollback mirrors the forward grants. The routine and type checks are
+non-vacuous; the default-privilege probe is skipped when a project does not
+configure default privileges.
+
+`GrantAssertions.assertGrantRollbackMirrors` now also rejects a stale rollback
+entry (a revoke or `PUBLIC` restore with no matching forward grant), not only a
+missing one. The test fixtures include a stale-rollback negative case.
+
+`applicationTypes()` is the explicit type/domain list so a project can include
+table row types and domains, not just the standalone `pg_type` rows.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

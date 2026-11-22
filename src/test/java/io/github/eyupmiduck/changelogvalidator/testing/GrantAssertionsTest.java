@@ -125,5 +125,14 @@ class GrantAssertionsTest extends PostgresTestBase {
         GrantAssertions.assertGrantRollbackMirrors(
                 "testing/grants-variants-forward.sql", "app_caller",
                 "testing/grants-variants-rollback.sql");
+
+        AssertionError stale = assertThrows(AssertionError.class,
+                () -> GrantAssertions.assertGrantRollbackMirrors(
+                        "testing/grants-forward-stale.sql", "app_caller",
+                        "testing/grants-rollback-stale.sql"));
+        assertTrue(stale.getMessage().contains("stale"),
+                () -> "the stale-rollback branch should fail: " + stale.getMessage());
+        assertTrue(stale.getMessage().contains("grants.b(integer)"),
+                () -> "the stale entry should be grants.b: " + stale.getMessage());
     }
 }
