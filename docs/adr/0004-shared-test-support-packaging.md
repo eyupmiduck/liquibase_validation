@@ -273,6 +273,27 @@ Both assertions are non-vacuous: a schema set with no table and an empty probe
 list fail, and a probe table with no row fails. `RoutineAssertions` exposes the
 same non-vacuous assertions for a consumer that does not use the contract.
 
+## Update (1.17.0): routine signature and documentation contracts
+
+Add `RoutineSignatureContract` and `RoutineDocumentationContract`, both reading
+`RoutineCatalog` so they share one definition of a routine and one catalog query.
+
+`RoutineSignatureContract` promotes the ddl_utils ad-hoc test: one signature per
+routine unless allowed, a stale allow-list entry fails, and an empty routine set
+fails non-vacuously.
+
+`RoutineDocumentationContract` checks that every routine has a README heading and
+that no heading names a removed routine. The default format is a Markdown
+heading `### \`schema.name(i_arg, ...)\``; optional-argument brackets are
+stripped and the argument names/arity are compared to the catalog. An abbreviated
+heading containing `...` is checked by name only. A consumer can override
+`documentedRoutines(resource, content)` for another format and
+`readmeResources()` for different files. The default resources are the functions
+and procedures READMEs under the profile's changelog root.
+
+The two contracts are separate so a project can adopt the signature check while
+its routine documentation is still being completed.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

@@ -19,6 +19,8 @@
  * {@code CommentContract} checks the catalog-comment convention over the
  * profile's managed schemas, and {@code AuditColumnsContract} checks the
  * audit-column convention plus an optional behavioral trigger probe.
+ * {@code RoutineSignatureContract} rejects unexpected overloads and
+ * {@code RoutineDocumentationContract} checks the routine README headings.
  * {@code TestResources} gives those contracts and the consumer's own tests
  * classpath access to files and SQL directories.
  */

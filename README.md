@@ -426,8 +426,9 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
-`CommentContract`, `AuditColumnsContract`, `UpgradeContract`) that a project
-subclasses to inherit the tests themselves, so
+`CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
+`RoutineDocumentationContract`, `UpgradeContract`) that a project subclasses to
+inherit the tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
 one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
@@ -533,6 +534,33 @@ on a real row: it verifies the trigger refreshes `updated_at` and preserves
 `created_at`, then rolls the update back. A probe table with no row fails. Leave
 the map empty to run only the catalog check. Consumers seed the probe row in
 their own fixture; the contract does not invent data.
+
+### Routine signatures and documentation
+
+`RoutineSignatureContract` checks every function and procedure in the profile's
+routine schemas: a routine name must have one signature, and an intentional
+overload must be listed in `allowedOverloads()`. An allow-list entry that no
+longer matches a real overload is stale and fails, so a removed exception cannot
+hide a new overload. The contract fails non-vacuously when the routine schemas
+contain no routine.
+
+`RoutineDocumentationContract` checks that every routine has a README section
+and that no README section names a routine that no longer exists. The default
+format is a Markdown heading:
+
+```markdown
+### `schema.name(i_arg, ...)`
+```
+
+The default parser strips optional-argument brackets and compares the argument
+names and arity to the catalog. A heading containing `...` is treated as an
+abbreviated signature and is checked by name only. Override
+`documentedRoutines(resource, content)` for a different format and
+`readmeResources()` for different files. The contract defaults to the functions
+and procedures READMEs under the profile's changelog root and is non-vacuous.
+
+The contracts are separate because a project may adopt the signature check
+before its routine READMEs are complete.
 
 ### Incremental upgrade from the previous release
 
