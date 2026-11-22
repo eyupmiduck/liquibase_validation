@@ -209,6 +209,24 @@ published release; the library's own tests cover `UpgradeTestBase` and the
 rollback machinery. `RollbackSignatureContract` has a library test that creates
 a probe routine and points the contract at a rollback fixture.
 
+## Update (1.13.0): ProjectProfile
+
+The per-contract `configuration()` plus separate schema, caller and directory
+hooks still repeated the project's values across test classes. Add
+`ProjectProfile`, a value object carrying the database/changelog `Configuration`,
+the managed, application and routine schemas, the caller role, the routine and
+trigger rollback directories, and the changelog and `plpgsql_check` resource
+locations.
+
+`PostgresTestBase.projectProfile()` is the single source of truth;
+`configuration()` and the schema/role accessors derive from it. The contracts
+read the profile, so a consumer normally overrides `projectProfile()` once per
+test class and supplies no other schema or directory hooks. The old hooks remain
+overridable for a one-off case, and `Configuration` stays the database/changelog
+component of the profile. The builder fills the conventional changelog locations
+and derives the application schemas from `public` plus the managed schemas, so a
+consumer states only what differs.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

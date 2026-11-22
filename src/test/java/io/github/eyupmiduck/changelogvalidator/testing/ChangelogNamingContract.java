@@ -13,13 +13,22 @@ import java.util.regex.Pattern;
  * schema/table changesets, or {@code function-}/{@code procedure-}/
  * {@code trigger-<schema>.<name>} for a stored object).
  *
- * <p>A consumer extends this class, normally without overriding anything, only
- * for the conventional {@code db/changelog} layout. Override
- * {@link #changelogRoot()}, {@link #changesRoot()} or {@link #master()} for a
- * different layout, and {@link #changeSetIdPattern()} to accept project-specific
- * ids.
+ * <p>A consumer extends this class and returns its one {@link ProjectProfile}
+ * from {@link #projectProfile()}; the changelog root, changes root and master
+ * come from that profile. Override {@link #changelogRoot()},
+ * {@link #changesRoot()} or {@link #master()} for a one-off layout, and
+ * {@link #changeSetIdPattern()} to accept project-specific ids.
  */
 public abstract class ChangelogNamingContract {
+
+    /**
+     * The project profile, used for the changelog locations.
+     *
+     * @return the project profile
+     */
+    protected ProjectProfile projectProfile() {
+        return ProjectProfile.DEFAULT;
+    }
 
     /**
      * The changelog root directory.
@@ -27,7 +36,7 @@ public abstract class ChangelogNamingContract {
      * @return the changelog root
      */
     protected Path changelogRoot() {
-        return ChangelogTestSupport.changelogRoot();
+        return projectProfile().changelogRoot();
     }
 
     /**
@@ -36,7 +45,7 @@ public abstract class ChangelogNamingContract {
      * @return the changes directory
      */
     protected Path changesRoot() {
-        return ChangelogTestSupport.changesRoot();
+        return projectProfile().changesRoot();
     }
 
     /**
@@ -45,7 +54,7 @@ public abstract class ChangelogNamingContract {
      * @return the master changelog
      */
     protected Path master() {
-        return ChangelogTestSupport.master();
+        return projectProfile().master();
     }
 
     /**

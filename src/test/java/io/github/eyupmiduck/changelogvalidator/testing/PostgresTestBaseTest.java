@@ -30,7 +30,8 @@ class PostgresTestBaseTest extends PostgresTestBase {
     void connectsToAClonedTemplateDatabase() {
         assertTrue(databaseReady(), "the private database should be open");
         String owner = dsl.fetchOne("SELECT current_user::text").get(0, String.class);
-        assertEquals(testUser(), owner, "the cloned database connection should use the test role");
+        assertEquals(configuration().testUser(), owner,
+                "the cloned database connection should use the test role");
     }
 
     /**

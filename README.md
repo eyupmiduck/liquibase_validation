@@ -36,10 +36,12 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 - `io.github.eyupmiduck.changelogvalidator.testing` — shared test support,
   published under the `tests` classifier: a Testcontainers `PostgresTestBase`
   (shared container, migrated template database, per-class clone, introspection
-  and SQLSTATE helpers, and a `Configuration` value), a classpath
-  `ChangelogTestSupport`, `TestResources`, the
-  `ChangelogAssertions`/`RoutineAssertions` helpers, contract classes for the
-  linter, changelog naming, orphaned SQL, tracking tables and `plpgsql_check`,
+  and SQLSTATE helpers, and a `ProjectProfile` carrying the
+  database/changelog `Configuration` plus the managed and routine schemas,
+  caller role and rollback directories), a classpath `ChangelogTestSupport`,
+  `TestResources`, the `ChangelogAssertions`/`RoutineAssertions` helpers,
+  contract classes for the linter, changelog naming, orphaned SQL, tracking
+  tables and `plpgsql_check`,
   and an `UpgradeTestBase` that
   applies the most recent published release's changelog and then the current one
   (see [Using the library](#using-the-library),
@@ -408,11 +410,13 @@ The library is published to GitHub Packages from a `v*` tag (for example
 
 The same artifact also publishes a `tests` classifier with shared test support
 (`io.github.eyupmiduck.changelogvalidator.testing`): `ChangelogTestSupport`,
-`PostgresTestBase` (with a `Configuration` value so a project's regular test
-base and its upgrade test share one setup, plus the generic lock and catalog
-helpers), `TestResources`, the `ChangelogAssertions`/`RoutineAssertions`
-helpers (including routine/rollback parity), the previous-release
-`UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
+`PostgresTestBase` (with a `ProjectProfile` value carrying the database and
+changelog `Configuration`, the managed/routine schemas, the caller role and the
+rollback directories, so a project's regular test base and every contract share
+one setup, plus the generic lock and catalog helpers), `TestResources`, the
+`ChangelogAssertions`/`RoutineAssertions` helpers (including routine/rollback
+parity), the previous-release `UpgradeTestBase`, and abstract contract classes
+(`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `UpgradeContract`) that a project subclasses to inherit the tests themselves, so
@@ -477,47 +481,9 @@ same `FILENAME` for a changeset applied from the released jar and from the
 current classpath, so the second run applies only the delta; a changeset that
 was released and then edited fails Liquibase's checksum validation.
 
-Extend the shared `UpgradeContract` and supply the coordinates of the project's
-own artifact, the schemas the changelog manages, and the project-specific
-assertions for the upgraded database:
-
-```java
-class LiquibaseUpgradeTest extends UpgradeContract {
-
-    @Override
-    protected PublishedRelease.Coordinates releaseCoordinates() {
-        return new PublishedRelease.Coordinates(
-                "https://maven.pkg.github.com/eyupmiduck/my_project",
-                "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
-    }
-
-    @Override
-    protected Collection<String> managedSchemas() {
-        return List.of("my_project", "my_project_lib");
-    }
-
-    @Override
-    protected Configuration configuration() {
-        return PostgresTestBase.CONFIGURATION;
-    }
-
-    @Override
-    protected void assertUpgradedDatabase() {
-        assertEquals(2, upgradeDsl().fetchOne(
-                        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'my_project%'")
-                .get(0, Integer.class));
-    }
-}
-```
-
-The fixture-free version resolves the release automatically: it reads
-`maven-metadata.xml` from the repository, selects the highest non-`SNAPSHOT`
-version strictly below the current version, and downloads the jar to
-`target/previous-release` (override `cacheDirectory()` to change that). The
-roles, image, tracking-table names and changelog resource come from
-`PostgresTestBase.configuration()`: a project declares one
-`Configuration` constant next to its test base and returns it from both
-classes, so the two cannot drift.
+Extend the shared `UpgradeContract`, supply the coordinates of the project's own
+artifact and the project-specific assertions, and return the project profile from
+your test base:
 
 ```java
 abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.testing.PostgresTestBase {
@@ -533,20 +499,45 @@ abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.
             // before the changelog runs; null when the project needs none.
             PostgresTestBase::installProjectExtensions);
 
+    static final ProjectProfile PROFILE = ProjectProfile.builder(CONFIGURATION)
+            .managedSchemas("my_project", "my_project_lib")
+            .routineSchemas("my_project", "my_project_lib")
+            .callerRole("my_project_caller")
+            .routineRollbackDirectories("db/changelog/changes/functions-rollback")
+            .triggerRollbackDirectories("db/changelog/changes/triggers-rollback")
+            .build();
+
     @Override
-    protected Configuration configuration() {
-        return CONFIGURATION;
+    protected ProjectProfile projectProfile() {
+        return PROFILE;
     }
 }
 
-class LiquibaseUpgradeTest extends UpgradeTestBase {
+class BaselineUpgradeTest extends UpgradeContract {
 
     @Override
-    protected Configuration configuration() {
-        return PostgresTestBase.CONFIGURATION;
+    protected PublishedRelease.Coordinates releaseCoordinates() {
+        return new PublishedRelease.Coordinates(
+                "https://maven.pkg.github.com/eyupmiduck/my_project",
+                "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
+    }
+
+    @Override
+    protected void assertUpgradedDatabase() {
+        assertEquals(2, upgradeDsl().fetchOne(
+                        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'my_project%'")
+                .get(0, Integer.class));
     }
 }
 ```
+
+The fixture-free version resolves the release automatically: it reads
+`maven-metadata.xml` from the repository, selects the highest non-`SNAPSHOT`
+version strictly below the current version, and downloads the jar to
+`target/previous-release` (override `cacheDirectory()` to change that). The
+roles, image, tracking-table names, changelog resource and managed schemas come
+from the profile; a project declares one `ProjectProfile` constant next to its
+test base, so its regular tests and every contract read the same values.
 
 Credentials are read from `GITHUB_ACTOR`/`GITHUB_TOKEN` (or `GH_TOKEN`), falling
 back to the `github` server in `~/.m2/settings.xml` with `${env.VAR}`

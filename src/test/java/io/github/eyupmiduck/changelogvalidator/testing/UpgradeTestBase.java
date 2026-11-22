@@ -35,10 +35,11 @@ import java.util.Optional;
  * {@link #catalogComparisonEnabled()}, and writes both captures to
  * {@link #catalogDumpDirectory()} for review.
  *
- * <p>A subclass supplies {@link #releaseCoordinates()} and
- * {@link #managedSchemas()}; the roles, image, tracking table names and changelog
- * resource come from {@link #configuration()}, so a consumer returns the same
- * value from its regular test base and this one.
+ * <p>A subclass returns its one {@link ProjectProfile} from
+ * {@link #projectProfile()} (it supplies the roles, image, tracking table names,
+ * changelog resource and managed schemas) and supplies
+ * {@link #releaseCoordinates()}, so the regular test base and this class read
+ * the same values.
  *
  * <p>The test skips (rather than fails) when there is no published release below
  * the current version, so a project's first release does not break its build. It
@@ -64,14 +65,6 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      * @return the artifact coordinates
      */
     protected abstract PublishedRelease.Coordinates releaseCoordinates();
-
-    /**
-     * The schemas the changelog manages, compared between the upgraded database
-     * and a from-scratch build.
-     *
-     * @return the managed schemas
-     */
-    protected abstract Collection<String> managedSchemas();
 
     /**
      * Resolves the previous release jar, or empty when there is none. Override

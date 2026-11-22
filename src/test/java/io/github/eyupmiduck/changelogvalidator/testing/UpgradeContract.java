@@ -15,23 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * least one changeset, and the upgraded database passes
  * {@link #assertUpgradedDatabase()}.
  *
- * <p>A consumer extends this class, supplies its
- * {@link #configuration() configuration} (the contract, not its own test base,
- * is the direct superclass), the release {@code releaseCoordinates()} and
- * {@code managedSchemas()}, and implements {@link #assertUpgradedDatabase()}
- * with its project-specific checks.
+ * <p>A consumer extends this class, returns its one {@link ProjectProfile} from
+ * {@link #projectProfile()} (the configuration and managed schemas come from
+ * it), supplies the release {@code releaseCoordinates()}, and implements
+ * {@link #assertUpgradedDatabase()} with its project-specific checks.
  */
 public abstract class UpgradeContract extends UpgradeTestBase {
-
-    /**
-     * The consumer's container and changelog configuration. It must be supplied
-     * because the contract, not the consumer's own test base, is the direct
-     * superclass of the consumer's test class.
-     *
-     * @return the configuration
-     */
-    @Override
-    protected abstract Configuration configuration();
 
     /**
      * Asserts the upgraded database is the expected end state: the schemas,

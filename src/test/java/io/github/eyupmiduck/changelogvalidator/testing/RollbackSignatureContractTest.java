@@ -2,15 +2,23 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 
 import org.junit.jupiter.api.BeforeAll;
 
-import java.util.Collection;
-import java.util.List;
-
 /**
  * Runs the shared {@link RollbackSignatureContract} against a probe routine
  * created in this class's private database and the rollback fixture that drops
- * it, so the contract's inherited test and its hooks are exercised here too.
+ * it, so the contract's inherited test and its profile plumbing are exercised
+ * here too.
  */
 class RollbackSignatureContractTest extends RollbackSignatureContract {
+
+    /**
+     * The library's default database with {@code public} as the routine schema
+     * and the fixture rollback directory.
+     */
+    private static final ProjectProfile PROFILE = ProjectProfile.builder(Configuration.DEFAULT)
+            .managedSchemas(PUBLIC_SCHEMA)
+            .routineSchemas(PUBLIC_SCHEMA)
+            .routineRollbackDirectories("rollback-fixture")
+            .build();
 
     /**
      * Creates the probe routine the fixture rollback drops.
@@ -27,32 +35,13 @@ class RollbackSignatureContractTest extends RollbackSignatureContract {
     }
 
     /**
-     * The library has no project image or roles, so it uses the shared defaults.
+     * The library has no project image or roles, so it uses the shared defaults
+     * plus the probe routine's rollback directory.
      *
-     * @return the default configuration
+     * @return the profile
      */
     @Override
-    protected Configuration configuration() {
-        return Configuration.DEFAULT;
-    }
-
-    /**
-     * The probe routine lives in the public schema.
-     *
-     * @return the routine schemas
-     */
-    @Override
-    protected Collection<String> routineSchemas() {
-        return List.of(PUBLIC_SCHEMA);
-    }
-
-    /**
-     * The fixture holds the probe routine's rollback.
-     *
-     * @return the rollback directories
-     */
-    @Override
-    protected Collection<String> rollbackDirectories() {
-        return List.of("rollback-fixture");
+    protected ProjectProfile projectProfile() {
+        return PROFILE;
     }
 }

@@ -107,7 +107,7 @@ class LiquibaseUpgradeTest extends PostgresTestBase {
     @BeforeEach
     void createScratchDatabase() throws SQLException {
         scratchDatabase = "upgrade_" + Integer.toUnsignedString(UUID.randomUUID().hashCode(), 16);
-        try (Connection admin = openAdminConnection(databaseName());
+        try (Connection admin = openAdminConnection(configuration().databaseName());
              Statement statement = admin.createStatement()) {
             statement.execute("CREATE DATABASE \"" + scratchDatabase + "\"");
         }
@@ -126,7 +126,7 @@ class LiquibaseUpgradeTest extends PostgresTestBase {
             scratch.close();
         }
         if (scratchDatabase != null) {
-            try (Connection admin = openAdminConnection(databaseName());
+            try (Connection admin = openAdminConnection(configuration().databaseName());
                  Statement statement = admin.createStatement()) {
                 statement.execute("DROP DATABASE IF EXISTS \"" + scratchDatabase + "\" WITH (FORCE)");
             }

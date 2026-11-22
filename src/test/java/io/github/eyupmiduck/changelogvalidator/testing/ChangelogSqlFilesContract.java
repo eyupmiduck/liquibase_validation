@@ -9,11 +9,21 @@ import java.nio.file.Path;
  * Contract for a consuming project's orphaned-SQL test: every {@code .sql} file
  * in the changelog tree is reached by the changelog graph.
  *
- * <p>A consumer extends this class, normally without overriding anything, only
- * for the conventional {@code db/changelog} layout. Override
- * {@link #changelogRoot()} or {@link #master()} for a different layout.
+ * <p>A consumer extends this class and returns its one {@link ProjectProfile}
+ * from {@link #projectProfile()}; the changelog root and master come from that
+ * profile. Override {@link #changelogRoot()} or {@link #master()} for a one-off
+ * layout.
  */
 public abstract class ChangelogSqlFilesContract {
+
+    /**
+     * The project profile, used for the changelog locations.
+     *
+     * @return the project profile
+     */
+    protected ProjectProfile projectProfile() {
+        return ProjectProfile.DEFAULT;
+    }
 
     /**
      * The changelog root directory.
@@ -21,7 +31,7 @@ public abstract class ChangelogSqlFilesContract {
      * @return the changelog root
      */
     protected Path changelogRoot() {
-        return ChangelogTestSupport.changelogRoot();
+        return projectProfile().changelogRoot();
     }
 
     /**
@@ -30,7 +40,7 @@ public abstract class ChangelogSqlFilesContract {
      * @return the master changelog
      */
     protected Path master() {
-        return ChangelogTestSupport.master();
+        return projectProfile().master();
     }
 
     /**

@@ -2,7 +2,6 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Collection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,14 +10,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Verifies the hooks {@link PlpgsqlCheckContract} adds to
  * {@link PostgresTestBase}. The inherited analyser test needs the
  * {@code plpgsql_check} extension, which the library's stock image does not
- * provide, so the consumer projects exercise that test; here only the defaults
- * are covered.
+ * provide, so the consumer projects exercise that test; here only the profile
+ * defaults are covered.
  */
 class PlpgsqlCheckContractTest {
 
     /**
      * The allow-list defaults to the conventional resource name, and the routine
-     * schemas come from the consumer.
+     * schemas come from the profile.
      */
     @Test
     void defaultsToTheConventionalWhitelist() {
@@ -35,14 +34,14 @@ class PlpgsqlCheckContractTest {
      */
     private static final class Probe extends PlpgsqlCheckContract {
 
-        @Override
-        protected Configuration configuration() {
-            return Configuration.DEFAULT;
-        }
+        private static final ProjectProfile PROFILE = ProjectProfile.builder(Configuration.DEFAULT)
+                .managedSchemas("probe_schema")
+                .routineSchemas("probe_schema")
+                .build();
 
         @Override
-        protected Collection<String> routineSchemas() {
-            return List.of("probe_schema");
+        protected ProjectProfile projectProfile() {
+            return PROFILE;
         }
     }
 }
