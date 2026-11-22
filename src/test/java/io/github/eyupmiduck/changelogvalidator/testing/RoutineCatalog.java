@@ -43,7 +43,12 @@ final class RoutineCatalog {
                            p.proname AS routine_name,
                            p.pronargs::int AS input_count,
                            pg_catalog.pg_get_function_identity_arguments(p.oid) AS identity_arguments,
-                           pg_catalog.array_to_string(p.proargnames[1:p.pronargs], ',') AS input_names
+                           pg_catalog.array_to_string(p.proargnames[1:p.pronargs], ',') AS input_names,
+                           p.prosecdef AS security_definer,
+                           p.prokind = 'p' AS procedure,
+                           (SELECT substring(setting FROM length('search_path=') + 1)
+                            FROM pg_catalog.unnest(p.proconfig) AS setting
+                            WHERE setting LIKE 'search_path=%') AS search_path
                     FROM pg_catalog.pg_proc AS p
                     JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
                     WHERE n.nspname = ANY (?)
@@ -70,7 +75,10 @@ final class RoutineCatalog {
                                 resultSet.getInt("input_count"),
                                 inputNames == null || inputNames.isBlank()
                                         ? List.of()
-                                        : List.of(inputNames.split(",", -1))));
+                                        : List.of(inputNames.split(",", -1)),
+                                resultSet.getBoolean("security_definer"),
+                                resultSet.getString("search_path"),
+                                resultSet.getBoolean("procedure")));
                     }
                 }
             }
@@ -105,8 +113,12 @@ final class RoutineCatalog {
      * @param identityArguments the argument types, as PostgreSQL renders them
      * @param inputCount        the number of input arguments
      * @param inputNames        the input argument names, empty when unnamed
+     * @param securityDefiner   whether the routine is {@code SECURITY DEFINER}
+     * @param searchPath        the pinned {@code search_path}, or {@code null}
+     * @param procedure         whether the routine is a procedure
      */
-    record Routine(String schema, String name, String identityArguments, int inputCount, List<String> inputNames) {
+    record Routine(String schema, String name, String identityArguments, int inputCount, List<String> inputNames,
+                   boolean securityDefiner, String searchPath, boolean procedure) {
 
         /**
          * Validates and copies the argument names.

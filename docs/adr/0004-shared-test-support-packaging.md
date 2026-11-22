@@ -312,6 +312,20 @@ missing one. The test fixtures include a stale-rollback negative case.
 `applicationTypes()` is the explicit type/domain list so a project can include
 table row types and domains, not just the standalone `pg_type` rows.
 
+## Update (1.19.0): routine-security contract
+
+Add `RoutineSecurityContract` over the shared `RoutineCatalog`, which now also
+exposes `prosecdef`, the pinned `search_path` from `proconfig`, and the
+function/procedure kind. The contract checks that only allow-listed routines are
+`SECURITY DEFINER` (with stale allow-list entries rejected), that every definer
+and every configured catalog-inspecting routine pins a `search_path` containing
+`pg_catalog`, that no routine pins `$user`, `DEFAULT` or `public`, and that each
+declared procedure really is a procedure. It is non-vacuous.
+
+This replaces the dml_utils `SearchPathPinTest` shape and gives both consumers
+one place for the definer allow-list, the catalog routine list and the expected
+procedures.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

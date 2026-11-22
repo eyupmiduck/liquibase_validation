@@ -20,9 +20,10 @@
  * profile's managed schemas, and {@code AuditColumnsContract} checks the
  * audit-column convention plus an optional behavioral trigger probe.
  * {@code RoutineSignatureContract} rejects unexpected overloads,
- * {@code RoutineDocumentationContract} checks the routine README headings, and
+ * {@code RoutineDocumentationContract} checks the routine README headings,
  * {@code PrivilegeContract} checks the caller grants and default-privilege
- * hardening.
+ * hardening, and {@code RoutineSecurityContract} checks definers, search paths
+ * and procedure kinds.
  * {@code TestResources} gives those contracts and the consumer's own tests
  * classpath access to files and SQL directories.
  */

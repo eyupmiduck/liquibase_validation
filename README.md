@@ -427,8 +427,8 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
-`RoutineDocumentationContract`, `PrivilegeContract`, `UpgradeContract`) that a
-project subclasses to inherit the tests themselves, so
+`RoutineDocumentationContract`, `PrivilegeContract`, `RoutineSecurityContract`,
+`UpgradeContract`) that a project subclasses to inherit the tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
 one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
@@ -583,6 +583,24 @@ grant resources are
 `<changes>/sql_changes/999-grant-privileges.sql` and
 `<changes>/rollback/999-grant-privileges-rollback.sql`; override them for a
 different name.
+
+### Routine security
+
+`RoutineSecurityContract` checks the routine security conventions:
+
+- only routines listed in `allowedSecurityDefiners()` may be
+  `SECURITY DEFINER`; an allow-list entry that is no longer a definer is stale
+- a `SECURITY DEFINER` routine must pin a `search_path` that includes
+  `pg_catalog`
+- each routine in `catalogRoutines()` must pin a `search_path` that includes
+  `pg_catalog`
+- no routine may pin a caller-controlled or mutable path: `$user`, `DEFAULT`
+  and `public` are rejected
+- each routine in `expectedProcedures()` must really be a procedure
+
+The contract is non-vacuous. `routineSchemas()` defaults to the profile's
+routine schemas; consumers supply the definer allow-list, the catalog-routine
+list and the expected procedures.
 
 ### Incremental upgrade from the previous release
 
