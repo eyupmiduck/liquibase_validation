@@ -245,6 +245,21 @@ complements `ChangelogNamingContract`: naming checks the shape of an id and a
 file name, while layout checks that they agree with each other and with the SQL
 declaration.
 
+## Update (1.15.0): catalog comment contract
+
+Add `CatalogCommentsCheck` and `CommentContract` for the project-wide comment
+convention. The check inspects schemas, tables, table columns, domains,
+composite/enum/range/base types, functions and procedures (including trigger
+functions), and optionally triggers. It excludes array types, relation row types,
+extension-owned routines and PostgreSQL's support routines for a type, so a
+range or composite type does not require a comment on its generated helpers.
+
+A `CommentContract` reads the profile's managed schemas and requires trigger
+comments by default. An explicit `AllowedObject` allow-list accepts a missing
+comment; an entry that matches no missing comment is stale and fails, and the
+contract fails when no object was inspected. `RoutineAssertions` exposes the
+same assertion for a consumer that does not use the contract.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

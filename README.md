@@ -29,6 +29,11 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   an enabled `BEFORE UPDATE ... FOR EACH ROW` trigger. A behavioral probe can
   verify on a real row that an `UPDATE` refreshes `updated_at` and preserves
   `created_at`, rolling the change back.
+- `io.github.eyupmiduck.changelogvalidator.CatalogCommentsCheck` — checks the
+  catalog-comment convention on a set of schemas: every schema, table, column,
+  domain, composite/enum/range/base type and function/procedure (and, by
+  default, trigger) has a non-blank comment. An explicit allow-list accepts a
+  missing comment, and an entry that accepts nothing is stale.
 - `io.github.eyupmiduck.changelogvalidator.linter` — a changelog linter: a
   hand-written PostgreSQL tokenizer, Liquibase-compatible statement splitting, a
   changeset model, a rule engine with tty/JSON/SARIF reporters, and rules that
@@ -421,7 +426,8 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
-`UpgradeContract`) that a project subclasses to inherit the tests themselves, so
+`CommentContract`, `UpgradeContract`) that a project subclasses to inherit the
+tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
 one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
@@ -493,6 +499,26 @@ The contract returns its `ProjectProfile`, so the changelog locations come from
 the same values as the other contracts. The rule complements
 `ChangelogNamingContract`: naming checks the shape of an id and a file name,
 while layout checks that they agree with each other and with the SQL declaration.
+
+### Catalog comments
+
+`CatalogCommentsCheck` enforces the project-wide comment convention. It inspects
+the configured schemas and reports every missing or blank comment on:
+
+- a schema;
+- a base, partitioned or foreign table (not a partition, view or materialized
+  view);
+- a column of those tables;
+- a domain, composite, enum, range or user-defined base type, excluding array
+  types and a relation's implicit row type;
+- a function or procedure, including a trigger function, excluding
+  extension-owned routines and PostgreSQL's support routines for a type;
+- a trigger, when `Options.includeTriggers()` is true (the default).
+
+`CommentContract` reads the profile's managed schemas and defaults to requiring
+trigger comments. Override `allowedObjects()` for an explicit exception; an entry
+that accepts no missing comment is stale and fails. The contract also fails when
+no object was inspected, so a misspelled schema cannot pass.
 
 ### Incremental upgrade from the previous release
 

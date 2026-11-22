@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import io.github.eyupmiduck.changelogvalidator.AuditColumnsCheck;
+import io.github.eyupmiduck.changelogvalidator.CatalogCommentsCheck;
 import io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck;
 
 import java.io.IOException;
@@ -109,6 +110,36 @@ public final class RoutineAssertions {
                     .orElseThrow(() -> new AssertionError("no row to probe in " + schema + "." + table));
             assertTrue(probe.passed(), probe::describe);
         }
+    }
+
+    /**
+     * Asserts that every inspected object in {@code schemas} has a non-blank
+     * comment, using the catalog-comment check. The assertion is non-vacuous: a
+     * configuration that inspects no object fails rather than passing.
+     *
+     * @param connection       an open connection to the migrated database
+     * @param schemas          the schemas whose objects are checked
+     * @param allowed          the accepted missing-comment exceptions
+     * @param includeTriggers  whether trigger comments are required
+     * @throws SQLException if the catalog cannot be read
+     */
+    public static void assertCatalogObjectsHaveComments(Connection connection, Collection<String> schemas,
+                                                        Collection<CatalogCommentsCheck.AllowedObject> allowed,
+                                                        boolean includeTriggers) throws SQLException {
+        CatalogCommentsCheck.Report report = CatalogCommentsCheck.check(
+                connection, schemas, allowed, new CatalogCommentsCheck.Options(includeTriggers));
+        assertTrue(report.checkedObjects() > 0,
+                () -> "no objects were inspected; check the configured schemas: " + schemas);
+        assertEquals(List.of(), report.unexpected().stream()
+                        .map(CatalogCommentsCheck.Violation::describe).toList(),
+                () -> "objects without comments:\n" + report.unexpected().stream()
+                        .map(CatalogCommentsCheck.Violation::describe)
+                        .collect(Collectors.joining("\n")));
+        assertEquals(List.of(), report.stale().stream()
+                        .map(CatalogCommentsCheck.AllowedObject::describe).toList(),
+                () -> "allow-list entries that accepted no violation:\n" + report.stale().stream()
+                        .map(CatalogCommentsCheck.AllowedObject::describe)
+                        .collect(Collectors.joining("\n")));
     }
 
     /**
