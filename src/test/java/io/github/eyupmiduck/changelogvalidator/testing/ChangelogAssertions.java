@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogLayoutCheck;
 import io.github.eyupmiduck.changelogvalidator.ChangelogValidator;
 
 import java.io.IOException;
@@ -118,5 +119,38 @@ public final class ChangelogAssertions {
 
         assertTrue(ChangelogValidator.findOrphanedSqlFiles(changelogRoot, master).isEmpty(),
                 "the validator should report no orphaned SQL files");
+    }
+
+    /**
+     * Asserts that every file-based changeset uses the path its id promises and
+     * has a matching rollback file, and that every routine or trigger file
+     * declares the object its path names.
+     *
+     * @param changelogRoot the changelog root directory
+     * @param master        the master changelog file
+     * @throws IOException if the changelog graph or a SQL file cannot be read
+     */
+    public static void assertLayoutFollowsConvention(Path changelogRoot, Path master) throws IOException {
+        assertLayoutFollowsConvention(changelogRoot, master, true);
+    }
+
+    /**
+     * Asserts the in-place file layout convention, optionally allowing a
+     * file-based changeset to omit its rollback file.
+     *
+     * @param changelogRoot    the changelog root directory
+     * @param master           the master changelog file
+     * @param rollbackRequired whether a file-based changeset must have a rollback
+     *                         file
+     * @throws IOException if the changelog graph or a SQL file cannot be read
+     */
+    public static void assertLayoutFollowsConvention(Path changelogRoot, Path master, boolean rollbackRequired)
+            throws IOException {
+        List<ChangelogLayoutCheck.Violation> violations =
+                ChangelogLayoutCheck.findViolations(changelogRoot, master, rollbackRequired);
+        assertTrue(violations.isEmpty(), () -> "changelog layout violations:\n"
+                + violations.stream()
+                .map(ChangelogLayoutCheck.Violation::describe)
+                .collect(Collectors.joining("\n")));
     }
 }

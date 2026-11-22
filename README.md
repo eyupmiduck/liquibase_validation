@@ -16,7 +16,9 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   `<sqlFile>` elements and as the external body of a
   `<createProcedure>`/`<createFunction>` element; files under a routine
   directory (`functions`, `procedures`, or their `-rollback` variants) are
-  exempt from the `NNN-` SQL naming rule.
+  exempt from the `NNN-` SQL naming rule. The separate
+  `ChangelogLayoutCheck` joins a changeset id to its forward and rollback files
+  and, for a routine or trigger, to the declaration inside the file.
 - `io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck` — runs
   `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
@@ -417,7 +419,7 @@ one setup, plus the generic lock and catalog helpers), `TestResources`, the
 `ChangelogAssertions`/`RoutineAssertions` helpers (including routine/rollback
 parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 (`ChangelogLinterContract`,
-`ChangelogNamingContract`, `ChangelogSqlFilesContract`,
+`ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `UpgradeContract`) that a project subclasses to inherit the tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
@@ -471,6 +473,26 @@ token with the `read:packages` scope is required):
 Before a consuming repository's `GITHUB_TOKEN` can read the package, grant
 that repository read access under the package's **Manage Actions access**
 settings.
+
+### Changelog layout
+
+`ChangelogLayoutContract` checks the in-place file layout that a changeset id
+promises:
+
+- `NNN-name` uses `sql_changes/NNN-name.sql` and
+  `rollback/NNN-name-rollback.sql`;
+- `function-<schema>.<name>`, `procedure-<schema>.<name>` and
+  `trigger-<schema>.<name>` use the matching `functions/`, `procedures/` or
+  `triggers/` path and its `-rollback` directory;
+- a routine or trigger file declares exactly the object its path names, and a
+  trigger is on a table in the path's schema;
+- a file-based changeset has its matching rollback file unless the project
+  overrides `rollbackRequired()`, and no SQL file is referenced twice.
+
+The contract returns its `ProjectProfile`, so the changelog locations come from
+the same values as the other contracts. The rule complements
+`ChangelogNamingContract`: naming checks the shape of an id and a file name,
+while layout checks that they agree with each other and with the SQL declaration.
 
 ### Incremental upgrade from the previous release
 

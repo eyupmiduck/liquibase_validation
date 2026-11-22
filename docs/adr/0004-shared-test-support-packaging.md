@@ -227,6 +227,24 @@ component of the profile. The builder fills the conventional changelog locations
 and derives the application schemas from `public` plus the managed schemas, so a
 consumer states only what differs.
 
+## Update (1.14.0): changelog layout contract
+
+Add `ChangelogLayoutContract` (and the public `ChangelogLayoutCheck`) for a
+living-definition changelog. It joins a changeset id to its forward and rollback
+files, and for a routine or trigger to the declaration inside the file. The
+numeric id maps to `sql_changes/<id>.sql` and `rollback/<id>-rollback.sql`; a
+`function-`/`procedure-`/`trigger-<schema>.<name>` id maps to the matching
+per-object directory and its `-rollback` directory. A routine file must declare
+exactly the qualified name the path names, and a trigger must be on a table in
+the path's schema. A file-based changeset needs a rollback file by default, and
+no SQL file may be referenced twice.
+
+The contract reads `ProjectProfile`, so the changelog locations and the
+rollback requirement are project values rather than per-contract hooks. It
+complements `ChangelogNamingContract`: naming checks the shape of an id and a
+file name, while layout checks that they agree with each other and with the SQL
+declaration.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

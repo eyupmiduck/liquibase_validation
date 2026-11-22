@@ -8,6 +8,8 @@
          has a changes directory and a referenced SQL file. -->
     <changeSet id="001-placeholder" author="lee.horner">
         <sqlFile path="sql_changes/001-placeholder.sql" relativeToChangelogFile="true"/>
-        <rollback/>
+        <rollback>
+            <sqlFile path="rollback/001-placeholder-rollback.sql" relativeToChangelogFile="true"/>
+        </rollback>
     </changeSet>
 </databaseChangeLog>

@@ -14,6 +14,8 @@
  * io.github.eyupmiduck.changelogvalidator.testing.ProjectProfile} from
  * {@code projectProfile()}, so the checks stay identical across projects and the
  * schema, role and changelog values cannot drift between test classes.
+ * {@code ChangelogLayoutContract} additionally joins a changeset id to its file
+ * names and, for a routine or trigger, to the declaration inside the file.
  * {@code TestResources} gives those contracts and the consumer's own tests
  * classpath access to files and SQL directories.
  */
