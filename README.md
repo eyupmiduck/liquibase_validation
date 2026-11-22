@@ -426,8 +426,8 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
-`CommentContract`, `UpgradeContract`) that a project subclasses to inherit the
-tests themselves, so
+`CommentContract`, `AuditColumnsContract`, `UpgradeContract`) that a project
+subclasses to inherit the tests themselves, so
 a project that builds a Liquibase changelog and PostgreSQL routines can share
 one implementation instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
@@ -519,6 +519,20 @@ the configured schemas and reports every missing or blank comment on:
 trigger comments. Override `allowedObjects()` for an explicit exception; an entry
 that accepts no missing comment is stale and fails. The contract also fails when
 no object was inspected, so a misspelled schema cannot pass.
+
+### Audit columns
+
+`AuditColumnsContract` checks that every base and partitioned table (not a
+partition) in the profile's managed schemas has `created_at` and `updated_at` as
+`timestamptz NOT NULL DEFAULT now()` and an enabled unrestricted
+`BEFORE UPDATE ... FOR EACH ROW` trigger. The contract fails when the schema set
+contains no table, so a misconfigured schema cannot pass.
+
+Override `probeTables()` with a schema-to-table map to run the behavioral probe
+on a real row: it verifies the trigger refreshes `updated_at` and preserves
+`created_at`, then rolls the update back. A probe table with no row fails. Leave
+the map empty to run only the catalog check. Consumers seed the probe row in
+their own fixture; the contract does not invent data.
 
 ### Incremental upgrade from the previous release
 

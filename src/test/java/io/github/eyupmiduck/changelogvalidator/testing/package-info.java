@@ -17,7 +17,8 @@
  * {@code ChangelogLayoutContract} additionally joins a changeset id to its file
  * names and, for a routine or trigger, to the declaration inside the file.
  * {@code CommentContract} checks the catalog-comment convention over the
- * profile's managed schemas.
+ * profile's managed schemas, and {@code AuditColumnsContract} checks the
+ * audit-column convention plus an optional behavioral trigger probe.
  * {@code TestResources} gives those contracts and the consumer's own tests
  * classpath access to files and SQL directories.
  */

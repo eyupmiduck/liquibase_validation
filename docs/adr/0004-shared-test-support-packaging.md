@@ -260,6 +260,19 @@ comment; an entry that matches no missing comment is stale and fails, and the
 contract fails when no object was inspected. `RoutineAssertions` exposes the
 same assertion for a consumer that does not use the contract.
 
+## Update (1.16.0): audit-column contract
+
+Add `AuditColumnsContract` over `AuditColumnsCheck`. The catalog test checks
+every base and partitioned table (not a partition) in the profile's managed
+schemas. The behavioral probe is optional: override `probeTables()` with a
+schema-to-table map and the contract verifies on a real row that the trigger
+refreshes `updated_at` and preserves `created_at`, rolling the update back. The
+consumer seeds the probe row in its own fixture.
+
+Both assertions are non-vacuous: a schema set with no table and an empty probe
+list fail, and a probe table with no row fails. `RoutineAssertions` exposes the
+same non-vacuous assertions for a consumer that does not use the contract.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the
