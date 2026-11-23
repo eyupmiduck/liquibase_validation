@@ -173,6 +173,48 @@ public final class Whitelist {
     }
 
     /**
+     * Creates a whitelist from explicit entries, for the update-whitelist mode.
+     *
+     * @param entries the entries
+     * @return the whitelist
+     */
+    public static Whitelist of(List<AllowedFinding> entries) {
+        Objects.requireNonNull(entries, "entries");
+        return new Whitelist(entries);
+    }
+
+    /**
+     * Writes the entries as the YAML list this class reads.
+     *
+     * @param entries the entries to write
+     * @param file    the destination
+     * @throws IOException if the file cannot be written
+     */
+    public static void write(List<AllowedFinding> entries, Path file) throws IOException {
+        Objects.requireNonNull(entries, "entries");
+        Objects.requireNonNull(file, "file");
+        List<Map<String, String>> maps = new ArrayList<>();
+        for (AllowedFinding entry : entries) {
+            Map<String, String> map = new LinkedHashMap<>();
+            if (entry.rule() != null) {
+                map.put("rule", entry.rule());
+            }
+            if (entry.file() != null) {
+                map.put("file", entry.file());
+            }
+            if (entry.changeset() != null) {
+                map.put("changeset", entry.changeset());
+            }
+            if (entry.statement() != null) {
+                map.put("statement", entry.statement());
+            }
+            map.put("reason", entry.reason());
+            maps.add(map);
+        }
+        Files.writeString(file, YamlDocuments.dump(maps));
+    }
+
+    /**
      * Splits {@code findings} into those no entry accepts and the entries that
      * matched no finding.
      *

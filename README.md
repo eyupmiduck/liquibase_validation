@@ -113,11 +113,27 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                    |
 | `--reporter`               | `tty`                             | `tty`, `json` or `sarif`             |
 | `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
+| `--update-whitelist`       |                                   | rewrite the whitelist from the current findings |
+| `--list-rules`             |                                   | print the registered rules and exit  |
+| `--version`                |                                   | print the version and exit           |
 | `-h, --help`               |                                   | print usage and exit                 |
 
 The master may be an XML changelog or a Liquibase formatted SQL changelog. The
 graph follows `<include>`, `<includeAll>` and formatted SQL changesets; an
 unformatted SQL file found by `<includeAll>` is one raw change.
+
+`--list-rules` prints a table of every rule's id, kind, default severity and
+default state. With `--reporter json` it prints the same metadata as a JSON
+array, for tooling. Neither form needs `--changelog-root`:
+
+```sh
+liquibase-linter --list-rules
+liquibase-linter --list-rules --reporter json
+```
+
+After the findings, a normal run prints a severity summary to stderr (stdout
+stays clean for the `json` and `sarif` reporters), for example
+`2 findings: 1 error, 1 warning, 0 info`.
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold or a whitelist entry is stale (`0` under `--fail-on none`), and `2`
@@ -661,6 +677,48 @@ or the offending statement's label) is optional and matches any value when
 omitted, but an entry must set at least one. Matching is fail-closed: a finding
 no entry accepts is reported, an entry that matches no finding is stale and
 fails the run, and a finding that matches more than one entry is rejected.
+
+#### Updating the whitelist
+
+`--update-whitelist` rewrites the whitelist from the current findings. It keeps
+entries that still match, removes stale entries, and adds an entry for every new
+finding. The added and removed entries are printed, and the findings now accepted
+are printed as a normal report, so a baseline update is never silent:
+
+```sh
+liquibase-linter --changelog-root src/main/resources/db/changelog --update-whitelist
+```
+
+Review the printed entries and the resulting diff before committing. The update
+is refused (exit `2`) if the new entries would be ambiguous, so an overlapping
+entry cannot hide a finding. An entry created by the update uses the finding's
+rule, file, changeset and (when available) statement, and a `baseline: ...`
+reason derived from the message; edit the reason to explain a deliberate
+exception.
+
+#### Inline suppressions
+
+A changeset can suppress findings with a line comment in its forward or rollback
+SQL (including a routine body), instead of adding a whitelist entry:
+
+```sql
+-- liquibase-linter:ignore reason=accepted for this test
+CREATE INDEX CONCURRENTLY idx ON t (c);
+```
+
+The directive applies to the whole changeset. It can name one or more rule ids
+(comma or whitespace separated); without a rule id it suppresses every rule:
+
+```sql
+-- liquibase-linter:ignore changeset-run-in-transaction-required reason=...
+```
+
+The `reason=` value is required and non-empty, and a named rule id must be a
+registered rule. A malformed suppression fails the run (exit `2`) rather than
+silently hiding a finding. A file-level project-analysis finding (one with no
+changeset) cannot be suppressed this way; use a whitelist entry for it.
+Suppressions are scanned when the run loads SQL; a project-rules-only run still
+does not read SQL files, so it does not apply inline suppressions.
 
 ### Tokenizer
 

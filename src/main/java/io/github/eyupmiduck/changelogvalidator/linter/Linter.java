@@ -3,8 +3,10 @@ package io.github.eyupmiduck.changelogvalidator.linter;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
+import io.github.eyupmiduck.changelogvalidator.linter.model.RoutineBodies;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlNormalizer;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
@@ -14,6 +16,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Runs a set of {@link Rule}s over changesets from a changelog model.
@@ -26,10 +30,23 @@ import java.util.*;
  */
 public final class Linter {
 
+    /**
+     * The suppression marker: {@code -- liquibase-linter:ignore [rule[,rule]]
+     * reason=...}. A line comment only; a block comment is not a suppression.
+     */
+    private static final Pattern SUPPRESSION =
+            Pattern.compile("(?i)^--\\s*liquibase-linter:ignore\\b(.*)$");
+
+    /**
+     * The rule set that means "suppress every rule for this changeset".
+     */
+    private static final String SUPPRESS_ALL = "*";
+
     private final List<Rule> rules;
     private final List<ProjectRule> projectRules;
     private final List<ProjectAnalysisRule> projectAnalysisRules;
     private final LinterConfig config;
+    private final Set<String> knownRuleIds;
 
     /**
      * Creates a linter with no project rules.
@@ -94,6 +111,7 @@ public final class Linter {
         this.projectRules = List.copyOf(projectRules);
         this.projectAnalysisRules = List.copyOf(projectAnalysisRules);
         this.config = config;
+        this.knownRuleIds = Set.copyOf(known);
     }
 
     private static void register(Set<String> known, String id) {
@@ -176,13 +194,16 @@ public final class Linter {
         }
         List<Finding> findings = new ArrayList<>();
         List<ProjectAnalysisRule.AnalyzedChangeSet> analyzed = new ArrayList<>();
+        Map<ChangeSet, Set<String>> suppressedByChangeSet = new IdentityHashMap<>();
         if (anyChangesetRule || anyAnalysisRule) {
             for (ChangeSet changeSet : project.changesets()) {
                 RuleContext context = context(changeSet);
                 analyzed.add(new ProjectAnalysisRule.AnalyzedChangeSet(changeSet, context));
+                Set<String> suppressed = suppressions(context);
+                suppressedByChangeSet.put(changeSet, suppressed);
                 if (anyChangesetRule) {
                     for (Rule rule : rules) {
-                        if (!config.isEnabled(rule)) {
+                        if (!config.isEnabled(rule) || isSuppressed(suppressed, rule.id())) {
                             continue;
                         }
                         Severity severity = config.severityFor(rule);
@@ -206,6 +227,9 @@ public final class Linter {
                     () -> "project rule " + rule.id() + " returned null from check()");
             for (ProjectRule.Violation violation : violations) {
                 ChangeSet changeSet = violation.changeSet();
+                if (isSuppressed(suppressedByChangeSet.getOrDefault(changeSet, Set.of()), rule.id())) {
+                    continue;
+                }
                 findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
                         changeSet.changelogFile(), violation.line(), violation.column(),
                         violation.statement(), violation.message(), violation.help()));
@@ -222,6 +246,11 @@ public final class Linter {
                         () -> "project analysis rule " + rule.id() + " returned null from check()");
                 for (ProjectAnalysisRule.Violation violation : violations) {
                     ChangeSet changeSet = violation.changeSet();
+                    if (changeSet != null
+                            && isSuppressed(suppressedByChangeSet.getOrDefault(changeSet, Set.of()),
+                            rule.id())) {
+                        continue;
+                    }
                     findings.add(new Finding(rule.id(), severity,
                             changeSet == null ? "" : changeSet.id(),
                             changeSet == null ? "" : changeSet.author(),
@@ -250,6 +279,88 @@ public final class Linter {
         return new RuleContext(changeSet,
                 units(changeSet, changeSet.sqlSources(), false),
                 units(changeSet, changeSet.rollbackSources(), true));
+    }
+
+    /**
+     * Returns the rule ids suppressed for a changeset by
+     * {@code -- liquibase-linter:ignore} comments in its forward or rollback SQL,
+     * or in a routine body. The special value {@link #SUPPRESS_ALL} suppresses
+     * every rule. Suppressions are only scanned when the run loads SQL, so a
+     * project-rules-only run still does not read SQL files.
+     */
+    private Set<String> suppressions(RuleContext context) {
+        Set<String> rules = new LinkedHashSet<>();
+        for (SqlUnit unit : context.forward()) {
+            scanSuppressions(unit.tokens(), unit.file(), rules);
+        }
+        for (SqlUnit unit : context.rollback()) {
+            scanSuppressions(unit.tokens(), unit.file(), rules);
+        }
+        for (RoutineBodies.Body body : RoutineBodies.find(context.forward())) {
+            scanSuppressions(body.tokens(), body.unit().file(), rules);
+        }
+        for (RoutineBodies.Body body : RoutineBodies.find(context.rollback())) {
+            scanSuppressions(body.tokens(), body.unit().file(), rules);
+        }
+        return Set.copyOf(rules);
+    }
+
+    private void scanSuppressions(List<Token> tokens, Path file, Set<String> rules) {
+        for (Token token : tokens) {
+            if (token.type() != TokenType.LINE_COMMENT && token.type() != TokenType.DIRECTIVE) {
+                continue;
+            }
+            Matcher matcher = SUPPRESSION.matcher(token.text());
+            if (matcher.matches()) {
+                parseSuppression(matcher.group(1), file, token.line(), rules);
+            }
+        }
+    }
+
+    private void parseSuppression(String body, Path file, int line, Set<String> rules) {
+        String rest = body.strip();
+        int reasonIndex = indexOfIgnoreCase(rest, "reason=");
+        if (reasonIndex < 0) {
+            throw new IllegalArgumentException("suppression comment requires reason=... at "
+                    + file + ":" + line);
+        }
+        String rulesPart = rest.substring(0, reasonIndex).strip();
+        String reason = unquote(rest.substring(reasonIndex + "reason=".length()).strip());
+        if (reason.isEmpty()) {
+            throw new IllegalArgumentException("suppression comment requires a non-empty reason=... at "
+                    + file + ":" + line);
+        }
+        if (rulesPart.isEmpty()) {
+            rules.add(SUPPRESS_ALL);
+            return;
+        }
+        for (String id : rulesPart.split("[,\\s]+")) {
+            if (id.isBlank()) {
+                continue;
+            }
+            if (!knownRuleIds.contains(id)) {
+                throw new IllegalArgumentException("unknown rule id in suppression: " + id
+                        + " at " + file + ":" + line);
+            }
+            rules.add(id);
+        }
+    }
+
+    private static boolean isSuppressed(Set<String> suppressed, String ruleId) {
+        return suppressed.contains(SUPPRESS_ALL) || suppressed.contains(ruleId);
+    }
+
+    private static int indexOfIgnoreCase(String text, String target) {
+        return text.toLowerCase(Locale.ROOT).indexOf(target.toLowerCase(Locale.ROOT));
+    }
+
+    private static String unquote(String value) {
+        if (value.length() >= 2
+                && (value.charAt(0) == '"' || value.charAt(0) == '\'')
+                && value.charAt(value.length() - 1) == value.charAt(0)) {
+            return value.substring(1, value.length() - 1).strip();
+        }
+        return value;
     }
 
     private List<SqlUnit> units(ChangeSet changeSet, List<SqlSource> sources, boolean rollback) throws IOException {
