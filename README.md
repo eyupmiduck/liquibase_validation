@@ -65,8 +65,10 @@ order, and are configured per module in `.liquibase-linter.yml`.
 Before a rule runs, the SQL is normalised the way Liquibase would execute it:
 `${property}` placeholders are substituted, the changeset's `<modifySql>`
 transformations are applied (honouring `applyToRollback` and the `dbms` filter),
-and the `createTable`/`createIndex`/`dropIndex` change types are rendered to SQL.
-The limits of this normalisation are recorded in
+and the structured DDL change types are rendered to SQL (`createTable`,
+`createIndex`, `dropIndex`, `addColumn`, `dropColumn`, `renameColumn`,
+`modifyDataType`, the not-null/default changes, the constraint changes and the
+sequence changes). The limits of this normalisation are recorded in
 [docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
 Statement splitting supports the default `;` and a single-token, non-operator
 delimiter such as `GO`; operator and dollar-quote delimiters such as `/` and
@@ -349,12 +351,12 @@ and points the developer at the matching helper, naming the table and the
 operation.
 
 Forward and rollback SQL are both checked, because a raw rollback `ALTER TABLE`
-takes the same lock. A structured change type (`<addColumn>`,
-`<modifyDataType>`, ...) generates SQL elsewhere and is out of scope, and a
-stored-routine body is the helper's own implementation rather than a caller's raw
-statement, so both are exempt. The rule is an error and on by default. A project
-whose changelog genuinely needs a raw `ALTER TABLE` accepts it with a whitelist
-entry.
+takes the same lock. The structured change types that render to `ALTER TABLE`
+(for example `<addColumn>`, `<dropColumn>` and `<modifyDataType>`) are reported
+too, so a structured change cannot hide one. A stored-routine body is the
+helper's own implementation rather than a caller's raw statement, so it is
+exempt. The rule is an error and on by default. A project whose changelog
+genuinely needs a raw `ALTER TABLE` accepts it with a whitelist entry.
 
 ```xml
 <!-- Reported: call ddl_utils.add_column instead. -->
@@ -382,10 +384,11 @@ the casts and operators common in `<sql>` bodies (`::`, `->`, `->>`, `@>`, ...).
 The gate can be on the changeset or, as Liquibase applies it too, on an
 individual SQL source (`dbms` is case-insensitive). The gate must restrict
 execution to PostgreSQL: a comma-separated list that also names another database
-does not satisfy it, because the SQL would still run on that target. Structured
-change types are exempt, and a mention in a string or comment does not count. It
-is a token-level heuristic — an unlisted PostgreSQL-only construct is a false
-negative — and an error on by default.
+does not satisfy it, because the SQL would still run on that target. A
+structured change type is rendered like literal SQL, so PostgreSQL-only syntax
+it generates still needs the gate; a mention in a string or comment does not
+count. It is a token-level heuristic — an unlisted PostgreSQL-only construct is
+a false negative — and an error on by default.
 
 ```xml
 <!-- Reported: CREATE INDEX CONCURRENTLY is PostgreSQL-only. -->

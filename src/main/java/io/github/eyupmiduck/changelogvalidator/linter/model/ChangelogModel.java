@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Reads a Liquibase changelog graph into a stream of {@link ChangeSet}s with
@@ -37,13 +38,18 @@ import java.util.*;
  * <p>The model also captures what the rules need beyond the raw SQL: the
  * changelog {@code <property>} values, each changeset's {@code <modifySql>}
  * transformations, and a best-effort SQL rendering of the structured change
- * types that rules match on ({@code createTable}, {@code createIndex},
- * {@code dropIndex}). Structured types that are not rendered simply contribute
- * no source. See ADR 0003.
+ * types that rules match on. The rendered types are {@code createTable},
+ * {@code createIndex}, {@code dropIndex}, {@code addColumn}, {@code dropColumn},
+ * {@code renameColumn}, {@code modifyDataType}, the not-null and default-value
+ * changes, the foreign-key/unique/check/primary-key changes, and the sequence
+ * changes. A structured type that is not rendered, or one missing a required
+ * attribute, simply contributes no source. See ADR 0003.
  */
 public final class ChangelogModel {
 
     private static final String DEFAULT_END_DELIMITER = ";";
+    private static final Pattern INTEGER = Pattern.compile("-?\\d+");
+    private static final Pattern INTEGER_OR_DECIMAL = Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
     private ChangelogModel() {
     }
@@ -276,8 +282,339 @@ public final class ChangelogModel {
             case "createTable" -> createTableSql(change);
             case "createIndex" -> createIndexSql(change);
             case "dropIndex" -> dropIndexSql(change);
+            case "addColumn" -> addColumnSql(change);
+            case "dropColumn" -> dropColumnSql(change);
+            case "renameColumn" -> renameColumnSql(change);
+            case "modifyDataType" -> modifyDataTypeSql(change);
+            case "addNotNullConstraint" -> notNullSql(change, "SET NOT NULL");
+            case "dropNotNullConstraint" -> notNullSql(change, "DROP NOT NULL");
+            case "addDefaultValue" -> addDefaultValueSql(change);
+            case "dropDefaultValue" -> dropDefaultValueSql(change);
+            case "addForeignKeyConstraint" -> addForeignKeySql(change);
+            case "addUniqueConstraint" -> addUniqueSql(change);
+            case "addCheckConstraint" -> addCheckSql(change);
+            case "addPrimaryKey" -> addPrimaryKeySql(change);
+            case "dropPrimaryKey" -> dropPrimaryKeySql(change);
+            case "createSequence" -> createSequenceSql(change);
+            case "dropSequence" -> dropSequenceSql(change);
             default -> null;
         };
+    }
+
+    private static String addColumnSql(Element change) {
+        String table = table(change);
+        if (table == null) {
+            return null;
+        }
+        List<String> clauses = new ArrayList<>();
+        for (Element column : childElements(change)) {
+            if (!"column".equals(tagName(column))) {
+                continue;
+            }
+            String name = column.getAttribute("name");
+            String type = column.getAttribute("type");
+            if (name.isBlank() || type.isBlank()) {
+                continue;
+            }
+            StringBuilder clause = new StringBuilder("ADD COLUMN ").append(name).append(' ').append(type);
+            if (notNull(column)) {
+                clause.append(" NOT NULL");
+            }
+            clauses.add(clause.toString());
+        }
+        return clauses.isEmpty() ? null : "ALTER TABLE " + table + " " + String.join(", ", clauses) + ";";
+    }
+
+    private static boolean notNull(Element column) {
+        for (Element child : childElements(column)) {
+            if ("constraints".equals(tagName(child))
+                    && "false".equalsIgnoreCase(child.getAttribute("nullable"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String dropColumnSql(Element change) {
+        String table = table(change);
+        if (table == null) {
+            return null;
+        }
+        List<String> columns = new ArrayList<>();
+        String columnName = change.getAttribute("columnName");
+        if (!columnName.isBlank()) {
+            columns.add(columnName);
+        }
+        for (Element column : childElements(change)) {
+            if ("column".equals(tagName(column)) && !column.getAttribute("name").isBlank()) {
+                columns.add(column.getAttribute("name"));
+            }
+        }
+        if (columns.isEmpty()) {
+            return null;
+        }
+        List<String> clauses = columns.stream().map(column -> "DROP COLUMN " + column).toList();
+        return "ALTER TABLE " + table + " " + String.join(", ", clauses) + ";";
+    }
+
+    private static String renameColumnSql(Element change) {
+        String table = table(change);
+        String oldName = change.getAttribute("oldColumnName");
+        String newName = change.getAttribute("newColumnName");
+        if (table == null || oldName.isBlank() || newName.isBlank()) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " RENAME COLUMN " + oldName + " TO " + newName + ";";
+    }
+
+    private static String modifyDataTypeSql(Element change) {
+        String table = table(change);
+        String column = change.getAttribute("columnName");
+        String type = change.getAttribute("newDataType");
+        if (table == null || column.isBlank() || type.isBlank()) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " ALTER COLUMN " + column + " TYPE " + type + ";";
+    }
+
+    private static String notNullSql(Element change, String action) {
+        String table = table(change);
+        String column = change.getAttribute("columnName");
+        if (table == null || column.isBlank()) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " ALTER COLUMN " + column + " " + action + ";";
+    }
+
+    private static String addDefaultValueSql(Element change) {
+        String table = table(change);
+        String column = change.getAttribute("columnName");
+        String expression = defaultExpression(change);
+        if (table == null || column.isBlank() || expression == null) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " ALTER COLUMN " + column + " SET DEFAULT " + expression + ";";
+    }
+
+    private static String defaultExpression(Element change) {
+        String computed = change.getAttribute("defaultValueComputed");
+        if (!computed.isBlank()) {
+            return computed;
+        }
+        String sequence = change.getAttribute("defaultValueSequenceNext");
+        if (!sequence.isBlank()) {
+            return "nextval(" + sqlString(sequence) + "::regclass)";
+        }
+        String numeric = change.getAttribute("defaultValueNumeric");
+        if (INTEGER_OR_DECIMAL.matcher(numeric).matches()) {
+            return numeric;
+        }
+        String bool = change.getAttribute("defaultValueBoolean");
+        if ("true".equalsIgnoreCase(bool) || "false".equalsIgnoreCase(bool)) {
+            return bool.toUpperCase(Locale.ROOT);
+        }
+        if (change.hasAttribute("defaultValueDate") && !change.getAttribute("defaultValueDate").isBlank()) {
+            return sqlString(change.getAttribute("defaultValueDate"));
+        }
+        if (change.hasAttribute("defaultValue")) {
+            return sqlString(change.getAttribute("defaultValue"));
+        }
+        return null;
+    }
+
+    private static String dropDefaultValueSql(Element change) {
+        String table = table(change);
+        String column = change.getAttribute("columnName");
+        if (table == null || column.isBlank()) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " ALTER COLUMN " + column + " DROP DEFAULT;";
+    }
+
+    private static String addForeignKeySql(Element change) {
+        String base = qualified(firstNonBlank(change.getAttribute("baseTableSchemaName"),
+                change.getAttribute("schemaName")), change.getAttribute("baseTableName"));
+        String referenced = qualified(change.getAttribute("referencedTableSchemaName"),
+                change.getAttribute("referencedTableName"));
+        String baseColumns = change.getAttribute("baseColumnNames");
+        String referencedColumns = change.getAttribute("referencedColumnNames");
+        if (base == null || referenced == null
+                || baseColumns.isBlank() || referencedColumns.isBlank()) {
+            return null;
+        }
+        StringBuilder sql = new StringBuilder("ALTER TABLE ").append(base).append(" ADD ");
+        appendConstraintName(sql, change);
+        sql.append("FOREIGN KEY (").append(baseColumns).append(") REFERENCES ")
+                .append(referenced).append(" (").append(referencedColumns).append(')');
+        appendAction(sql, "ON DELETE", change.getAttribute("onDelete"));
+        appendAction(sql, "ON UPDATE", change.getAttribute("onUpdate"));
+        appendDeferrable(sql, change);
+        if (!booleanAttribute(change, "validate", true)) {
+            sql.append(" NOT VALID");
+        }
+        return sql.append(';').toString();
+    }
+
+    private static String addUniqueSql(Element change) {
+        String table = table(change);
+        String columns = columnNames(change);
+        if (table == null || columns == null) {
+            return null;
+        }
+        StringBuilder sql = new StringBuilder("ALTER TABLE ").append(table).append(" ADD ");
+        appendConstraintName(sql, change);
+        sql.append("UNIQUE (").append(columns).append(')');
+        appendDeferrable(sql, change);
+        // PostgreSQL only accepts NOT VALID for CHECK and FOREIGN KEY.
+        return sql.append(';').toString();
+    }
+
+    private static String addCheckSql(Element change) {
+        String table = table(change);
+        String body = change.getAttribute("constraintBody");
+        if (table == null || body.isBlank()) {
+            return null;
+        }
+        StringBuilder sql = new StringBuilder("ALTER TABLE ").append(table).append(" ADD ");
+        appendConstraintName(sql, change);
+        sql.append("CHECK (").append(body).append(')');
+        if (!booleanAttribute(change, "validate", true)) {
+            sql.append(" NOT VALID");
+        }
+        return sql.append(';').toString();
+    }
+
+    private static String addPrimaryKeySql(Element change) {
+        String table = table(change);
+        if (table == null) {
+            return null;
+        }
+        String index = change.getAttribute("forIndexName");
+        String indexSchema = change.getAttribute("forIndexSchemaName");
+        String tableSchema = change.getAttribute("schemaName");
+        if (!index.isBlank() && !indexSchema.isBlank() && !indexSchema.equalsIgnoreCase(tableSchema)) {
+            // PostgreSQL requires the index to be in the table's schema; a
+            // cross-schema index would make the rendered statement invalid.
+            return null;
+        }
+        StringBuilder sql = new StringBuilder("ALTER TABLE ").append(table).append(" ADD ");
+        appendConstraintName(sql, change);
+        sql.append("PRIMARY KEY ");
+        if (!index.isBlank()) {
+            sql.append("USING INDEX ").append(index);
+        } else {
+            String columns = columnNames(change);
+            if (columns == null) {
+                return null;
+            }
+            sql.append('(').append(columns).append(')');
+        }
+        return sql.append(';').toString();
+    }
+
+    private static String dropPrimaryKeySql(Element change) {
+        String table = table(change);
+        String constraint = change.getAttribute("constraintName");
+        if (table == null || constraint.isBlank()) {
+            return null;
+        }
+        return "ALTER TABLE " + table + " DROP CONSTRAINT " + constraint + ";";
+    }
+
+    private static String createSequenceSql(Element change) {
+        String sequence = qualified(change.getAttribute("schemaName"), change.getAttribute("sequenceName"));
+        if (sequence == null) {
+            return null;
+        }
+        StringBuilder sql = new StringBuilder("CREATE SEQUENCE ").append(sequence);
+        String dataType = change.getAttribute("dataType");
+        if ("smallint".equalsIgnoreCase(dataType)
+                || "integer".equalsIgnoreCase(dataType)
+                || "bigint".equalsIgnoreCase(dataType)) {
+            sql.append(" AS ").append(dataType);
+        }
+        appendNumeric(sql, "INCREMENT BY", change.getAttribute("incrementBy"));
+        appendBound(sql, "MINVALUE", "NO MINVALUE", change.getAttribute("minValue"));
+        appendBound(sql, "MAXVALUE", "NO MAXVALUE", change.getAttribute("maxValue"));
+        appendNumeric(sql, "START WITH", change.getAttribute("startValue"));
+        appendNumeric(sql, "CACHE", change.getAttribute("cacheSize"));
+        if (booleanAttribute(change, "cycle", false)) {
+            sql.append(" CYCLE");
+        }
+        if (booleanAttribute(change, "ordered", false)) {
+            sql.append(" ORDER");
+        }
+        return sql.append(';').toString();
+    }
+
+    private static String dropSequenceSql(Element change) {
+        String sequence = qualified(change.getAttribute("schemaName"), change.getAttribute("sequenceName"));
+        return sequence == null ? null : "DROP SEQUENCE " + sequence + ";";
+    }
+
+    private static String table(Element change) {
+        return qualified(change.getAttribute("schemaName"), change.getAttribute("tableName"));
+    }
+
+    private static String columnNames(Element change) {
+        String names = change.getAttribute("columnNames");
+        if (!names.isBlank()) {
+            return names;
+        }
+        List<String> columns = new ArrayList<>();
+        for (Element column : childElements(change)) {
+            if ("column".equals(tagName(column)) && !column.getAttribute("name").isBlank()) {
+                columns.add(column.getAttribute("name"));
+            }
+        }
+        return columns.isEmpty() ? null : String.join(", ", columns);
+    }
+
+    private static void appendConstraintName(StringBuilder sql, Element change) {
+        String name = change.getAttribute("constraintName");
+        if (!name.isBlank()) {
+            sql.append("CONSTRAINT ").append(name).append(' ');
+        }
+    }
+
+    private static void appendAction(StringBuilder sql, String clause, String action) {
+        if (!action.isBlank()) {
+            sql.append(' ').append(clause).append(' ').append(action.toUpperCase(Locale.ROOT));
+        }
+    }
+
+    private static void appendDeferrable(StringBuilder sql, Element change) {
+        if (booleanAttribute(change, "deferrable", false)) {
+            sql.append(" DEFERRABLE");
+            if (booleanAttribute(change, "initiallyDeferred", false)) {
+                sql.append(" INITIALLY DEFERRED");
+            }
+        }
+    }
+
+    private static void appendNumeric(StringBuilder sql, String clause, String value) {
+        if (INTEGER.matcher(value).matches()) {
+            sql.append(' ').append(clause).append(' ').append(value);
+        }
+    }
+
+    private static void appendBound(StringBuilder sql, String clause, String noClause, String value) {
+        if (value.isBlank()) {
+            return;
+        }
+        if ("NOMINVALUE".equalsIgnoreCase(value) || "NOMAXVALUE".equalsIgnoreCase(value)) {
+            sql.append(' ').append(noClause);
+        } else if (INTEGER.matcher(value).matches()) {
+            sql.append(' ').append(clause).append(' ').append(value);
+        }
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
+    }
+
+    private static String sqlString(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     private static String createTableSql(Element change) {
