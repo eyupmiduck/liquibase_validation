@@ -8,7 +8,8 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Exercises the {@link RoutineSignatureContract} report directly, including an

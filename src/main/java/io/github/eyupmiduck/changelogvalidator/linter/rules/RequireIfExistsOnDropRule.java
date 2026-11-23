@@ -33,6 +33,19 @@ public final class RequireIfExistsOnDropRule implements Rule {
     private static final Set<String> OBJECT_KINDS = Set.of(
             "TABLE", "FUNCTION", "PROCEDURE", "TRIGGER", "INDEX");
 
+    private static boolean isObjectKind(Token token) {
+        for (String kind : OBJECT_KINDS) {
+            if (token.matchesKeyword(kind)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -88,18 +101,5 @@ public final class RequireIfExistsOnDropRule implements Rule {
                 }
             }
         }
-    }
-
-    private static boolean isObjectKind(Token token) {
-        for (String kind : OBJECT_KINDS) {
-            if (token.matchesKeyword(kind)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
     }
 }

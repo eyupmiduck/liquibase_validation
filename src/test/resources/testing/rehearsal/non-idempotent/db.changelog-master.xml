@@ -7,6 +7,9 @@
     <!-- runAlways re-runs on every update, and CREATE TABLE is not repeatable, so
          a second application must fail rather than silently pass. -->
     <changeSet id="001-run-always" author="lee.horner" dbms="postgresql" runAlways="true">
-        <sql>CREATE TABLE rehearsal_always (id integer);</sql>
+        <sql>CREATE TABLE rehearsal_always
+             (
+                 id integer
+             );</sql>
     </changeSet>
 </databaseChangeLog>

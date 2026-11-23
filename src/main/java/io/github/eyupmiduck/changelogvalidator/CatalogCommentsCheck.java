@@ -380,6 +380,11 @@ public final class CatalogCommentsCheck {
         }
     }
 
+    @FunctionalInterface
+    private interface RowMapper {
+        ObjectComment map(ResultSet resultSet) throws SQLException;
+    }
+
     /**
      * Options controlling which object kinds are inspected.
      *
@@ -425,6 +430,12 @@ public final class CatalogCommentsCheck {
             }
         }
 
+        private static void requireNonBlank(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+        }
+
         /**
          * Formats the object for a diagnostic.
          *
@@ -448,12 +459,6 @@ public final class CatalogCommentsCheck {
                     .thenComparing(ObjectRef::parent, Comparator.nullsFirst(Comparator.naturalOrder()))
                     .thenComparing(ObjectRef::name, Comparator.nullsFirst(Comparator.naturalOrder()))
                     .compare(this, other);
-        }
-
-        private static void requireNonBlank(String value, String name) {
-            if (value == null || value.isBlank()) {
-                throw new IllegalArgumentException(name + " must not be blank");
-            }
         }
     }
 
@@ -509,6 +514,12 @@ public final class CatalogCommentsCheck {
             requireNonBlankIfPresent(name, "name");
         }
 
+        private static void requireNonBlankIfPresent(String value, String name) {
+            if (value != null && value.isBlank()) {
+                throw new IllegalArgumentException(name + " must be null or non-blank");
+            }
+        }
+
         /**
          * Returns whether every set selector matches the object.
          *
@@ -544,12 +555,6 @@ public final class CatalogCommentsCheck {
             }
             return description.toString();
         }
-
-        private static void requireNonBlankIfPresent(String value, String name) {
-            if (value != null && value.isBlank()) {
-                throw new IllegalArgumentException(name + " must be null or non-blank");
-            }
-        }
     }
 
     /**
@@ -584,10 +589,5 @@ public final class CatalogCommentsCheck {
     }
 
     private record ObjectComment(ObjectRef object, String comment) {
-    }
-
-    @FunctionalInterface
-    private interface RowMapper {
-        ObjectComment map(ResultSet resultSet) throws SQLException;
     }
 }

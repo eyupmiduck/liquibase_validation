@@ -27,74 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public abstract class RoutineSecurityContract extends PostgresTestBase {
 
-    /**
-     * The schemas whose routines are checked, from the profile's routine
-     * schemas.
-     *
-     * @return the routine schemas
-     */
-    protected Collection<String> routineSchemas() {
-        return projectProfile().routineSchemas();
-    }
-
-    /**
-     * The deliberate {@code SECURITY DEFINER} routines, as {@code schema.name}.
-     *
-     * @return the allowed definers, empty by default
-     */
-    protected Set<String> allowedSecurityDefiners() {
-        return Set.of();
-    }
-
-    /**
-     * The catalog-inspecting routines that must pin {@code pg_catalog}, as
-     * {@code schema.name}.
-     *
-     * @return the catalog routines, empty by default
-     */
-    protected Set<String> catalogRoutines() {
-        return Set.of();
-    }
-
-    /**
-     * The routines that must be procedures, as {@code schema.name}.
-     *
-     * @return the expected procedures, empty by default
-     */
-    protected Set<String> expectedProcedures() {
-        return Set.of();
-    }
-
-    /**
-     * Every security convention holds, and at least one routine was inspected.
-     *
-     * @throws Exception if the catalog cannot be read
-     */
-    @Test
-    void routinesFollowTheSecurityConvention() throws Exception {
-        try (Connection owner = openOwnerConnection()) {
-            Report report = inspect(owner, routineSchemas(), allowedSecurityDefiners(),
-                    catalogRoutines(), expectedProcedures());
-
-            assertTrue(report.checkedRoutines() > 0,
-                    () -> "no routines found in " + routineSchemas());
-            assertEquals(List.of(), report.unexpectedSecurityDefiners(),
-                    () -> "SECURITY DEFINER routines not in allowedSecurityDefiners(): "
-                            + report.unexpectedSecurityDefiners());
-            assertEquals(List.of(), report.staleSecurityDefiners(),
-                    () -> "allowedSecurityDefiners() entries without a definer: "
-                            + report.staleSecurityDefiners());
-            assertEquals(List.of(), report.unsafeSearchPaths(),
-                    () -> "unsafe or missing search_path settings: " + report.unsafeSearchPaths());
-            assertEquals(List.of(), report.missingCatalogPins(),
-                    () -> "catalog routines without search_path=pg_catalog: "
-                            + report.missingCatalogPins());
-            assertEquals(List.of(), report.procedureKindMismatches(),
-                    () -> "routines whose kind does not match expectedProcedures(): "
-                            + report.procedureKindMismatches());
-        }
-    }
-
     static Report inspect(Connection connection, Collection<String> schemas,
                           Set<String> allowedSecurityDefiners,
                           Set<String> catalogRoutines,
@@ -192,14 +124,82 @@ public abstract class RoutineSecurityContract extends PostgresTestBase {
     }
 
     /**
+     * The schemas whose routines are checked, from the profile's routine
+     * schemas.
+     *
+     * @return the routine schemas
+     */
+    protected Collection<String> routineSchemas() {
+        return projectProfile().routineSchemas();
+    }
+
+    /**
+     * The deliberate {@code SECURITY DEFINER} routines, as {@code schema.name}.
+     *
+     * @return the allowed definers, empty by default
+     */
+    protected Set<String> allowedSecurityDefiners() {
+        return Set.of();
+    }
+
+    /**
+     * The catalog-inspecting routines that must pin {@code pg_catalog}, as
+     * {@code schema.name}.
+     *
+     * @return the catalog routines, empty by default
+     */
+    protected Set<String> catalogRoutines() {
+        return Set.of();
+    }
+
+    /**
+     * The routines that must be procedures, as {@code schema.name}.
+     *
+     * @return the expected procedures, empty by default
+     */
+    protected Set<String> expectedProcedures() {
+        return Set.of();
+    }
+
+    /**
+     * Every security convention holds, and at least one routine was inspected.
+     *
+     * @throws Exception if the catalog cannot be read
+     */
+    @Test
+    void routinesFollowTheSecurityConvention() throws Exception {
+        try (Connection owner = openOwnerConnection()) {
+            Report report = inspect(owner, routineSchemas(), allowedSecurityDefiners(),
+                    catalogRoutines(), expectedProcedures());
+
+            assertTrue(report.checkedRoutines() > 0,
+                    () -> "no routines found in " + routineSchemas());
+            assertEquals(List.of(), report.unexpectedSecurityDefiners(),
+                    () -> "SECURITY DEFINER routines not in allowedSecurityDefiners(): "
+                            + report.unexpectedSecurityDefiners());
+            assertEquals(List.of(), report.staleSecurityDefiners(),
+                    () -> "allowedSecurityDefiners() entries without a definer: "
+                            + report.staleSecurityDefiners());
+            assertEquals(List.of(), report.unsafeSearchPaths(),
+                    () -> "unsafe or missing search_path settings: " + report.unsafeSearchPaths());
+            assertEquals(List.of(), report.missingCatalogPins(),
+                    () -> "catalog routines without search_path=pg_catalog: "
+                            + report.missingCatalogPins());
+            assertEquals(List.of(), report.procedureKindMismatches(),
+                    () -> "routines whose kind does not match expectedProcedures(): "
+                            + report.procedureKindMismatches());
+        }
+    }
+
+    /**
      * The security-check result.
      *
      * @param unexpectedSecurityDefiners definer routines not in the allow-list
-     * @param staleSecurityDefiners     allow-list entries without a definer
-     * @param unsafeSearchPaths         missing or unsafe {@code search_path} settings
-     * @param missingCatalogPins        catalog routines without a {@code pg_catalog} pin
-     * @param procedureKindMismatches   routines that are not the declared procedure
-     * @param checkedRoutines           the number of distinct routine names inspected
+     * @param staleSecurityDefiners      allow-list entries without a definer
+     * @param unsafeSearchPaths          missing or unsafe {@code search_path} settings
+     * @param missingCatalogPins         catalog routines without a {@code pg_catalog} pin
+     * @param procedureKindMismatches    routines that are not the declared procedure
+     * @param checkedRoutines            the number of distinct routine names inspected
      */
     record Report(List<String> unexpectedSecurityDefiners, List<String> staleSecurityDefiners,
                   List<String> unsafeSearchPaths, List<String> missingCatalogPins,

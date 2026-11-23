@@ -20,6 +20,10 @@ class RoutineDocumentationCheckTest extends PostgresTestBase {
     private static final String SCHEMA = "documentation_check";
     private static final String README = "README.md";
 
+    private static RoutineDocumentationContract.DocumentedRoutine documented(String name, String arguments) {
+        return new RoutineDocumentationContract.DocumentedRoutine(name, arguments, README, 1);
+    }
+
     /**
      * Creates one routine with named arguments and one with no arguments.
      *
@@ -41,10 +45,6 @@ class RoutineDocumentationCheckTest extends PostgresTestBase {
             statement.execute("CREATE FUNCTION " + SCHEMA + ".no_args() RETURNS integer"
                     + " LANGUAGE sql AS 'SELECT 1'");
         }
-    }
-
-    private static RoutineDocumentationContract.DocumentedRoutine documented(String name, String arguments) {
-        return new RoutineDocumentationContract.DocumentedRoutine(name, arguments, README, 1);
     }
 
     private RoutineDocumentationContract.Report inspect(
@@ -190,11 +190,11 @@ class RoutineDocumentationCheckTest extends PostgresTestBase {
         List<RoutineDocumentationContract.DocumentedRoutine> documented =
                 new Parser().documentedRoutines(README, """
                         # Routines
-
+                        
                         ### `app.add(i_a, i_b)`
-
+                        
                         ### `app.no_args()`
-
+                        
                         ### not a routine heading
                         """);
 

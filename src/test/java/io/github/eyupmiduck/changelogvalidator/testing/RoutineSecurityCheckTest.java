@@ -5,11 +5,11 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.Statement;
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Exercises the {@link RoutineSecurityContract} report directly: unexpected and

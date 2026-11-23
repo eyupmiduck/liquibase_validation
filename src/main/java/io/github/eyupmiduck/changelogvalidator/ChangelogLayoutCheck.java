@@ -81,8 +81,8 @@ public final class ChangelogLayoutCheck {
     /**
      * Finds layout violations.
      *
-     * @param changelogRoot   the changelog root directory
-     * @param masterChangelog the master changelog file
+     * @param changelogRoot    the changelog root directory
+     * @param masterChangelog  the master changelog file
      * @param rollbackRequired whether a file-based changeset must have a rollback
      *                         file; a rollback file that is present is still
      *                         checked when this is {@code false}

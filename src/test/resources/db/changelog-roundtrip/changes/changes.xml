@@ -15,7 +15,11 @@
     </changeSet>
 
     <changeSet id="002-create-table" author="lee.horner" dbms="postgresql">
-        <sql>CREATE TABLE roundtrip_app.widget (id integer PRIMARY KEY, name text NOT NULL);</sql>
+        <sql>CREATE TABLE roundtrip_app.widget
+             (
+                 id   integer PRIMARY KEY,
+                 name text NOT NULL
+             );</sql>
         <rollback>
             <sql>DROP TABLE roundtrip_app.widget;</sql>
         </rollback>
@@ -23,7 +27,11 @@
 
     <changeSet id="003-create-function" author="lee.horner" dbms="postgresql" runOnChange="true">
         <sql splitStatements="false">CREATE OR REPLACE FUNCTION roundtrip_app.widget_count() RETURNS bigint
-            LANGUAGE sql AS $$ SELECT count(*) FROM roundtrip_app.widget; $$</sql>
+            LANGUAGE sql AS
+        $$
+        SELECT count(*)
+        FROM roundtrip_app.widget;
+        $$</sql>
         <rollback>
             <sql>DROP FUNCTION roundtrip_app.widget_count();</sql>
         </rollback>

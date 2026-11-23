@@ -16,9 +16,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies that every built-in {@link Rule} in this package is registered in
@@ -52,6 +50,11 @@ class RulesTest {
             }
         }
         return classes;
+    }
+
+    private static LinterConfig config(Map<String, Object> options) {
+        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
+                Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null, options)));
     }
 
     @Test
@@ -116,10 +119,5 @@ class RulesTest {
 
         LinterConfig blank = config(Map.of("allowedRoutines", List.of(" ")));
         assertThrows(IllegalArgumentException.class, () -> Rules.all(blank));
-    }
-
-    private static LinterConfig config(Map<String, Object> options) {
-        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
-                Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null, options)));
     }
 }

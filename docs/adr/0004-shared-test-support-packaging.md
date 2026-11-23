@@ -284,11 +284,11 @@ fails non-vacuously.
 
 `RoutineDocumentationContract` checks that every routine has a README heading and
 that no heading names a removed routine. The default format is a Markdown
-heading `### \`schema.name(i_arg, ...)\``; optional-argument brackets are
+heading `### \`schema.name (i_arg, ...)\``; optional-argument brackets are
 stripped and the argument names/arity are compared to the catalog. An abbreviated
 heading containing `...` is checked by name only. A consumer can override
-`documentedRoutines(resource, content)` for another format and
-`readmeResources()` for different files. The default resources are the functions
+`documentedRoutines (resource, content)` for another format and
+`readmeResources ()` for different files. The default resources are the functions
 and procedures READMEs under the profile's changelog root.
 
 The two contracts are separate so a project can adopt the signature check while

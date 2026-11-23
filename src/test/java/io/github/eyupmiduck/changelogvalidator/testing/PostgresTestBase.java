@@ -158,6 +158,30 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Wraps a connection so {@link Connection#close()} does nothing. Used where a
+     * library (Liquibase) would otherwise close a connection the caller still
+     * owns.
+     *
+     * @param delegate the real connection
+     * @return a view of the connection whose {@code close()} is a no-op
+     */
+    protected static Connection closeIgnoring(Connection delegate) {
+        return (Connection) java.lang.reflect.Proxy.newProxyInstance(
+                Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if ("close".equals(method.getName())) {
+                        return null;
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                });
+    }
+
+    /**
      * The project values shared by this base and every contract: the container
      * and changelog configuration, the managed, application and routine schemas,
      * the caller role, the rollback directories and the changelog resource
@@ -512,30 +536,6 @@ public abstract class PostgresTestBase {
             statement.execute("CREATE SCHEMA IF NOT EXISTS " + quoteIdentifier(liquibaseSchema)
                     + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
         }
-    }
-
-    /**
-     * Wraps a connection so {@link Connection#close()} does nothing. Used where a
-     * library (Liquibase) would otherwise close a connection the caller still
-     * owns.
-     *
-     * @param delegate the real connection
-     * @return a view of the connection whose {@code close()} is a no-op
-     */
-    protected static Connection closeIgnoring(Connection delegate) {
-        return (Connection) java.lang.reflect.Proxy.newProxyInstance(
-                Connection.class.getClassLoader(),
-                new Class<?>[]{Connection.class},
-                (proxy, method, args) -> {
-                    if ("close".equals(method.getName())) {
-                        return null;
-                    }
-                    try {
-                        return method.invoke(delegate, args);
-                    } catch (java.lang.reflect.InvocationTargetException error) {
-                        throw error.getCause();
-                    }
-                });
     }
 
     /**

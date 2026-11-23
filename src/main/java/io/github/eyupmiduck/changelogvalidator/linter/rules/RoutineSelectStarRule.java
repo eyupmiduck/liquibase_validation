@@ -32,6 +32,41 @@ public final class RoutineSelectStarRule implements Rule {
      */
     public static final String ID = "routine-select-star";
 
+    private static boolean isStar(Token token) {
+        return token.type() == TokenType.OPERATOR && token.text().equals("*");
+    }
+
+    private static boolean isDot(Token token) {
+        return isPunctuation(token, ".");
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
+    private static boolean isPunctuation(List<Token> tokens, int index, String text) {
+        return index < tokens.size() && isPunctuation(tokens.get(index), text);
+    }
+
+    private static int matchingParen(List<Token> tokens, int open) {
+        int depth = 0;
+        for (int i = open; i < tokens.size(); i++) {
+            if (isPunctuation(tokens.get(i), "(")) {
+                depth++;
+            } else if (isPunctuation(tokens.get(i), ")")) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -120,40 +155,5 @@ public final class RoutineSelectStarRule implements Rule {
             }
             itemStart = false;
         }
-    }
-
-    private static boolean isStar(Token token) {
-        return token.type() == TokenType.OPERATOR && token.text().equals("*");
-    }
-
-    private static boolean isDot(Token token) {
-        return isPunctuation(token, ".");
-    }
-
-    private static boolean isPunctuation(Token token, String text) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
-    }
-
-    private static boolean isPunctuation(List<Token> tokens, int index, String text) {
-        return index < tokens.size() && isPunctuation(tokens.get(index), text);
-    }
-
-    private static int matchingParen(List<Token> tokens, int open) {
-        int depth = 0;
-        for (int i = open; i < tokens.size(); i++) {
-            if (isPunctuation(tokens.get(i), "(")) {
-                depth++;
-            } else if (isPunctuation(tokens.get(i), ")")) {
-                depth--;
-                if (depth == 0) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
     }
 }

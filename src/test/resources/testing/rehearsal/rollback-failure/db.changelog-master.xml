@@ -7,7 +7,10 @@
     <!-- The forward change succeeds; the rollback targets a table that does not
          exist, so the round trip must surface a rollback failure. -->
     <changeSet id="001-create-probe" author="lee.horner" dbms="postgresql">
-        <sql>CREATE TABLE rehearsal_probe (id integer);</sql>
+        <sql>CREATE TABLE rehearsal_probe
+             (
+                 id integer
+             );</sql>
         <rollback>
             <sql>DROP TABLE rehearsal_missing;</sql>
         </rollback>

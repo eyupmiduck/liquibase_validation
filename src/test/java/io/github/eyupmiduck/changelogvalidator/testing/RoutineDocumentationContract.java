@@ -35,82 +35,6 @@ public abstract class RoutineDocumentationContract extends PostgresTestBase {
             "^###\\s+`([A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*)\\((.*)\\)`\\s*$",
             Pattern.MULTILINE);
 
-    /**
-     * The schemas whose routines must be documented, from the profile's routine
-     * schemas.
-     *
-     * @return the documented schemas
-     */
-    protected Collection<String> documentedSchemas() {
-        return projectProfile().routineSchemas();
-    }
-
-    /**
-     * The README classpath resources. The default includes the functions and
-     * procedures READMEs under the profile's changelog root when they exist.
-     *
-     * @return the README resources
-     */
-    protected Collection<String> readmeResources() {
-        String root = projectProfile().changelogRootResource();
-        return Stream.of(
-                        root + "/changes/functions/README.md",
-                        root + "/changes/procedures/README.md")
-                .filter(TestResources::exists)
-                .toList();
-    }
-
-    /**
-     * Parses the routine headings of one README. The default reads Markdown
-     * headings of the form <code>### `schema.name(args)`</code>.
-     *
-     * @param resource the README classpath resource
-     * @param content  the README contents
-     * @return the documented routines
-     */
-    protected List<DocumentedRoutine> documentedRoutines(String resource, String content) {
-        List<DocumentedRoutine> routines = new ArrayList<>();
-        Matcher matcher = HEADING.matcher(content);
-        while (matcher.find()) {
-            int line = 1 + (int) content.substring(0, matcher.start()).chars()
-                    .filter(character -> character == '\n')
-                    .count();
-            routines.add(new DocumentedRoutine(
-                    matcher.group(1), matcher.group(2).trim(), resource, line));
-        }
-        return List.copyOf(routines);
-    }
-
-    /**
-     * Every routine is documented, no documented routine is stale, every
-     * documented argument list agrees with the catalog, and at least one routine
-     * was inspected.
-     *
-     * @throws Exception if the README or catalog cannot be read
-     */
-    @Test
-    void everyRoutineIsDocumented() throws Exception {
-        Collection<String> resources = readmeResources();
-        assertFalse(resources.isEmpty(),
-                () -> "no routine README found; expected one of the functions/procedures READMEs under "
-                        + projectProfile().changelogRootResource() + "/changes");
-        List<DocumentedRoutine> documented = new ArrayList<>();
-        for (String resource : resources) {
-            documented.addAll(documentedRoutines(resource, TestResources.read(resource)));
-        }
-        try (Connection owner = openOwnerConnection()) {
-            Report report = inspect(owner, documentedSchemas(), documented);
-            assertTrue(report.checkedRoutines() > 0,
-                    () -> "no routines found in " + documentedSchemas());
-            assertEquals(List.of(), report.missing(),
-                    () -> "routines with no README section: " + report.missing());
-            assertEquals(List.of(), report.stale(),
-                    () -> "README sections for routines that no longer exist: " + report.stale());
-            assertEquals(List.of(), report.mismatched(),
-                    () -> "README sections whose arguments do not match the catalog: " + report.mismatched());
-        }
-    }
-
     static Report inspect(Connection connection, Collection<String> schemas,
                           Collection<DocumentedRoutine> documented) throws SQLException {
         Objects.requireNonNull(documented, "documented");
@@ -196,6 +120,82 @@ public abstract class RoutineDocumentationContract extends PostgresTestBase {
             names.add(name);
         }
         return List.copyOf(names);
+    }
+
+    /**
+     * The schemas whose routines must be documented, from the profile's routine
+     * schemas.
+     *
+     * @return the documented schemas
+     */
+    protected Collection<String> documentedSchemas() {
+        return projectProfile().routineSchemas();
+    }
+
+    /**
+     * The README classpath resources. The default includes the functions and
+     * procedures READMEs under the profile's changelog root when they exist.
+     *
+     * @return the README resources
+     */
+    protected Collection<String> readmeResources() {
+        String root = projectProfile().changelogRootResource();
+        return Stream.of(
+                        root + "/changes/functions/README.md",
+                        root + "/changes/procedures/README.md")
+                .filter(TestResources::exists)
+                .toList();
+    }
+
+    /**
+     * Parses the routine headings of one README. The default reads Markdown
+     * headings of the form <code>### `schema.name(args)`</code>.
+     *
+     * @param resource the README classpath resource
+     * @param content  the README contents
+     * @return the documented routines
+     */
+    protected List<DocumentedRoutine> documentedRoutines(String resource, String content) {
+        List<DocumentedRoutine> routines = new ArrayList<>();
+        Matcher matcher = HEADING.matcher(content);
+        while (matcher.find()) {
+            int line = 1 + (int) content.substring(0, matcher.start()).chars()
+                    .filter(character -> character == '\n')
+                    .count();
+            routines.add(new DocumentedRoutine(
+                    matcher.group(1), matcher.group(2).trim(), resource, line));
+        }
+        return List.copyOf(routines);
+    }
+
+    /**
+     * Every routine is documented, no documented routine is stale, every
+     * documented argument list agrees with the catalog, and at least one routine
+     * was inspected.
+     *
+     * @throws Exception if the README or catalog cannot be read
+     */
+    @Test
+    void everyRoutineIsDocumented() throws Exception {
+        Collection<String> resources = readmeResources();
+        assertFalse(resources.isEmpty(),
+                () -> "no routine README found; expected one of the functions/procedures READMEs under "
+                        + projectProfile().changelogRootResource() + "/changes");
+        List<DocumentedRoutine> documented = new ArrayList<>();
+        for (String resource : resources) {
+            documented.addAll(documentedRoutines(resource, TestResources.read(resource)));
+        }
+        try (Connection owner = openOwnerConnection()) {
+            Report report = inspect(owner, documentedSchemas(), documented);
+            assertTrue(report.checkedRoutines() > 0,
+                    () -> "no routines found in " + documentedSchemas());
+            assertEquals(List.of(), report.missing(),
+                    () -> "routines with no README section: " + report.missing());
+            assertEquals(List.of(), report.stale(),
+                    () -> "README sections for routines that no longer exist: " + report.stale());
+            assertEquals(List.of(), report.mismatched(),
+                    () -> "README sections whose arguments do not match the catalog: " + report.mismatched());
+        }
     }
 
     /**

@@ -278,10 +278,12 @@ as is a star in a string or a comment.
 
 ```sql
 -- Reported: the result changes when app.orders gains a column.
-SELECT * FROM app.orders;
+SELECT *
+FROM app.orders;
 
 -- Accepted.
-SELECT o.id, o.total FROM app.orders o;
+SELECT o.id, o.total
+FROM app.orders o;
 ```
 
 #### routine-transaction-control
@@ -294,7 +296,8 @@ default.
 
 ```sql
 -- Reported in a function.
-CREATE FUNCTION app.f() RETURNS void AS $$
+CREATE FUNCTION app.f() RETURNS void AS
+$$
 BEGIN
     COMMIT;
 END;
@@ -315,7 +318,8 @@ no names to check. A name in a comment or a string is ignored, and
 
 ```sql
 -- Reported: the parameter and the local lack their prefixes.
-CREATE FUNCTION app.f(x integer) RETURNS void AS $$
+CREATE FUNCTION app.f(x integer) RETURNS void AS
+$$
 DECLARE
     total integer;
 BEGIN
@@ -324,7 +328,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Accepted.
-CREATE FUNCTION app.f(i_x integer) RETURNS void AS $$
+CREATE FUNCTION app.f(i_x integer) RETURNS void AS
+$$
 DECLARE
     l_total integer;
 BEGIN
@@ -400,8 +405,8 @@ negative — and an error on by default.
 
 A stored-routine body is a living definition, so Liquibase must re-apply the
 changeset when the file changes. Without `runOnChange`, the database silently
-keeps the old body. The rule reports a changeset with a PostgreSQL routine source
-(`createProcedure`/`createFunction`) that is not `runOnChange="true"`. It is an
+keeps the old body. The rule reports a changeset with a PostgreSQL routine source (`createProcedure`/`createFunction`)
+that is not `runOnChange="true"`. It is an
 error and on by default.
 
 ```xml
@@ -443,10 +448,12 @@ opt-in, and it checks forward and rollback SQL.
 
 ```sql
 -- Reported.
-ALTER TABLE app.orders ADD CONSTRAINT orders_total_check CHECK (total >= 0);
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_total_check CHECK (total >= 0);
 
 -- Accepted.
-ALTER TABLE app.orders ADD CONSTRAINT orders_total_check CHECK (total >= 0) NOT VALID;
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_total_check CHECK (total >= 0) NOT VALID;
 ```
 
 Only `CHECK` and `FOREIGN KEY` are checked: PostgreSQL cannot add `UNIQUE`,
@@ -504,8 +511,8 @@ default.
 
 ```xml
 <!-- Reported: the second changeset repeats the first identity. -->
-<changeSet id="001-create" author="me"> ... </changeSet>
-<changeSet id="001-create" author="me"> ... </changeSet>
+<changeSet id="001-create" author="me">...</changeSet>
+<changeSet id="001-create" author="me">...</changeSet>
 ```
 
 ### Configuration
@@ -630,8 +637,7 @@ changelog `Configuration`, the managed/routine schemas, the caller role and the
 rollback directories, so a project's regular test base and every contract share
 one setup, plus the generic lock and catalog helpers), `TestResources`, the
 `ChangelogAssertions`/`RoutineAssertions` helpers (including routine/rollback
-parity), the previous-release `UpgradeTestBase`, and abstract contract classes
-(`ChangelogLinterContract`,
+parity), the previous-release `UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,

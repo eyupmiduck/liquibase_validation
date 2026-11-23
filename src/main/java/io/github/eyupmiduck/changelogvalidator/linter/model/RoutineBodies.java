@@ -5,11 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Extracts the stored-routine bodies from SQL units and re-lexes each body with
@@ -268,51 +264,6 @@ public final class RoutineBodies {
     }
 
     /**
-     * One extracted routine body.
-     *
-     * @param unit       the SQL unit the body came from
-     * @param name       the schema-qualified routine name when the declaration
-     *                   names one, otherwise {@code null} (a bare body)
-     * @param kind       the declaration kind, or {@link Kind#UNKNOWN} for a bare body
-     * @param parameters the declared parameters, in declaration order; empty for a
-     *                   bare body
-     * @param tokens     the body tokens, with absolute offsets, lines and columns
-     */
-    public record Body(SqlUnit unit, String name, Kind kind, List<Parameter> parameters, List<Token> tokens) {
-
-        /**
-         * Validates the required components.
-         */
-        public Body {
-            Objects.requireNonNull(unit, "unit");
-            Objects.requireNonNull(kind, "kind");
-            Objects.requireNonNull(parameters, "parameters");
-            Objects.requireNonNull(tokens, "tokens");
-            parameters = List.copyOf(parameters);
-            tokens = List.copyOf(tokens);
-        }
-    }
-
-    /**
-     * A declared routine parameter.
-     *
-     * @param name  the parameter name as written (not case-folded)
-     * @param mode  the parameter mode
-     * @param token the token the name came from
-     */
-    public record Parameter(String name, ParameterMode mode, Token token) {
-
-        /**
-         * Validates the required components.
-         */
-        public Parameter {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(mode, "mode");
-            Objects.requireNonNull(token, "token");
-        }
-    }
-
-    /**
      * The routine declaration kind.
      */
     public enum Kind {
@@ -357,5 +308,50 @@ public final class RoutineBodies {
          * A variadic input parameter.
          */
         VARIADIC
+    }
+
+    /**
+     * One extracted routine body.
+     *
+     * @param unit       the SQL unit the body came from
+     * @param name       the schema-qualified routine name when the declaration
+     *                   names one, otherwise {@code null} (a bare body)
+     * @param kind       the declaration kind, or {@link Kind#UNKNOWN} for a bare body
+     * @param parameters the declared parameters, in declaration order; empty for a
+     *                   bare body
+     * @param tokens     the body tokens, with absolute offsets, lines and columns
+     */
+    public record Body(SqlUnit unit, String name, Kind kind, List<Parameter> parameters, List<Token> tokens) {
+
+        /**
+         * Validates the required components.
+         */
+        public Body {
+            Objects.requireNonNull(unit, "unit");
+            Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(parameters, "parameters");
+            Objects.requireNonNull(tokens, "tokens");
+            parameters = List.copyOf(parameters);
+            tokens = List.copyOf(tokens);
+        }
+    }
+
+    /**
+     * A declared routine parameter.
+     *
+     * @param name  the parameter name as written (not case-folded)
+     * @param mode  the parameter mode
+     * @param token the token the name came from
+     */
+    public record Parameter(String name, ParameterMode mode, Token token) {
+
+        /**
+         * Validates the required components.
+         */
+        public Parameter {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(mode, "mode");
+            Objects.requireNonNull(token, "token");
+        }
     }
 }

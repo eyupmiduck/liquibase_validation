@@ -40,61 +40,6 @@ public final class RoutineArgumentNamingRule implements Rule {
     private static final String HELP = "Prefix input parameters with i_, output parameters with o_, "
             + "INOUT parameters with io_, and local variables with l_.";
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.ERROR;
-    }
-
-    @Override
-    public List<Violation> check(RuleContext context) {
-        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
-            return List.of();
-        }
-        List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
-        return List.copyOf(violations);
-    }
-
-    private void collect(List<SqlUnit> units, List<Violation> violations) {
-        for (SqlUnit unit : units) {
-            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY || !RuleSupport.appliesToPostgres(unit)) {
-                continue;
-            }
-            for (RoutineBodies.Body body : RoutineBodies.find(List.of(unit))) {
-                for (RoutineBodies.Parameter parameter : body.parameters()) {
-                    String prefix = switch (parameter.mode()) {
-                        case IN, VARIADIC -> "i_";
-                        case OUT -> "o_";
-                        case INOUT -> "io_";
-                    };
-                    if (!parameter.name().startsWith(prefix)) {
-                        violations.add(new Violation(
-                                "parameter",
-                                "routine parameter '" + parameter.name() + "' must start with " + prefix,
-                                HELP,
-                                unit.file(), parameter.token().line(), parameter.token().column()));
-                    }
-                }
-                for (Token local : locals(body.tokens())) {
-                    String name = name(local);
-                    if (!name.startsWith("l_")) {
-                        violations.add(new Violation(
-                                "local variable",
-                                "routine local variable '" + name + "' must start with l_",
-                                HELP,
-                                unit.file(), local.line(), local.column()));
-                    }
-                }
-            }
-        }
-    }
-
     /**
      * Returns the tokens that declare a local variable: the first identifier of
      * each top-level {@code DECLARE} declaration and every {@code FOR} loop
@@ -187,5 +132,60 @@ public final class RoutineArgumentNamingRule implements Rule {
 
     private static boolean isPunctuation(Token token, String text) {
         return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.ERROR;
+    }
+
+    @Override
+    public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
+        List<Violation> violations = new ArrayList<>();
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
+    }
+
+    private void collect(List<SqlUnit> units, List<Violation> violations) {
+        for (SqlUnit unit : units) {
+            if (unit.source().kind() != SqlSource.Kind.ROUTINE_BODY || !RuleSupport.appliesToPostgres(unit)) {
+                continue;
+            }
+            for (RoutineBodies.Body body : RoutineBodies.find(List.of(unit))) {
+                for (RoutineBodies.Parameter parameter : body.parameters()) {
+                    String prefix = switch (parameter.mode()) {
+                        case IN, VARIADIC -> "i_";
+                        case OUT -> "o_";
+                        case INOUT -> "io_";
+                    };
+                    if (!parameter.name().startsWith(prefix)) {
+                        violations.add(new Violation(
+                                "parameter",
+                                "routine parameter '" + parameter.name() + "' must start with " + prefix,
+                                HELP,
+                                unit.file(), parameter.token().line(), parameter.token().column()));
+                    }
+                }
+                for (Token local : locals(body.tokens())) {
+                    String name = name(local);
+                    if (!name.startsWith("l_")) {
+                        violations.add(new Violation(
+                                "local variable",
+                                "routine local variable '" + name + "' must start with l_",
+                                HELP,
+                                unit.file(), local.line(), local.column()));
+                    }
+                }
+            }
+        }
     }
 }

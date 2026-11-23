@@ -79,10 +79,10 @@ public final class SqlLexer {
      * returned token carries the absolute offset in the original input and the
      * absolute line/column, so a finding points at the original file.
      *
-     * @param sql         the fragment to tokenize
-     * @param offsetBase  the fragment's zero-based offset in the original input
-     * @param lineBase    the absolute one-based line of the fragment's first character
-     * @param columnBase  the absolute one-based column of the fragment's first character
+     * @param sql        the fragment to tokenize
+     * @param offsetBase the fragment's zero-based offset in the original input
+     * @param lineBase   the absolute one-based line of the fragment's first character
+     * @param columnBase the absolute one-based column of the fragment's first character
      * @return the tokens, in input order, with absolute offsets and positions
      */
     public static List<Token> tokenize(String sql, int offsetBase, int lineBase, int columnBase) {

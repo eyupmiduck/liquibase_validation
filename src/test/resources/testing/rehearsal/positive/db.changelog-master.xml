@@ -6,7 +6,10 @@
                             https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <!-- A plain, reversible changeset used to exercise the session helper. -->
     <changeSet id="001-create-probe" author="lee.horner" dbms="postgresql">
-        <sql>CREATE TABLE rehearsal_probe (id integer);</sql>
+        <sql>CREATE TABLE rehearsal_probe
+             (
+                 id integer
+             );</sql>
         <rollback>
             <sql>DROP TABLE rehearsal_probe;</sql>
         </rollback>

@@ -10,10 +10,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Exercises {@link LiquibaseSession} against a real PostgreSQL: apply, list,
@@ -29,6 +26,16 @@ class LiquibaseSessionTest extends PostgresTestBase {
 
     private String scratchDatabase;
 
+    private static boolean tableExists(Connection connection, String table) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT to_regclass(?) IS NOT NULL")) {
+            statement.setString(1, table);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getBoolean(1);
+            }
+        }
+    }
+
     private String newScratchDatabase() throws SQLException {
         scratchDatabase = "rehearsal_" + Integer.toUnsignedString(UUID.randomUUID().hashCode(), 16);
         createDatabase(scratchDatabase);
@@ -40,16 +47,6 @@ class LiquibaseSessionTest extends PostgresTestBase {
     void dropScratchDatabase() throws SQLException {
         if (scratchDatabase != null) {
             dropDatabase(scratchDatabase);
-        }
-    }
-
-    private static boolean tableExists(Connection connection, String table) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT to_regclass(?) IS NOT NULL")) {
-            statement.setString(1, table);
-            try (ResultSet result = statement.executeQuery()) {
-                result.next();
-                return result.getBoolean(1);
-            }
         }
     }
 

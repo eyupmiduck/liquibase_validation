@@ -1,6 +1,5 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
-import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;

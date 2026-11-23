@@ -1,11 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import java.nio.file.Path;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * The project values shared by the test-support contracts: the container and
@@ -26,37 +22,37 @@ import java.util.Set;
  * a contract that needs them asserts that they are populated, so a
  * misconfigured profile fails instead of passing vacuously.
  *
- * @param configuration               the container, role, image, changelog and
- *                                    tracking-table configuration
- * @param managedSchemas              the application schemas the changelog
- *                                    manages, used by catalog and audit checks
- * @param applicationSchemas          the schemas that must not hold Liquibase's
- *                                    generic tracking tables, normally
- *                                    {@link PostgresTestBase#PUBLIC_SCHEMA} plus
- *                                    the managed schemas
- * @param routineSchemas              the schemas whose functions and procedures
- *                                    the routine contracts inspect
- * @param callerRole                  the application role the grant changeset
- *                                    targets, or {@code null} when the project
- *                                    has no caller grant contract
- * @param routineRollbackDirectories  the classpath directories holding routine
- *                                    rollback SQL
- * @param triggerRollbackDirectories  the classpath directories holding trigger
- *                                    rollback SQL
- * @param changelogRootResource       the changelog root classpath resource, for
- *                                    example {@code db/changelog}
- * @param changesRootResource         the changes directory classpath resource,
- *                                    for example {@code db/changelog/changes}
- * @param plpgsqlWhitelistResource    the classpath resource holding the
- *                                    {@code plpgsql_check} allow-list
- * @param roundTripSchemas            the schemas the round-trip contract captures
- *                                    before, during and after the changelog;
- *                                    defaults to {@code managedSchemas} when empty
- * @param baselineChangelogs          extra classpath changelogs applied before
- *                                    the main changelog and deliberately left
- *                                    outside its rollback (for example an
- *                                    installed dependency), in order; empty when
- *                                    there are none
+ * @param configuration              the container, role, image, changelog and
+ *                                   tracking-table configuration
+ * @param managedSchemas             the application schemas the changelog
+ *                                   manages, used by catalog and audit checks
+ * @param applicationSchemas         the schemas that must not hold Liquibase's
+ *                                   generic tracking tables, normally
+ *                                   {@link PostgresTestBase#PUBLIC_SCHEMA} plus
+ *                                   the managed schemas
+ * @param routineSchemas             the schemas whose functions and procedures
+ *                                   the routine contracts inspect
+ * @param callerRole                 the application role the grant changeset
+ *                                   targets, or {@code null} when the project
+ *                                   has no caller grant contract
+ * @param routineRollbackDirectories the classpath directories holding routine
+ *                                   rollback SQL
+ * @param triggerRollbackDirectories the classpath directories holding trigger
+ *                                   rollback SQL
+ * @param changelogRootResource      the changelog root classpath resource, for
+ *                                   example {@code db/changelog}
+ * @param changesRootResource        the changes directory classpath resource,
+ *                                   for example {@code db/changelog/changes}
+ * @param plpgsqlWhitelistResource   the classpath resource holding the
+ *                                   {@code plpgsql_check} allow-list
+ * @param roundTripSchemas           the schemas the round-trip contract captures
+ *                                   before, during and after the changelog;
+ *                                   defaults to {@code managedSchemas} when empty
+ * @param baselineChangelogs         extra classpath changelogs applied before
+ *                                   the main changelog and deliberately left
+ *                                   outside its rollback (for example an
+ *                                   installed dependency), in order; empty when
+ *                                   there are none
  */
 public record ProjectProfile(
         PostgresTestBase.Configuration configuration,
@@ -83,17 +79,6 @@ public record ProjectProfile(
             .build();
 
     /**
-     * Starts a profile builder with the conventional changelog locations and an
-     * application-schema list derived from the managed schemas.
-     *
-     * @param configuration the container and changelog configuration
-     * @return the builder
-     */
-    public static Builder builder(PostgresTestBase.Configuration configuration) {
-        return new Builder(configuration);
-    }
-
-    /**
      * Validates the required values and copies the lists.
      */
     public ProjectProfile {
@@ -118,6 +103,33 @@ public record ProjectProfile(
         if (callerRole != null && callerRole.isBlank()) {
             throw new IllegalArgumentException("callerRole must be null or non-blank");
         }
+    }
+
+    /**
+     * Starts a profile builder with the conventional changelog locations and an
+     * application-schema list derived from the managed schemas.
+     *
+     * @param configuration the container and changelog configuration
+     * @return the builder
+     */
+    public static Builder builder(PostgresTestBase.Configuration configuration) {
+        return new Builder(configuration);
+    }
+
+    private static List<String> copyStrings(List<String> values, String name) {
+        Objects.requireNonNull(values, name);
+        List<String> copy = List.copyOf(values);
+        for (String value : copy) {
+            requireNonBlank(value, name + " element");
+        }
+        return copy;
+    }
+
+    private static String requireNonBlank(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return value;
     }
 
     /**
@@ -387,21 +399,5 @@ public record ProjectProfile(
                     changelogRootResource, changesRootResource, plpgsqlWhitelistResource,
                     roundTripSchemas, baselineChangelogs);
         }
-    }
-
-    private static List<String> copyStrings(List<String> values, String name) {
-        Objects.requireNonNull(values, name);
-        List<String> copy = List.copyOf(values);
-        for (String value : copy) {
-            requireNonBlank(value, name + " element");
-        }
-        return copy;
-    }
-
-    private static String requireNonBlank(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return value;
     }
 }

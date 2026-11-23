@@ -3,7 +3,6 @@ package io.github.eyupmiduck.changelogvalidator.linter.model;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatementSplitter;
 import org.junit.jupiter.api.Test;
 
@@ -150,8 +149,8 @@ class RoutineBodiesTest {
     @Test
     void parsesNamedParametersAndTheirModes() {
         RoutineBodies.Body body = RoutineBodies.find(List.of(unit(
-                "CREATE FUNCTION app.f(i_x integer, OUT o_y text, INOUT io_z bigint,"
-                        + " VARIADIC i_values integer[]) RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
+                        "CREATE FUNCTION app.f(i_x integer, OUT o_y text, INOUT io_z bigint,"
+                                + " VARIADIC i_values integer[]) RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
                 .getFirst();
 
         assertEquals(List.of("i_x", "o_y", "io_z", "i_values"),
@@ -164,8 +163,8 @@ class RoutineBodiesTest {
     @Test
     void skipsUnnamedParametersAndMultiWordTypes() {
         RoutineBodies.Body body = RoutineBodies.find(List.of(unit(
-                "CREATE FUNCTION app.f(integer, double precision, character varying, numeric(10, 2),"
-                        + " app.custom_type, i_real text) RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
+                        "CREATE FUNCTION app.f(integer, double precision, character varying, numeric(10, 2),"
+                                + " app.custom_type, i_real text) RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
                 .getFirst();
 
         assertEquals(List.of("i_real"),

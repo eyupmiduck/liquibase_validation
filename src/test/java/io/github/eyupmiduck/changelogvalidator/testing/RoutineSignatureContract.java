@@ -24,6 +24,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public abstract class RoutineSignatureContract extends PostgresTestBase {
 
+    static Report inspect(Connection connection, Collection<String> schemas, Set<String> allowedOverloads)
+            throws SQLException {
+        Objects.requireNonNull(allowedOverloads, "allowedOverloads");
+        List<RoutineCatalog.Routine> routines = RoutineCatalog.routines(connection, schemas);
+        Map<String, List<String>> signaturesByName = new LinkedHashMap<>();
+        for (RoutineCatalog.Routine routine : routines) {
+            signaturesByName.computeIfAbsent(routine.qualifiedName(), name -> new ArrayList<>())
+                    .add(routine.identityArguments());
+        }
+
+        List<String> unexpected = new ArrayList<>();
+        Set<String> overloaded = new LinkedHashSet<>();
+        for (Map.Entry<String, List<String>> entry : signaturesByName.entrySet()) {
+            if (entry.getValue().size() > 1) {
+                overloaded.add(entry.getKey());
+                if (!allowedOverloads.contains(entry.getKey())) {
+                    unexpected.add(entry.getKey() + "(" + String.join(" | ", entry.getValue()) + ")");
+                }
+            }
+        }
+        List<String> stale = new ArrayList<>();
+        for (String allowed : allowedOverloads) {
+            if (!overloaded.contains(allowed)) {
+                stale.add(allowed);
+            }
+        }
+        unexpected.sort(String::compareTo);
+        stale.sort(String::compareTo);
+        return new Report(unexpected, stale, signaturesByName.size());
+    }
+
     /**
      * The schemas whose routines are checked, from the profile's routine
      * schemas.
@@ -64,43 +95,12 @@ public abstract class RoutineSignatureContract extends PostgresTestBase {
         }
     }
 
-    static Report inspect(Connection connection, Collection<String> schemas, Set<String> allowedOverloads)
-            throws SQLException {
-        Objects.requireNonNull(allowedOverloads, "allowedOverloads");
-        List<RoutineCatalog.Routine> routines = RoutineCatalog.routines(connection, schemas);
-        Map<String, List<String>> signaturesByName = new LinkedHashMap<>();
-        for (RoutineCatalog.Routine routine : routines) {
-            signaturesByName.computeIfAbsent(routine.qualifiedName(), name -> new ArrayList<>())
-                    .add(routine.identityArguments());
-        }
-
-        List<String> unexpected = new ArrayList<>();
-        Set<String> overloaded = new LinkedHashSet<>();
-        for (Map.Entry<String, List<String>> entry : signaturesByName.entrySet()) {
-            if (entry.getValue().size() > 1) {
-                overloaded.add(entry.getKey());
-                if (!allowedOverloads.contains(entry.getKey())) {
-                    unexpected.add(entry.getKey() + "(" + String.join(" | ", entry.getValue()) + ")");
-                }
-            }
-        }
-        List<String> stale = new ArrayList<>();
-        for (String allowed : allowedOverloads) {
-            if (!overloaded.contains(allowed)) {
-                stale.add(allowed);
-            }
-        }
-        unexpected.sort(String::compareTo);
-        stale.sort(String::compareTo);
-        return new Report(unexpected, stale, signaturesByName.size());
-    }
-
     /**
      * The signature-check result.
      *
-     * @param unexpectedOverloads    overloaded routines not in the allow-list
-     * @param staleAllowListEntries  allow-list entries without a real overload
-     * @param checkedRoutines        the number of distinct routine names inspected
+     * @param unexpectedOverloads   overloaded routines not in the allow-list
+     * @param staleAllowListEntries allow-list entries without a real overload
+     * @param checkedRoutines       the number of distinct routine names inspected
      */
     record Report(List<String> unexpectedOverloads, List<String> staleAllowListEntries, int checkedRoutines) {
     }

@@ -14,7 +14,10 @@
     </changeSet>
 
     <changeSet id="fixture-002-create-table" author="lee.horner" dbms="postgresql">
-        <sql>CREATE TABLE roundtrip_fixtures.sample (id integer);</sql>
+        <sql>CREATE TABLE roundtrip_fixtures.sample
+             (
+                 id integer
+             );</sql>
         <rollback>
             <sql>DROP TABLE roundtrip_fixtures.sample;</sql>
         </rollback>

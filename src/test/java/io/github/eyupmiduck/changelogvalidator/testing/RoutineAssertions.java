@@ -123,7 +123,7 @@ public final class RoutineAssertions {
      * Probes the named tables grouped by schema. The assertion is non-vacuous:
      * an empty map fails, and an empty table list for a schema fails.
      *
-     * @param connection    an open owner connection to the migrated database
+     * @param connection     an open owner connection to the migrated database
      * @param tablesBySchema the schema-to-tables map
      * @throws SQLException if the probe cannot run
      */
@@ -141,10 +141,10 @@ public final class RoutineAssertions {
      * comment, using the catalog-comment check. The assertion is non-vacuous: a
      * configuration that inspects no object fails rather than passing.
      *
-     * @param connection       an open connection to the migrated database
-     * @param schemas          the schemas whose objects are checked
-     * @param allowed          the accepted missing-comment exceptions
-     * @param includeTriggers  whether trigger comments are required
+     * @param connection      an open connection to the migrated database
+     * @param schemas         the schemas whose objects are checked
+     * @param allowed         the accepted missing-comment exceptions
+     * @param includeTriggers whether trigger comments are required
      * @throws SQLException if the catalog cannot be read
      */
     public static void assertCatalogObjectsHaveComments(Connection connection, Collection<String> schemas,

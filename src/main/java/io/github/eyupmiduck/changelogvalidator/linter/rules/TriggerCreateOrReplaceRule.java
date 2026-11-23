@@ -48,6 +48,10 @@ public final class TriggerCreateOrReplaceRule implements Rule {
         this.pgVersion = pgVersion;
     }
 
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -109,9 +113,5 @@ public final class TriggerCreateOrReplaceRule implements Rule {
                 }
             }
         }
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
     }
 }

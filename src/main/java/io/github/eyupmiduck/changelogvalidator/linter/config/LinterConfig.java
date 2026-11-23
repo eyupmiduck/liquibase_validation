@@ -68,7 +68,7 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
     /**
      * Returns whether the rule with {@code id} runs under this configuration.
      *
-     * @param id              the rule id
+     * @param id               the rule id
      * @param enabledByDefault whether the rule runs without an explicit include
      * @return {@code true} when the rule is enabled
      */

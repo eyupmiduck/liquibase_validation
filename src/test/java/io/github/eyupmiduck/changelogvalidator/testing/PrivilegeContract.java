@@ -27,6 +27,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  */
 public abstract class PrivilegeContract extends PostgresTestBase {
 
+    private static String first(Collection<String> values, String what) {
+        return values.stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("at least one " + what + " is required"));
+    }
+
     /**
      * The schemas whose routines are checked, from the profile's routine
      * schemas.
@@ -194,11 +199,6 @@ public abstract class PrivilegeContract extends PostgresTestBase {
     void grantRollbackMirrorsTheForwardGrants() throws Exception {
         GrantAssertions.assertGrantRollbackMirrors(
                 grantForwardResource(), callerRole(), grantRollbackResource());
-    }
-
-    private static String first(Collection<String> values, String what) {
-        return values.stream().findFirst()
-                .orElseThrow(() -> new IllegalStateException("at least one " + what + " is required"));
     }
 
     /**

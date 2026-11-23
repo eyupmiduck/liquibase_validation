@@ -34,6 +34,28 @@ public final class RequireNotValidConstraintRule implements Rule {
      */
     public static final String ID = "require-not-valid-constraint";
 
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
+    private static int indexOf(List<Token> tokens, String keyword, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword(keyword)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean hasSequence(List<Token> tokens, int from, String first, String second) {
+        for (int i = from; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword(first) && tokens.get(i + 1).matchesKeyword(second)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public String id() {
         return ID;
@@ -112,27 +134,5 @@ public final class RequireNotValidConstraintRule implements Rule {
                 }
             }
         }
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
-    }
-
-    private static int indexOf(List<Token> tokens, String keyword, int from) {
-        for (int i = from; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static boolean hasSequence(List<Token> tokens, int from, String first, String second) {
-        for (int i = from; i + 1 < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(first) && tokens.get(i + 1).matchesKeyword(second)) {
-                return true;
-            }
-        }
-        return false;
     }
 }
