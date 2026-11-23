@@ -105,18 +105,18 @@ liquibase-linter --changelog-root src/main/resources/db/changelog
 liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sarif --fail-on warning
 ```
 
-| Option                     | Default                           | Meaning                              |
-|----------------------------|-----------------------------------|--------------------------------------|
-| `-r, --changelog-root DIR` | required                          | changelog directory                  |
-| `-m, --master FILE`        | `DIR/db.changelog-master.xml`     | master changelog                     |
-| `-c, --config FILE`        | `.liquibase-linter.yml`           | YAML configuration                   |
-| `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                    |
-| `--reporter`               | `tty`                             | `tty`, `json` or `sarif`             |
-| `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
+| Option                     | Default                           | Meaning                                         |
+|----------------------------|-----------------------------------|-------------------------------------------------|
+| `-r, --changelog-root DIR` | required                          | changelog directory                             |
+| `-m, --master FILE`        | `DIR/db.changelog-master.xml`     | master changelog                                |
+| `-c, --config FILE`        | `.liquibase-linter.yml`           | YAML configuration                              |
+| `-w, --whitelist FILE`     | `.liquibase-linter-whitelist.yml` | accepted findings                               |
+| `--reporter`               | `tty`                             | `tty`, `json` or `sarif`                        |
+| `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none`            |
 | `--update-whitelist`       |                                   | rewrite the whitelist from the current findings |
-| `--list-rules`             |                                   | print the registered rules and exit  |
-| `--version`                |                                   | print the version and exit           |
-| `-h, --help`               |                                   | print usage and exit                 |
+| `--list-rules`             |                                   | print the registered rules and exit             |
+| `--version`                |                                   | print the version and exit                      |
+| `-h, --help`               |                                   | print usage and exit                            |
 
 The master may be an XML changelog or a Liquibase formatted SQL changelog. The
 graph follows `<include>`, `<includeAll>` and formatted SQL changesets; an
@@ -148,6 +148,7 @@ lists the built-in rules in registration (reporting) order and is generated from
 the rule metadata; `RuleDocumentationTest` fails when it drifts.
 
 <!-- rule-metadata:start -->
+
 | Rule                                                                              | Severity | Default | What it detects                                                                                            |
 |-----------------------------------------------------------------------------------|----------|---------|------------------------------------------------------------------------------------------------------------|
 | [`changeset-run-in-transaction-required`](#changeset-run-in-transaction-required) | error    | on      | a transaction-forbidden statement in a changeset without `runInTransaction="false"`                        |
@@ -176,6 +177,7 @@ the rule metadata; `RuleDocumentationTest` fails when it drifts.
 | [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                          |
 | [`project-conflicting-comment`](#project-conflicting-comment)                     | warning  | opt-in  | an object commented twice, with the same or different text                                                 |
 | [`project-unregistered-routine`](#project-unregistered-routine)                   | warning  | opt-in  | a routine SQL file no changeset references                                                                 |
+
 <!-- rule-metadata:end -->
 
 `changeset-id-unique` is a project rule: it runs once over the whole graph after
@@ -710,8 +712,8 @@ SQL (including a routine body), instead of adding a whitelist entry:
 CREATE INDEX CONCURRENTLY idx ON t (c);
 ```
 
-The directive applies to the whole changeset. It can name one or more rule ids
-(comma or whitespace separated); without a rule id it suppresses every rule:
+The directive applies to the whole changeset. It can name one or more rule ids (comma or whitespace separated); without
+a rule id it suppresses every rule:
 
 ```sql
 -- liquibase-linter:ignore changeset-run-in-transaction-required reason=...

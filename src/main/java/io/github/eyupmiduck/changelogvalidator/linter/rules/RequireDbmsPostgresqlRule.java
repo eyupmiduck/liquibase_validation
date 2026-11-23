@@ -259,12 +259,6 @@ public final class RequireDbmsPostgresqlRule implements Rule {
         }
     }
 
-    /**
-     * A construct label and the first token of the offending statement.
-     */
-    private record LocatedConstruct(String label, Token token) {
-    }
-
     @Override
     public String description() {
         return "PostgreSQL-only SQL in a changeset without a `dbms=\"postgresql\"` gate";
@@ -273,5 +267,11 @@ public final class RequireDbmsPostgresqlRule implements Rule {
     @Override
     public String help() {
         return "Add `dbms=\"postgresql\"` to the changeset.";
+    }
+
+    /**
+     * A construct label and the first token of the offending statement.
+     */
+    private record LocatedConstruct(String label, Token token) {
     }
 }

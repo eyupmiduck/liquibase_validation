@@ -164,15 +164,6 @@ public final class Whitelist {
     }
 
     /**
-     * Returns the accepted findings.
-     *
-     * @return the entries
-     */
-    public List<AllowedFinding> entries() {
-        return entries;
-    }
-
-    /**
      * Creates a whitelist from explicit entries, for the update-whitelist mode.
      *
      * @param entries the entries
@@ -212,6 +203,15 @@ public final class Whitelist {
             maps.add(map);
         }
         Files.writeString(file, YamlDocuments.dump(maps));
+    }
+
+    /**
+     * Returns the accepted findings.
+     *
+     * @return the entries
+     */
+    public List<AllowedFinding> entries() {
+        return entries;
     }
 
     /**

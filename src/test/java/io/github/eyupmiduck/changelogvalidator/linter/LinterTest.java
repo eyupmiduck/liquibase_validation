@@ -2,11 +2,7 @@ package io.github.eyupmiduck.changelogvalidator.linter;
 
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
-import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogModel;
-import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
-import io.github.eyupmiduck.changelogvalidator.linter.model.RoutineBodies;
-import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
+import io.github.eyupmiduck.changelogvalidator.linter.model.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
