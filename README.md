@@ -1093,6 +1093,11 @@ ownership (`OWNED BY`), column storage/compression/statistics, inheritance,
 tablespaces, or user-defined base and multirange types; a difference in one of
 those is not detected by the catalog comparison.
 
+`CatalogSnapshot` is deliberately a narrow test-support helper for the upgrade
+and round-trip contracts, not a general schema-fingerprint utility. The decision
+and the full gap list are recorded in
+[docs/adr/0008-catalog-snapshot-scope.md](docs/adr/0008-catalog-snapshot-scope.md).
+
 When there is no published release below the current version it skips (so a
 project's first release does not break its build), and it can be disabled for an
 offline run with `-Dskip.upgrade-test=true`. See

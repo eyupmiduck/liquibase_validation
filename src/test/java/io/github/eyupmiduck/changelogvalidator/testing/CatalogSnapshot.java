@@ -31,7 +31,10 @@ import java.util.stream.Stream;
  * row-level security policies, rules, sequence ownership, column
  * storage/compression/statistics, inheritance, tablespaces, and user-defined
  * base or multirange types are not captured. See the README for the supported
- * object list and its limits.
+ * object list and its limits, and
+ * {@code docs/adr/0008-catalog-snapshot-scope.md} for the decision to keep this a
+ * narrow helper for the upgrade and round-trip contracts rather than a general
+ * schema-fingerprint utility.
  *
  * <p>The map can be written to a directory tree (one file per object) so a
  * mismatch can be reviewed with a directory diff and uploaded as a build
