@@ -330,7 +330,7 @@ public final class ChangelogLayoutCheck {
 
     private static String identifier(Token token) {
         if (token.type() == TokenType.QUOTED_IDENTIFIER) {
-            return token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
+            return token.identifier();
         }
         return token.text();
     }

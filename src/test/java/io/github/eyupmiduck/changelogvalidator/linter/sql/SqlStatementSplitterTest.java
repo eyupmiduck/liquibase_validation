@@ -223,15 +223,120 @@ class SqlStatementSplitterTest {
     }
 
     /**
-     * An operator delimiter is not recognised, so {@code /} does not split a
-     * division expression.
+     * An operator delimiter splits when it is the only non-trivia token on its
+     * line.
      */
     @Test
-    void doesNotSplitOnOperatorDelimiter() {
-        List<SqlStatement> statements = SqlStatementSplitter.split("SELECT a/b", true, "/", true);
+    void splitsOnOperatorDelimiterAloneOnALine() {
+        List<SqlStatement> statements = SqlStatementSplitter.split("SELECT 1\n/\nSELECT 2\n/", true, "/", true);
 
-        assertEquals(1, statements.size());
-        assertEquals("SELECT a/b", statements.get(0).text());
+        assertEquals(2, statements.size());
+        assertEquals("SELECT 1", statements.get(0).text());
+        assertEquals("SELECT 2", statements.get(1).text());
+    }
+
+    /**
+     * A division operator is not a delimiter, so {@code /} does not split an
+     * expression or a trailing operator.
+     */
+    @Test
+    void doesNotSplitOnDivisionOperator() {
+        assertEquals(1, SqlStatementSplitter.split("SELECT a/b", true, "/", true).size());
+        assertEquals(1, SqlStatementSplitter.split("SELECT 1 /\nSELECT 2", true, "/", true).size());
+    }
+
+    /**
+     * A dollar-quote delimiter splits on a line that contains only the
+     * delimiter, even though the lexer sees a dollar-quoted body as one token.
+     */
+    @Test
+    void splitsOnDollarQuoteDelimiter() {
+        List<SqlStatement> statements = SqlStatementSplitter.split(
+                "SELECT 1\n$$\nSELECT 2\n$$", true, "$$", true);
+
+        assertEquals(2, statements.size());
+        assertEquals("SELECT 1", statements.get(0).text());
+        assertEquals("SELECT 2", statements.get(1).text());
+    }
+
+    /**
+     * A tagged dollar-quote delimiter is supported too.
+     */
+    @Test
+    void splitsOnTaggedDollarQuoteDelimiter() {
+        List<SqlStatement> statements = SqlStatementSplitter.split(
+                "SELECT 1\n$body$\nSELECT 2\n$body$", true, "$body$", true);
+
+        assertEquals(2, statements.size());
+        assertEquals("SELECT 1", statements.get(0).text());
+        assertEquals("SELECT 2", statements.get(1).text());
+    }
+
+    /**
+     * A routine body is kept as one statement when its closing delimiter shares
+     * a line with the trailing clause, and the final delimiter line splits.
+     */
+    @Test
+    void keepsARoutineBodyWithADollarQuoteDelimiter() {
+        String sql = """
+                CREATE FUNCTION f() RETURNS void AS $$
+                BEGIN
+                    PERFORM 1;
+                END;
+                $$ LANGUAGE plpgsql;
+                $$
+                SELECT 1
+                $$
+                """;
+
+        List<SqlStatement> statements = SqlStatementSplitter.split(sql, true, "$$", true);
+
+        assertEquals(2, statements.size());
+        assertTrue(statements.get(0).text().startsWith("CREATE FUNCTION f()"));
+        assertTrue(statements.get(0).text().contains("PERFORM 1;"));
+        assertEquals("SELECT 1", statements.get(1).text());
+    }
+
+    /**
+     * A delimiter line inside a multi-line string or block comment is not a
+     * statement delimiter.
+     */
+    @Test
+    void ignoresDollarQuoteDelimiterInsideOpaqueRegions() {
+        String inString = """
+                SELECT 'a
+                $$
+                b'
+                $$
+                SELECT 2
+                $$""";
+        List<SqlStatement> stringStatements = SqlStatementSplitter.split(inString, true, "$$", true);
+        assertEquals(2, stringStatements.size(), stringStatements.toString());
+        assertTrue(stringStatements.get(0).text().contains("$$"));
+        assertEquals("SELECT 2", stringStatements.get(1).text());
+
+        String inComment = """
+                /*
+                $$
+                */
+                $$
+                SELECT 1
+                $$""";
+        List<SqlStatement> commentStatements = SqlStatementSplitter.split(inComment, true, "$$", true);
+        assertEquals(1, commentStatements.size(), commentStatements.toString());
+        assertEquals("SELECT 1", commentStatements.get(0).text());
+    }
+
+    /**
+     * A delimiter the splitter cannot represent is rejected instead of being
+     * ignored silently.
+     */
+    @Test
+    void rejectsAnUnsupportedDelimiter() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SqlStatementSplitter.split("SELECT 1", true, "'x'", true));
+        assertThrows(IllegalArgumentException.class,
+                () -> SqlStatementSplitter.split("SELECT 1", true, "--", true));
     }
 
     /**

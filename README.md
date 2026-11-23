@@ -77,11 +77,24 @@ and the structured DDL change types are rendered to SQL (`createTable`,
 `modifyDataType`, the not-null/default changes, the constraint changes and the
 sequence changes). The limits of this normalisation are recorded in
 [docs/adr/0003-sql-normalisation.md](docs/adr/0003-sql-normalisation.md).
-Statement splitting supports the default `;` and a single-token, non-operator
-delimiter such as `GO`; operator and dollar-quote delimiters such as `/` and
-`$$` are not supported. When a source sets `splitStatements="false"`, the
-rules still analyse its commands separately so a forbidden statement cannot hide
-behind another command.
+
+The graph may be XML or a Liquibase formatted SQL changelog. A `.sql` file
+included through `<include>` (or used as the master) is read from its
+`--changeset` and `--rollback` directives, with the supported changeset
+attributes (`splitStatements`, `endDelimiter`, `stripComments`,
+`runInTransaction`, `runOnChange`, `dbms`, `context`, `labels`, the rollback
+variants and `ignore`). `<includeAll>` follows every XML changelog under a
+directory in alphabetical path order, with `endsWithFilter`,
+`minDepth`, `maxDepth` and `errorIfMissingOrEmpty`; a SQL file found by
+`includeAll` is one raw change, matching Liquibase. Unsupported directives
+(`--ignoreLines`, `--include`, `--includeAll`, `--rollbackSqlFile`) and
+attributes fail with a diagnostic rather than being ignored.
+
+Statement splitting supports the default `;`, a word delimiter such as `GO`, an
+operator delimiter such as `/` when it is alone on its line, and a dollar-quote
+delimiter such as `$$` or `$body$` on a line of its own. When a source sets
+`splitStatements="false"`, the rules still analyse its commands separately so a
+forbidden statement cannot hide behind another command.
 
 Run it with the executable jar (published to GitHub Packages as the `cli`
 classifier alongside the library), or from the library API:
@@ -100,6 +113,10 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `--reporter`               | `tty`                             | `tty`, `json` or `sarif`             |
 | `--fail-on`                | `error`                           | `error`, `warning`, `info` or `none` |
 | `-h, --help`               |                                   | print usage and exit                 |
+
+The master may be an XML changelog or a Liquibase formatted SQL changelog. The
+graph follows `<include>`, `<includeAll>` and formatted SQL changesets; a SQL
+file found by `<includeAll>` is one raw change.
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold or a whitelist entry is stale (`0` under `--fail-on none`), and `2`
@@ -661,13 +678,16 @@ lexer understands the PostgreSQL lexical forms the changelog files use:
   numeric form and is not recognised;
 - operators and punctuation, and bare words (keywords are matched by rules with
   `Token.matchesKeyword`, so identifier/keyword classification is not baked in);
+- Unicode-escape strings and identifiers (`U&'...'` / `U&"..."`) as a string and
+  a quoted identifier; the optional `UESCAPE` clause is tokenized separately and
+  the escape sequences are not decoded;
 - Liquibase formatted-SQL directives (`--liquibase`, `--changeset`,
-  `--rollback`, `--preconditions`, `--property`, `--comment`) as trivia.
+  `--rollback`, `--preconditions`, `--property`, `--comment`) as trivia; the
+  changelog reader parses `--changeset` and `--rollback` into changesets.
 
 Input the lexer cannot classify — for example an unterminated string — becomes an
 `ERROR` token rather than being skipped, so a rule (or a future rule) can report
-it. Unicode-escape strings and identifiers (`U&'...'` / `U&"..."`) are not
-supported and become an `ERROR` token. There is no parser and no
+it. There is no parser and no
 identifier/type resolution; a rule that needs those is out of scope for this
 tokenizer (see [docs/adr/0001-sql-lexer-approach.md](docs/adr/0001-sql-lexer-approach.md)).
 

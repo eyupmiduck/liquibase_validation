@@ -217,8 +217,7 @@ public final class RoutineBodies {
     private static String identifier(Token token) {
         return switch (token.type()) {
             case WORD -> token.text().toLowerCase(Locale.ROOT);
-            case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1)
-                    .replace("\"\"", "\"");
+            case QUOTED_IDENTIFIER -> token.identifier();
             default -> null;
         };
     }

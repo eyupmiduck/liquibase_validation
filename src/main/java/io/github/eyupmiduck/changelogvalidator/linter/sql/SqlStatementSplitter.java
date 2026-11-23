@@ -5,7 +5,9 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Splits changeset SQL into the statements Liquibase would execute, using the
@@ -19,18 +21,34 @@ import java.util.List;
  * <p>Defaults follow Liquibase: {@code splitStatements} is on and the
  * {@code endDelimiter} is {@code ;}. Comments and directives are removed from
  * the returned text by default so a rule cannot match a keyword that only
- * appears in a comment. A caller-supplied word delimiter such as {@code GO} is
- * honored only when it is the last non-trivia token on its line.
+ * appears in a comment.
  *
- * <p>Limitations: a custom delimiter must correspond to a single non-operator
- * token (for example {@code GO}); an operator delimiter such as {@code /} is not
- * supported because it would also split a division expression, and a
- * string/dollar-quote delimiter such as {@code $$} is not supported because the
- * lexer treats it as one opaque string token. A statement begins
- * at its first non-trivia token and ends at its last non-trivia token (before the
- * delimiter), so leading and trailing trivia is never part of the offsets. The
- * text is the span between those first and last non-trivia tokens.
- * {@code splitStatements=false} returns the whole input as one statement.
+ * <p>Delimiter handling:
+ * <ul>
+ *   <li>{@code ;} (and other punctuation) splits anywhere at the top level;</li>
+ *   <li>a word delimiter such as {@code GO} splits only when it is the last
+ *       non-trivia token on its line;</li>
+ *   <li>an operator delimiter such as {@code /} splits only when it is the only
+ *       non-trivia token on its line, so a division expression is not split;</li>
+ *   <li>a dollar-quote delimiter such as {@code $$} or {@code $body$} splits on
+ *       a line that contains only that delimiter. The lexer still sees a
+ *       dollar-quoted body as one opaque token, so the line scan is used
+ *       instead. A line inside a multi-line string, quoted identifier or
+ *       comment is never a delimiter.</li>
+ * </ul>
+ *
+ * <p>A statement begins at its first non-trivia token and ends at its last
+ * non-trivia token (before the delimiter), so leading and trailing trivia is
+ * never part of the offsets. The text is the span between those first and last
+ * non-trivia tokens. {@code splitStatements=false} returns the whole input as
+ * one statement.
+ *
+ * <p>Limitation: with a dollar-quote delimiter, a routine body whose closing
+ * delimiter is alone on a line is indistinguishable from a statement delimiter.
+ * Put the trailing {@code LANGUAGE ...} clause on the same line as the body's
+ * closing delimiter, or use a different {@code endDelimiter}. A delimiter the
+ * splitter cannot represent (for example a quoted string) throws
+ * {@link IllegalArgumentException} rather than being ignored.
  */
 public final class SqlStatementSplitter {
 
@@ -38,6 +56,11 @@ public final class SqlStatementSplitter {
      * The default statement delimiter, matching Liquibase.
      */
     public static final String DEFAULT_END_DELIMITER = ";";
+
+    /**
+     * The characters PostgreSQL allows in a dollar-quote tag.
+     */
+    private static final String DOLLAR_QUOTE_TAG = "[A-Za-z0-9_]*";
 
     private SqlStatementSplitter() {
     }
@@ -89,32 +112,96 @@ public final class SqlStatementSplitter {
     public static List<SqlStatement> split(String sql, List<Token> tokens, boolean splitStatements,
                                            String endDelimiter, boolean stripComments) {
         String delimiter = endDelimiter == null ? DEFAULT_END_DELIMITER : endDelimiter.strip();
+        if (splitStatements) {
+            validateDelimiter(delimiter);
+        }
+        if (splitStatements && isDollarQuoteDelimiter(delimiter)) {
+            return splitOnDelimiterLines(sql, tokens, delimiter, stripComments);
+        }
         List<SqlStatement> statements = new ArrayList<>();
-        List<Token> current = new ArrayList<>();
         int start = -1;
         int lastEnd = -1;
         for (int index = 0; index < tokens.size(); index++) {
             Token token = tokens.get(index);
             if (splitStatements && isDelimiter(tokens, index, delimiter)) {
-                addIfNotEmpty(statements, sql, current, start, lastEnd, stripComments);
-                current = new ArrayList<>();
+                addIfNotEmpty(statements, sql, tokens, start, lastEnd, stripComments);
                 start = -1;
                 lastEnd = -1;
                 continue;
             }
             if (token.isTrivia()) {
-                if (start >= 0) {
-                    current.add(token);
-                }
                 continue;
             }
             if (start < 0) {
                 start = token.startOffset();
             }
-            current.add(token);
             lastEnd = token.endOffset();
         }
-        addIfNotEmpty(statements, sql, current, start, lastEnd, stripComments);
+        addIfNotEmpty(statements, sql, tokens, start, lastEnd, stripComments);
+        return List.copyOf(statements);
+    }
+
+    private static boolean isDollarQuoteDelimiter(String delimiter) {
+        return delimiter.length() >= 2
+                && delimiter.startsWith("$")
+                && delimiter.endsWith("$")
+                && delimiter.substring(1, delimiter.length() - 1).matches(DOLLAR_QUOTE_TAG);
+    }
+
+    /**
+     * Rejects a delimiter the splitter cannot represent, so an unusual
+     * {@code endDelimiter} cannot be ignored silently. A supported delimiter is a
+     * single word, punctuation or operator token, a dollar-quote delimiter, or
+     * the empty string (no splitting).
+     */
+    private static void validateDelimiter(String delimiter) {
+        if (delimiter.isEmpty() || isDollarQuoteDelimiter(delimiter)) {
+            return;
+        }
+        List<Token> tokens = SqlLexer.tokenize(delimiter).stream()
+                .filter(token -> !token.isTrivia())
+                .toList();
+        if (tokens.size() != 1) {
+            throw new IllegalArgumentException("unsupported endDelimiter: " + delimiter);
+        }
+        TokenType type = tokens.getFirst().type();
+        if (type != TokenType.WORD && type != TokenType.PUNCTUATION && type != TokenType.OPERATOR) {
+            throw new IllegalArgumentException("unsupported endDelimiter: " + delimiter);
+        }
+    }
+
+    private static List<SqlStatement> splitOnDelimiterLines(String sql, List<Token> tokens, String delimiter,
+                                                            boolean stripComments) {
+        Set<Integer> opaqueLines = opaqueInteriorLines(tokens);
+        List<SqlStatement> statements = new ArrayList<>();
+        int statementStart = -1;
+        int statementEnd = -1;
+        int lineStart = 0;
+        int lineNumber = 1;
+        while (lineStart <= sql.length()) {
+            int lineEnd = endOfLine(sql, lineStart);
+            int first = firstNonWhitespace(sql, lineStart, lineEnd);
+            int last = lastNonWhitespace(sql, lineStart, lineEnd);
+            boolean delimiterLine = first >= 0
+                    && !opaqueLines.contains(lineNumber)
+                    && sql.substring(first, last + 1).equalsIgnoreCase(delimiter);
+            if (delimiterLine) {
+                addIfNotEmpty(statements, sql, tokens, statementStart, statementEnd, stripComments);
+                statementStart = -1;
+                statementEnd = -1;
+            } else if (first >= 0) {
+                if (statementStart < 0) {
+                    statementStart = first;
+                }
+                statementEnd = last + 1;
+            }
+            if (lineEnd >= sql.length()) {
+                break;
+            }
+            lineStart = nextLineStart(sql, lineEnd);
+            lineNumber++;
+        }
+        addIfNotEmpty(statements, sql, tokens, statementStart, statementEnd, stripComments);
         return List.copyOf(statements);
     }
 
@@ -122,19 +209,29 @@ public final class SqlStatementSplitter {
         Token token = tokens.get(index);
         if (delimiter.isEmpty()
                 || token.isTrivia()
-                || token.isStringLiteral()
-                || token.type() == TokenType.QUOTED_IDENTIFIER
-                || token.type() == TokenType.OPERATOR
                 || token.type() == TokenType.ERROR
                 || !token.text().equalsIgnoreCase(delimiter)) {
             return false;
         }
-        if (token.type() != TokenType.WORD) {
+        if (token.type() == TokenType.PUNCTUATION) {
             return true;
         }
-        // Liquibase recognises a word delimiter such as GO only when it ends the
-        // line; an identifier with the same text inside a statement must not
-        // split it.
+        if (token.type() == TokenType.STRING
+                || token.type() == TokenType.E_STRING
+                || token.type() == TokenType.DOLLAR_STRING
+                || token.type() == TokenType.QUOTED_IDENTIFIER) {
+            // An opaque token is never a delimiter; a dollar-quote delimiter is
+            // handled by the line scan instead.
+            return false;
+        }
+        if (token.type() == TokenType.OPERATOR) {
+            return isAloneOnLine(tokens, index);
+        }
+        return endsLine(tokens, index);
+    }
+
+    private static boolean endsLine(List<Token> tokens, int index) {
+        Token token = tokens.get(index);
         for (int next = index + 1; next < tokens.size(); next++) {
             Token candidate = tokens.get(next);
             if (!candidate.isTrivia()) {
@@ -142,6 +239,99 @@ public final class SqlStatementSplitter {
             }
         }
         return true;
+    }
+
+    private static boolean isAloneOnLine(List<Token> tokens, int index) {
+        Token token = tokens.get(index);
+        for (int previous = index - 1; previous >= 0; previous--) {
+            Token candidate = tokens.get(previous);
+            if (!candidate.isTrivia()) {
+                if (candidate.line() == token.line()) {
+                    return false;
+                }
+                break;
+            }
+        }
+        return endsLine(tokens, index);
+    }
+
+    private static Set<Integer> opaqueInteriorLines(List<Token> tokens) {
+        Set<Integer> lines = new HashSet<>();
+        for (Token token : tokens) {
+            if (!isMultilineOpaque(token)) {
+                continue;
+            }
+            int newlines = countNewlines(token.text());
+            for (int line = token.line() + 1; line < token.line() + newlines; line++) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
+    private static boolean isMultilineOpaque(Token token) {
+        return switch (token.type()) {
+            case STRING, E_STRING, DOLLAR_STRING, QUOTED_IDENTIFIER, BLOCK_COMMENT -> true;
+            default -> false;
+        };
+    }
+
+    private static int countNewlines(String text) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char current = text.charAt(i);
+            if (current == '\n') {
+                count++;
+            } else if (current == '\r') {
+                count++;
+                if (i + 1 < text.length() && text.charAt(i + 1) == '\n') {
+                    i++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static int endOfLine(String sql, int start) {
+        int end = start;
+        while (end < sql.length() && sql.charAt(end) != '\n' && sql.charAt(end) != '\r') {
+            end++;
+        }
+        return end;
+    }
+
+    private static int nextLineStart(String sql, int lineEnd) {
+        int next = lineEnd;
+        if (next < sql.length() && sql.charAt(next) == '\r') {
+            next++;
+        }
+        if (next < sql.length() && sql.charAt(next) == '\n') {
+            next++;
+        }
+        return next;
+    }
+
+    private static int firstNonWhitespace(String sql, int start, int end) {
+        for (int index = start; index < end; index++) {
+            if (!isWhitespace(sql.charAt(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static int lastNonWhitespace(String sql, int start, int end) {
+        for (int index = end - 1; index >= start; index--) {
+            if (!isWhitespace(sql.charAt(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isWhitespace(char character) {
+        return character == ' ' || character == '\t' || character == '\n'
+                || character == '\r' || character == '\f' || character == '\u000B';
     }
 
     private static void addIfNotEmpty(List<SqlStatement> statements, String sql, List<Token> tokens,

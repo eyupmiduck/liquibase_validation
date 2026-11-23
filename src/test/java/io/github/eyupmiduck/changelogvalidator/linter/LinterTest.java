@@ -3,6 +3,8 @@ package io.github.eyupmiduck.changelogvalidator.linter;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogModel;
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -77,6 +79,34 @@ class LinterTest {
         assertEquals(1, findings.size());
         assertEquals(7, findings.get(0).line());
         assertEquals(8, findings.get(0).column());
+    }
+
+    /**
+     * A formatted SQL changelog is parsed through {@code <include>} and a finding
+     * points at the SQL line in the {@code .sql} file.
+     */
+    @Test
+    void lintsAFormattedSqlChangelogAtTheFileLine() throws IOException {
+        Path changelog = tempDir.resolve("db.changelog.sql");
+        Files.writeString(changelog, """
+                --liquibase formatted sql
+                --changeset me:1
+                SELECT bad;
+                """);
+        Path master = tempDir.resolve("master.xml");
+        Files.writeString(master, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+                    <include file="db.changelog.sql" relativeToChangelogFile="true"/>
+                </databaseChangeLog>
+                """);
+
+        ChangelogProject project = ChangelogModel.project(tempDir, master);
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule())).lint(project);
+
+        assertEquals(1, findings.size());
+        assertEquals(changelog, findings.get(0).file());
+        assertEquals(3, findings.get(0).line());
     }
 
     /**

@@ -336,20 +336,146 @@ class ChangelogValidatorTest {
     }
 
     /**
-     * {@code <includeAll>} is rejected instead of silently producing an
-     * incomplete changelog graph.
+     * {@code <includeAll>} follows every XML changelog in the directory and its
+     * subdirectories.
      */
     @Test
-    void rejectsIncludeAll() throws IOException {
+    void followsIncludeAllXmlChangelogs() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path included = Files.createDirectories(changes.resolve("included"));
+        Files.writeString(included.resolve("001-first.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="001-first" author="test"><sql>SELECT 1;</sql></changeSet>
+                """));
+        Files.writeString(included.resolve("002-second.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="002-second" author="test"><sql>SELECT 2;</sql></changeSet>
+                """));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertEquals(3, ChangelogValidator.findReachableChangelogFiles(changes, master).size());
+    }
+
+    /**
+     * A SQL file found by {@code <includeAll>} is a referenced change, not an
+     * orphan, and still follows the SQL naming rule.
+     */
+    @Test
+    void includeAllSqlFilesAreReferencedAndNotOrphaned() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path included = Files.createDirectories(changes.resolve("included"));
+        Files.writeString(included.resolve("001-raw.sql"), "SELECT 1;\n");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(Path.of("included/001-raw.sql")),
+                ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+    }
+
+    /**
+     * A formatted SQL changelog included through {@code <include>} is referenced,
+     * not orphaned, exempt from the SQL naming rule, and its changeset ids are
+     * checked.
+     */
+    @Test
+    void formattedSqlChangelogIncludedThroughInclude() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path changelog = changes.resolve("db.changelog.sql");
+        Files.writeString(changelog, """
+                --liquibase formatted sql
+                --changeset alice:001-create
+                CREATE TABLE t (id int);
+                --rollback DROP TABLE t;
+                --changeset alice:002-index
+                CREATE INDEX idx ON t (id);
+                """);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="db.changelog.sql" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertEquals(List.of(Path.of("db.changelog.sql")),
+                ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+    }
+
+    /**
+     * A formatted SQL changelog's changeset ids are checked like XML ids.
+     */
+    @Test
+    void formattedSqlChangelogNamingIsChecked() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path changelog = changes.resolve("db.changelog.sql");
+        Files.writeString(changelog, """
+                --liquibase formatted sql
+                --changeset alice:create-table
+                CREATE TABLE t (id int);
+                """);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="db.changelog.sql" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(changelog, "create-table")),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+    }
+
+    /**
+     * A missing includeAll directory fails instead of silently producing an
+     * incomplete graph.
+     */
+    @Test
+    void rejectsMissingIncludeAllDirectory() throws IOException {
         Path changes = Files.createDirectories(tempDir.resolve("changes"));
         Path master = changes.resolve("master.xml");
         Files.writeString(master, ChangelogTestSupport.changelog("""
-                <includeAll path="changes/"/>
+                <includeAll path="missing/" relativeToChangelogFile="true"/>
                 """));
 
         IOException failure = assertThrows(IOException.class,
-                () -> ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
-        assertTrue(failure.getMessage().contains("includeAll is not supported"));
+                () -> ChangelogValidator.findReachableChangelogFiles(changes, master));
+        assertTrue(failure.getMessage().contains("includeAll directory not found"), failure.getMessage());
+    }
+
+    /**
+     * An includeAll attribute that needs a caller-supplied class fails closed.
+     */
+    @Test
+    void rejectsUnsupportedIncludeAllAttribute() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"
+                            resourceComparator="com.example.Comparator"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReachableChangelogFiles(changes, master));
+        assertTrue(failure.getMessage().contains("resourceComparator"), failure.getMessage());
+    }
+
+    /**
+     * An includeAll path that escapes the changelog root is rejected.
+     */
+    @Test
+    void rejectsIncludeAllEscapingTheRoot() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="../outside/" relativeToChangelogFile="true"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReachableChangelogFiles(changes, master));
+        assertTrue(failure.getMessage().contains("escapes the changelog root"), failure.getMessage());
     }
 
     /**

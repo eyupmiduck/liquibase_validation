@@ -25,9 +25,12 @@ import java.util.Set;
  *
  * <p>Keyword classification is deliberately left to rules: a bare word is a
  * {@link TokenType#WORD} and rules match it case-insensitively with
- * {@link Token#matchesKeyword(String)}. Unicode-escape strings and identifiers
- * ({@code U&'...'} / {@code U&"..."}) are not supported and are reported as
- * {@link TokenType#ERROR}.
+ * {@link Token#matchesKeyword(String)}. Unicode-escape strings ({@code U&'...'})
+ * and identifiers ({@code U&"..."}) are tokenized as a
+ * {@link TokenType#STRING} and a {@link TokenType#QUOTED_IDENTIFIER}; the
+ * optional {@code UESCAPE} clause is tokenized separately, and the escape
+ * sequences themselves are not decoded, so an identifier comparison sees the
+ * literal text between the quotes.
  */
 public final class SqlLexer {
 
@@ -180,16 +183,18 @@ public final class SqlLexer {
             type = stringEnd < 0 ? TokenType.ERROR : TokenType.STRING;
             end = stringEnd < 0 ? length : stringEnd;
         } else if ((current == 'U' || current == 'u') && peek(1) == '&' && (peek(2) == '\'' || peek(2) == '"')) {
-            // Unicode-escape strings/identifiers are not supported; fail closed as
-            // a single ERROR token rather than a WORD, an operator and a string.
+            // Unicode-escape strings and identifiers are tokenized as their plain
+            // forms; the escape sequences are left undecoded and an optional
+            // UESCAPE clause follows as ordinary tokens.
             if (peek(2) == '\'') {
                 int stringEnd = endOfString(position + 2, false);
+                type = stringEnd < 0 ? TokenType.ERROR : TokenType.STRING;
                 end = stringEnd < 0 ? length : stringEnd;
             } else {
                 int identifierEnd = endOfQuotedIdentifier(position + 2);
+                type = identifierEnd < 0 ? TokenType.ERROR : TokenType.QUOTED_IDENTIFIER;
                 end = identifierEnd < 0 ? length : identifierEnd;
             }
-            type = TokenType.ERROR;
         } else if (current == '"') {
             int identifierEnd = endOfQuotedIdentifier(position);
             type = identifierEnd < 0 ? TokenType.ERROR : TokenType.QUOTED_IDENTIFIER;
