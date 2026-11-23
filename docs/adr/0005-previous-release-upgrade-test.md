@@ -136,10 +136,38 @@ Negative / risks:
 - The support is released on the library's cadence, so the consumers pick it up
   a release later.
 
+## Update: re-enabled with a from-scratch catalog comparison
+
+The test is now `BaselineUpgradeTest` in both consumers and is re-enabled in the
+normal `verify` gate after the baseline releases cut from the rewritten
+changelogs.
+
+The assertion is no longer deploy-only. `UpgradeTestBase` still applies the
+previous release and then the current changelog, but it also builds a second
+database from the current changelog alone and compares the two catalogs with
+`CatalogSnapshot`. A missing or extra column, constraint, index, routine
+signature, comment or grant now fails the test, not only an upgrade that throws.
+The deploy-only check remains the floor. `CatalogSnapshot` is deliberately a
+narrow helper for the upgrade and round-trip contracts; its supported objects
+and gaps are in ADR 0008 and the README.
+
+The ongoing rule is the disable -> baseline release -> re-enable cycle, not a
+permanent removal and not a permanently disabled test:
+
+1. When a schema is edited in place, disable `BaselineUpgradeTest` (it cannot
+   compare the new changelog with the previous release while they differ).
+2. Cut a normal release from `main`; that release becomes the new baseline.
+3. Re-enable the test and confirm it passes against the new release, including
+   the catalog comparison.
+
+The original deploy-only decision and the revisit trigger to implement the
+from-scratch comparison are superseded by this update.
+
 ## Revisit triggers
 
-- A real upgrade bug is found that clears the deploy-only assertion but where
-  the resulting schema differs; then implement the from-scratch comparison.
+- ~~A real upgrade bug is found that clears the deploy-only assertion but where
+  the resulting schema differs; then implement the from-scratch comparison.~~
+  Implemented; see the update above.
 - A third consumer appears whose artifact layout or registry differs enough that
   the parameterization no longer fits.
 - GitHub Packages stops serving `maven-metadata.xml`, or the redirect no longer

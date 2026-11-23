@@ -19,9 +19,9 @@ import java.util.List;
  * back, so several statements in one changeset leave the database and
  * {@code DATABASECHANGELOG} inconsistent even when no statement is
  * transaction-forbidden. This is the advisory counterpart of the error rule
- * {@link SingleStatementRule} (bead ddl-w8y.12), which covers a
- * transaction-forbidden statement; this rule stays quiet for those changesets
- * and only reports the multi-statement smell.
+ * {@link SingleStatementRule}, which covers a transaction-forbidden statement;
+ * this rule stays quiet for those changesets and only reports the
+ * multi-statement smell.
  *
  * <p>It is opt-in: a non-transactional changeset with several statements is
  * often intentional (for example a partition maintenance batch), so a project

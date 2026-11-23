@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <p>Applies to forward and rollback SQL, because {@code runInTransaction}
  * governs the whole changeset. A changeset that already sets it to false is left
- * to the single-statement rule (bead ddl-w8y.12).
+ * to the single-statement rule.
  */
 public final class RunInTransactionRequiredRule implements Rule {
 
