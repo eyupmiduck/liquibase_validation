@@ -103,4 +103,14 @@ public final class SingleStatementRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a transaction-forbidden statement that is not the only statement in a `runInTransaction=\"false\"` changeset";
+    }
+
+    @Override
+    public String help() {
+        return "Put each statement in its own `runInTransaction=\"false\"` changeset.";
+    }
 }

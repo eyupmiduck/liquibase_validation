@@ -264,4 +264,14 @@ public final class RequireDbmsPostgresqlRule implements Rule {
      */
     private record LocatedConstruct(String label, Token token) {
     }
+
+    @Override
+    public String description() {
+        return "PostgreSQL-only SQL in a changeset without a `dbms=\"postgresql\"` gate";
+    }
+
+    @Override
+    public String help() {
+        return "Add `dbms=\"postgresql\"` to the changeset.";
+    }
 }

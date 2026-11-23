@@ -52,4 +52,14 @@ public final class RoutineRunOnChangeRule implements Rule {
                 "Set runOnChange=\"true\" so a changed routine body is re-applied instead of silently keeping the old definition.",
                 context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
+
+    @Override
+    public String description() {
+        return "a routine changeset without `runOnChange=\"true\"`";
+    }
+
+    @Override
+    public String help() {
+        return "Add `runOnChange=\"true\"` to the routine changeset.";
+    }
 }

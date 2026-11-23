@@ -182,4 +182,14 @@ public final class DynamicSqlRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a routine body that uses `EXECUTE`";
+    }
+
+    @Override
+    public String help() {
+        return "Review the dynamic SQL manually, or add the routine to `allowedRoutines`.";
+    }
 }

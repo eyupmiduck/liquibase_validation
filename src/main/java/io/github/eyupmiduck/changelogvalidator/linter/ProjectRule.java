@@ -40,6 +40,31 @@ public interface ProjectRule {
     }
 
     /**
+     * The default state shown in the rule reference: {@code on}, {@code opt-in},
+     * or a conditional form such as {@code on 14+}.
+     *
+     * @return the default state
+     */
+    default String defaultState() {
+        return enabledByDefault() ? "on" : "opt-in";
+    }
+
+    /**
+     * A one-line description of what the rule detects, for the rule reference
+     * and {@code --list-rules}.
+     *
+     * @return the description
+     */
+    String description();
+
+    /**
+     * How to fix a violation, for the rule reference and {@code --list-rules}.
+     *
+     * @return the help text
+     */
+    String help();
+
+    /**
      * Checks the whole changelog graph.
      *
      * @param changeSets the changesets, in changelog order

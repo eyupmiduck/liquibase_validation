@@ -107,6 +107,16 @@ class ProjectRuleTest {
             }
 
             @Override
+            public String description() {
+                return "test rule";
+            }
+
+            @Override
+            public String help() {
+                return "test help";
+            }
+
+            @Override
             public List<Violation> check(RuleContext context) {
                 return List.of();
             }
@@ -137,6 +147,16 @@ class ProjectRuleTest {
         @Override
         public boolean enabledByDefault() {
             return enabled;
+        }
+
+        @Override
+        public String description() {
+            return "test project rule";
+        }
+
+        @Override
+        public String help() {
+            return "project help";
         }
 
         @Override

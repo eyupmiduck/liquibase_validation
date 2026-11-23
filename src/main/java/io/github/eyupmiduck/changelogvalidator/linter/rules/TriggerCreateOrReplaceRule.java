@@ -64,6 +64,11 @@ public final class TriggerCreateOrReplaceRule implements Rule {
         return supported();
     }
 
+    @Override
+    public String defaultState() {
+        return supported() ? "on 14+" : "opt-in";
+    }
+
     private boolean supported() {
         return pgVersion == null || pgVersion >= 14;
     }
@@ -109,5 +114,15 @@ public final class TriggerCreateOrReplaceRule implements Rule {
                 }
             }
         }
+    }
+
+    @Override
+    public String description() {
+        return "a `CREATE TRIGGER` without `OR REPLACE`";
+    }
+
+    @Override
+    public String help() {
+        return "Use `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+.";
     }
 }

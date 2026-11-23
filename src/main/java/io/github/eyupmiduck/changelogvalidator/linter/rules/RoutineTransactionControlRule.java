@@ -73,4 +73,14 @@ public final class RoutineTransactionControlRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "`COMMIT` or `ROLLBACK` in a function body";
+    }
+
+    @Override
+    public String help() {
+        return "Remove transaction control from the function; let the caller own the transaction.";
+    }
 }

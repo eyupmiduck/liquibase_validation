@@ -72,4 +72,14 @@ public final class RequireRollbackRule implements Rule {
                 "Add a <rollback> block that reverses the change, or an empty <rollback/> when the change needs none.",
                 context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
+
+    @Override
+    public String description() {
+        return "a changeset with no `<rollback>`";
+    }
+
+    @Override
+    public String help() {
+        return "Add a `<rollback>` block that reverses the change, or an empty `<rollback/>` when none is needed.";
+    }
 }
