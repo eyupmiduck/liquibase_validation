@@ -257,13 +257,14 @@ class ChangelogModelTest {
     }
 
     /**
-     * A changeset that only uses a structured change type has no SQL sources.
+     * A structured addColumn is rendered into the ALTER TABLE the rules inspect.
      */
     @Test
-    void handlesStructuredChanges() throws IOException {
+    void rendersStructuredChanges() throws IOException {
         ChangeSet structured = ChangelogTestSupport.byId(ChangelogModel.changesets(changelogRoot, master), "004-structured");
 
-        assertTrue(structured.sqlSources().isEmpty());
+        assertEquals(1, structured.sqlSources().size());
+        assertEquals("ALTER TABLE t ADD COLUMN c int;", structured.sqlSources().getFirst().text());
         assertFalse(structured.rollbackDefined());
     }
 

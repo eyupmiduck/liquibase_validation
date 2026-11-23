@@ -22,12 +22,13 @@ import java.util.List;
  * through {@code get_lock_settings}. Calling the wrapper keeps the lock
  * behaviour consistent and gives the operator a single place to configure it.
  *
- * <p>The rule only sees literal SQL: a structured change type
- * ({@code <addColumn>}, {@code <modifyDataType>}, ...) generates SQL elsewhere
- * and is out of scope, and a stored-routine body is the implementation of a
- * wrapper rather than a caller's raw statement, so it is exempt. Forward and
- * rollback SQL are both checked, because a raw rollback {@code ALTER TABLE}
- * takes the same lock.
+ * <p>The rule sees literal SQL and the structured change types the model renders
+ * (for example {@code <addColumn>}, {@code <dropColumn>} and
+ * {@code <modifyDataType>}), so a structured change cannot hide an
+ * {@code ALTER TABLE}. A stored-routine body is the implementation of a wrapper
+ * rather than a caller's raw statement, so it is exempt. Forward and rollback
+ * SQL are both checked, because a raw rollback {@code ALTER TABLE} takes the
+ * same lock.
  *
  * <p>The rule is an error and on by default. Each finding names the table and
  * the suggested wrapper, so the fix is obvious without reading this source.

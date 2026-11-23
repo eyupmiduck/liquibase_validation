@@ -41,9 +41,14 @@ Normalise each SQL source **inside the linter, before lexing**, using a
    `applyToRollback="true"`; a visitor whose `dbms` does not include PostgreSQL
    is skipped.
 3. **Structured change types.** Render the change types a rule needs into a
-   synthetic inline `SqlSource`: `createTable`, `createIndex` and `dropIndex`.
-   A structured type that is not rendered contributes no source, exactly as
-   before.
+   synthetic inline `SqlSource`. The supported set is `createTable`,
+   `createIndex`, `dropIndex`, `addColumn`, `dropColumn`, `renameColumn`,
+   `modifyDataType`, `addNotNullConstraint`, `dropNotNullConstraint`,
+   `addDefaultValue`, `dropDefaultValue`, `addForeignKeyConstraint`,
+   `addUniqueConstraint`, `addCheckConstraint`, `addPrimaryKey`,
+   `dropPrimaryKey`, `createSequence` and `dropSequence`. A structured type
+   that is not rendered, or one missing a required attribute, contributes no
+   source rather than invalid SQL.
 4. **Rules stay polymorphic over the SQL.** No rule knows about properties,
    modifySql or change types; it sees the normalised SQL and its statement list.
 
@@ -74,10 +79,17 @@ Positive:
 
 Limits / deferred:
 
-- **Change-type coverage is partial.** Only `createTable`, `createIndex` and
-  `dropIndex` are rendered. Other structured types (`addColumn`, `dropColumn`,
-  ...) still contribute no source and are invisible to token rules. Extend
-  `ChangelogModel.structuredSql` as rules need them.
+- **Change-type coverage is partial.** The renderers above cover the production
+  DDL change types, but other structured types (`createView`, `loadData`,
+  `addLookupTable`, `mergeColumns`, ...) still contribute no source and are
+  invisible to token rules. Extend `ChangelogModel.structuredSql` as rules need
+  them.
+- **Structured SQL is approximate.** A renderer emits the PostgreSQL shape the
+  token rules need, not an exact reproduction of Liquibase's generator. For
+  example it does not carry every column constraint, tablespace or storage
+  option. Property placeholders in rendered attribute values are still
+  substituted by the normaliser because the synthetic source goes through the
+  same SQL pipeline.
 - **Context/label filtering is not applied.** The linter has no run context, so
   it evaluates every changeset and every `modifySql` whose `dbms` is not
   PostgreSQL. A `dbms`-filtered visitor is honoured; a `context`/`labels`-filtered
