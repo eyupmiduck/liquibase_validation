@@ -264,7 +264,7 @@ public final class ChangelogLayoutCheck {
         }
     }
 
-    private static List<Declaration> declarations(Path file) throws IOException {
+    static List<Declaration> declarations(Path file) throws IOException {
         List<Token> tokens = SqlLexer.tokenize(Files.readString(file)).stream()
                 .filter(token -> !token.isTrivia())
                 .toList();
@@ -405,6 +405,6 @@ public final class ChangelogLayoutCheck {
     private record ParsedName(String schema, String name, int next) {
     }
 
-    private record Declaration(String kind, String schema, String name, String tableSchema, int line) {
+    record Declaration(String kind, String schema, String name, String tableSchema, int line) {
     }
 }

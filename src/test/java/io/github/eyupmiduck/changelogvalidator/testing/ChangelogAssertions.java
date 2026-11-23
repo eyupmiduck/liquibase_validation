@@ -2,6 +2,7 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 
 import io.github.eyupmiduck.changelogvalidator.ChangelogLayoutCheck;
 import io.github.eyupmiduck.changelogvalidator.ChangelogValidator;
+import io.github.eyupmiduck.changelogvalidator.RoutineFileCheck;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -151,6 +152,23 @@ public final class ChangelogAssertions {
         assertTrue(violations.isEmpty(), () -> "changelog layout violations:\n"
                 + violations.stream()
                 .map(ChangelogLayoutCheck.Violation::describe)
+                .collect(Collectors.joining("\n")));
+    }
+
+    /**
+     * Asserts that every file under the {@code functions/}, {@code procedures/}
+     * and {@code triggers/} trees declares exactly the object its path names,
+     * that every forward file has a matching rollback file, and that every
+     * rollback file drops the corresponding object.
+     *
+     * @param changesRoot the changes directory holding the routine trees
+     * @throws IOException if a SQL file cannot be read
+     */
+    public static void assertRoutineFilesFollowConvention(Path changesRoot) throws IOException {
+        List<RoutineFileCheck.Violation> violations = RoutineFileCheck.findViolations(changesRoot);
+        assertTrue(violations.isEmpty(), () -> "routine file violations:\n"
+                + violations.stream()
+                .map(RoutineFileCheck.Violation::describe)
                 .collect(Collectors.joining("\n")));
     }
 }
