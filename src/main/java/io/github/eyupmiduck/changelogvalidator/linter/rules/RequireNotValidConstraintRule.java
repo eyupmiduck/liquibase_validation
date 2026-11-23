@@ -36,6 +36,53 @@ public final class RequireNotValidConstraintRule implements Rule {
      */
     public static final String ID = "require-not-valid-constraint";
 
+    /**
+     * Returns the next top-level {@code ADD} at or after {@code from}, or -1.
+     * Skipping a nested one keeps an {@code add} column inside a CHECK expression
+     * from being mistaken for a new clause.
+     */
+    private static int nextAdd(List<Token> tokens, int from) {
+        int depth = 0;
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword("ADD")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns whether the current {@code ADD} clause has a top-level {@code NOT
+     * VALID}. The scan stops at the next top-level {@code ADD} and ignores a
+     * {@code NOT valid} pair inside a CHECK expression.
+     */
+    private static boolean notValid(List<Token> tokens, int add) {
+        int next = nextAdd(tokens, add + 1);
+        int end = next < 0 ? tokens.size() : next;
+        int depth = 0;
+        for (int i = add; i < end; i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword("NOT")
+                    && TokenWords.at(tokens, i + 1, "VALID")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -110,52 +157,5 @@ public final class RequireNotValidConstraintRule implements Rule {
                 }
             }
         }
-    }
-
-    /**
-     * Returns the next top-level {@code ADD} at or after {@code from}, or -1.
-     * Skipping a nested one keeps an {@code add} column inside a CHECK expression
-     * from being mistaken for a new clause.
-     */
-    private static int nextAdd(List<Token> tokens, int from) {
-        int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword("ADD")) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Returns whether the current {@code ADD} clause has a top-level {@code NOT
-     * VALID}. The scan stops at the next top-level {@code ADD} and ignores a
-     * {@code NOT valid} pair inside a CHECK expression.
-     */
-    private static boolean notValid(List<Token> tokens, int add) {
-        int next = nextAdd(tokens, add + 1);
-        int end = next < 0 ? tokens.size() : next;
-        int depth = 0;
-        for (int i = add; i < end; i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword("NOT")
-                    && TokenWords.at(tokens, i + 1, "VALID")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isPunctuation(Token token, String text) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
     }
 }

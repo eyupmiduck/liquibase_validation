@@ -66,6 +66,41 @@ public final class DynamicSqlRule implements Rule {
         this.allowedRoutines = Set.copyOf(allowedRoutines);
     }
 
+    /**
+     * Returns the one-based line and column of {@code offset} in the unit's SQL.
+     * The walk uses the lexer's own rules: a bare CR is a line break, a CRLF is
+     * one break, and a surrogate pair counts as one column.
+     */
+    private static int[] position(SqlUnit unit, int offset) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() <= offset && offset < token.endOffset()) {
+                String sql = unit.sql();
+                int line = token.line();
+                int column = token.column();
+                for (int i = token.startOffset(); i < offset; i++) {
+                    char consumed = sql.charAt(i);
+                    if (consumed == '\n') {
+                        line++;
+                        column = 1;
+                    } else if (consumed == '\r' && (i + 1 >= sql.length() || sql.charAt(i + 1) != '\n')) {
+                        line++;
+                        column = 1;
+                    } else {
+                        column++;
+                        if (Character.isHighSurrogate(consumed) && i + 1 < offset
+                                && Character.isLowSurrogate(sql.charAt(i + 1))) {
+                            i++;
+                        }
+                    }
+                }
+                return new int[]{line, column};
+            }
+        }
+        Token anchor = unit.tokens().stream().filter(token -> !token.isTrivia()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("routine body has no token to locate"));
+        return new int[]{anchor.line(), anchor.column()};
+    }
+
     @Override
     public String id() {
         return ID;
@@ -146,40 +181,5 @@ public final class DynamicSqlRule implements Rule {
                         unit.file(), position[0], position[1]));
             }
         }
-    }
-
-    /**
-     * Returns the one-based line and column of {@code offset} in the unit's SQL.
-     * The walk uses the lexer's own rules: a bare CR is a line break, a CRLF is
-     * one break, and a surrogate pair counts as one column.
-     */
-    private static int[] position(SqlUnit unit, int offset) {
-        for (Token token : unit.tokens()) {
-            if (token.startOffset() <= offset && offset < token.endOffset()) {
-                String sql = unit.sql();
-                int line = token.line();
-                int column = token.column();
-                for (int i = token.startOffset(); i < offset; i++) {
-                    char consumed = sql.charAt(i);
-                    if (consumed == '\n') {
-                        line++;
-                        column = 1;
-                    } else if (consumed == '\r' && (i + 1 >= sql.length() || sql.charAt(i + 1) != '\n')) {
-                        line++;
-                        column = 1;
-                    } else {
-                        column++;
-                        if (Character.isHighSurrogate(consumed) && i + 1 < offset
-                                && Character.isLowSurrogate(sql.charAt(i + 1))) {
-                            i++;
-                        }
-                    }
-                }
-                return new int[]{line, column};
-            }
-        }
-        Token anchor = unit.tokens().stream().filter(token -> !token.isTrivia()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("routine body has no token to locate"));
-        return new int[]{anchor.line(), anchor.column()};
     }
 }
