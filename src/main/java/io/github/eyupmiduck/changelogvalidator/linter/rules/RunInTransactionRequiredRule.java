@@ -84,4 +84,14 @@ public final class RunInTransactionRequiredRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a transaction-forbidden statement in a changeset without `runInTransaction=\"false\"`";
+    }
+
+    @Override
+    public String help() {
+        return "Set `runInTransaction=\"false\"` on the changeset, or move the statement into its own changeset.";
+    }
 }

@@ -36,14 +36,16 @@ public final class RuleCatalog {
     public static List<Entry> entries(LinterConfig config) {
         List<Entry> entries = new ArrayList<>();
         for (Rule rule : Rules.all(config)) {
-            entries.add(new Entry(rule.id(), Kind.CHANGESET, rule.defaultSeverity(), rule.enabledByDefault()));
+            entries.add(new Entry(rule.id(), Kind.CHANGESET, rule.defaultSeverity(), rule.defaultState(),
+                    rule.description(), rule.help()));
         }
         for (ProjectRule rule : Rules.projectRules()) {
-            entries.add(new Entry(rule.id(), Kind.PROJECT, rule.defaultSeverity(), rule.enabledByDefault()));
+            entries.add(new Entry(rule.id(), Kind.PROJECT, rule.defaultSeverity(), rule.defaultState(),
+                    rule.description(), rule.help()));
         }
         for (ProjectAnalysisRule rule : Rules.projectAnalysisRules(config)) {
             entries.add(new Entry(rule.id(), Kind.PROJECT_ANALYSIS, rule.defaultSeverity(),
-                    rule.enabledByDefault()));
+                    rule.defaultState(), rule.description(), rule.help()));
         }
         return List.copyOf(entries);
     }
@@ -62,7 +64,7 @@ public final class RuleCatalog {
                     entry.id(),
                     entry.kind().label(),
                     entry.severity().name().toLowerCase(Locale.ROOT),
-                    entry.enabledByDefault() ? "on" : "opt-in"));
+                    entry.defaultState()));
         }
     }
 
@@ -85,7 +87,10 @@ public final class RuleCatalog {
                     .append("\"kind\":").append(Json.quote(entry.kind().label())).append(',')
                     .append("\"severity\":")
                     .append(Json.quote(entry.severity().name().toLowerCase(Locale.ROOT))).append(',')
-                    .append("\"default\":").append(Json.quote(entry.enabledByDefault() ? "on" : "opt-in"))
+                    .append("\"default\":").append(Json.quote(entry.defaultState()))
+                    .append(',')
+                    .append("\"description\":").append(Json.quote(entry.description())).append(',')
+                    .append("\"help\":").append(Json.quote(entry.help()))
                     .append('}');
         }
         out.append(']');
@@ -133,10 +138,13 @@ public final class RuleCatalog {
      * @param id               the stable rule id
      * @param kind             the rule kind
      * @param severity         the default severity
-     * @param enabledByDefault whether the rule runs without being listed under
-     *                         {@code include}
+     * @param defaultState     the default state, for example {@code on} or
+     *                         {@code opt-in}
+     * @param description      a one-line description of what the rule detects
+     * @param help             how to fix a violation
      */
-    public record Entry(String id, Kind kind, Severity severity, boolean enabledByDefault) {
+    public record Entry(String id, Kind kind, Severity severity, String defaultState,
+                        String description, String help) {
 
         /**
          * Validates the required components.
@@ -150,6 +158,15 @@ public final class RuleCatalog {
             }
             if (severity == null) {
                 throw new IllegalArgumentException("severity must not be null");
+            }
+            if (defaultState == null || defaultState.isBlank()) {
+                throw new IllegalArgumentException("defaultState must not be blank");
+            }
+            if (description == null || description.isBlank()) {
+                throw new IllegalArgumentException("description must not be blank");
+            }
+            if (help == null || help.isBlank()) {
+                throw new IllegalArgumentException("help must not be blank");
             }
         }
     }

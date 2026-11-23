@@ -123,8 +123,9 @@ graph follows `<include>`, `<includeAll>` and formatted SQL changesets; an
 unformatted SQL file found by `<includeAll>` is one raw change.
 
 `--list-rules` prints a table of every rule's id, kind, default severity and
-default state. With `--reporter json` it prints the same metadata as a JSON
-array, for tooling. Neither form needs `--changelog-root`:
+default state. With `--reporter json` it prints the same metadata plus each
+rule's description and help text as a JSON array, for tooling. Neither form needs
+`--changelog-root`:
 
 ```sh
 liquibase-linter --list-rules
@@ -143,8 +144,10 @@ for a usage or runtime error.
 
 An **error/warning/info** is the rule's default severity; **on** means it runs by
 default, **opt-in** means it runs only when listed under `include`. The table
-lists the built-in rules in registration (reporting) order.
+lists the built-in rules in registration (reporting) order and is generated from
+the rule metadata; `RuleDocumentationTest` fails when it drifts.
 
+<!-- rule-metadata:start -->
 | Rule                                                                              | Severity | Default | What it detects                                                                                            |
 |-----------------------------------------------------------------------------------|----------|---------|------------------------------------------------------------------------------------------------------------|
 | [`changeset-run-in-transaction-required`](#changeset-run-in-transaction-required) | error    | on      | a transaction-forbidden statement in a changeset without `runInTransaction="false"`                        |
@@ -173,6 +176,7 @@ lists the built-in rules in registration (reporting) order.
 | [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                          |
 | [`project-conflicting-comment`](#project-conflicting-comment)                     | warning  | opt-in  | an object commented twice, with the same or different text                                                 |
 | [`project-unregistered-routine`](#project-unregistered-routine)                   | warning  | opt-in  | a routine SQL file no changeset references                                                                 |
+<!-- rule-metadata:end -->
 
 `changeset-id-unique` is a project rule: it runs once over the whole graph after
 the per-changeset rules. `trigger-create-or-replace` is on for PostgreSQL 14+;

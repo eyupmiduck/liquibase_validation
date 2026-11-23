@@ -99,4 +99,14 @@ public final class RequireIfExistsOnDropRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a supported `DROP` without `IF EXISTS`";
+    }
+
+    @Override
+    public String help() {
+        return "Add `IF EXISTS` to the `DROP`.";
+    }
 }

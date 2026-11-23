@@ -302,6 +302,16 @@ class LinterTest {
         }
 
         @Override
+        public String description() {
+            return "test rule for the word bad";
+        }
+
+        @Override
+        public String help() {
+            return "remove it";
+        }
+
+        @Override
         public List<Violation> check(RuleContext context) {
             List<Violation> violations = new ArrayList<>();
             for (RoutineBodies.Body body : RoutineBodies.find(context.forward())) {
@@ -334,6 +344,16 @@ class LinterTest {
         @Override
         public boolean enabledByDefault() {
             return false;
+        }
+
+        @Override
+        public String description() {
+            return "test opt-in rule";
+        }
+
+        @Override
+        public String help() {
+            return "none";
         }
 
         @Override

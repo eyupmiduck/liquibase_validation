@@ -188,4 +188,14 @@ public final class RoutineArgumentNamingRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a routine parameter or local without its `i_`/`o_`/`io_`/`l_` prefix";
+    }
+
+    @Override
+    public String help() {
+        return "Rename the parameter or local with the conventional prefix.";
+    }
 }

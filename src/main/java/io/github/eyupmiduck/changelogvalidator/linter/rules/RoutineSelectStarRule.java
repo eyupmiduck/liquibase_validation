@@ -176,4 +176,14 @@ public final class RoutineSelectStarRule implements Rule {
             itemStart = false;
         }
     }
+
+    @Override
+    public String description() {
+        return "`SELECT *`, `alias.*` or `table.*` in a routine body";
+    }
+
+    @Override
+    public String help() {
+        return "List the columns explicitly.";
+    }
 }

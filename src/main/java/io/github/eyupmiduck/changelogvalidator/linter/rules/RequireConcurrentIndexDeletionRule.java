@@ -67,4 +67,14 @@ public final class RequireConcurrentIndexDeletionRule implements Rule {
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }
     }
+
+    @Override
+    public String description() {
+        return "a `DROP INDEX`";
+    }
+
+    @Override
+    public String help() {
+        return "Use `DROP INDEX CONCURRENTLY` in a `runInTransaction=\"false\"` changeset.";
+    }
 }

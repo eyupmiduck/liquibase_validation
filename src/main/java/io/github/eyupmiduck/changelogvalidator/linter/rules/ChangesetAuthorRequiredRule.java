@@ -42,4 +42,14 @@ public final class ChangesetAuthorRequiredRule implements Rule {
                 "Set a non-blank author on the changeSet.",
                 context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
+
+    @Override
+    public String description() {
+        return "a changeset without a non-blank `author`";
+    }
+
+    @Override
+    public String help() {
+        return "Set a non-blank author on the changeSet.";
+    }
 }

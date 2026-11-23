@@ -102,4 +102,14 @@ public final class PreferSingleStatementRule implements Rule {
                 "Move each statement into its own runInTransaction=\"false\" changeset.",
                 firstUnit.file(), token.line(), token.column()));
     }
+
+    @Override
+    public String description() {
+        return "several statements in a `runInTransaction=\"false\"` changeset";
+    }
+
+    @Override
+    public String help() {
+        return "Split the statements into separate changesets unless the batch is intentional.";
+    }
 }

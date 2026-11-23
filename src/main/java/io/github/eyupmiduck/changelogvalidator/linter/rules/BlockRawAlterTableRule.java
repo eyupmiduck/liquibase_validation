@@ -185,4 +185,14 @@ public final class BlockRawAlterTableRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a raw `ALTER TABLE` in changelog SQL";
+    }
+
+    @Override
+    public String help() {
+        return "Use the `ddl_utils` helper or a structured change type instead of raw `ALTER TABLE`.";
+    }
 }

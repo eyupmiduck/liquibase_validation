@@ -330,4 +330,14 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
 
     private record Located(ChangeSet changeSet, Path file, int line, int column) {
     }
+
+    @Override
+    public String description() {
+        return "a table, index, column or constraint name declared twice";
+    }
+
+    @Override
+    public String help() {
+        return "Remove the duplicate declaration or rename one object.";
+    }
 }

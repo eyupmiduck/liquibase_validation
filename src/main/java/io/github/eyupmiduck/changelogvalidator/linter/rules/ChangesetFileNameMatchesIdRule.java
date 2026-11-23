@@ -79,4 +79,14 @@ public final class ChangesetFileNameMatchesIdRule implements Rule {
                     context.changeSet().changelogFile(), line, 1));
         }
     }
+
+    @Override
+    public String description() {
+        return "a numbered changeset whose SQL or rollback path does not match its id";
+    }
+
+    @Override
+    public String help() {
+        return "Rename the SQL or rollback file to match the changeset id.";
+    }
 }

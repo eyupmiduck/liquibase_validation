@@ -94,4 +94,14 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
         }
         return List.copyOf(violations);
     }
+
+    @Override
+    public String description() {
+        return "a routine SQL file no changeset references";
+    }
+
+    @Override
+    public String help() {
+        return "Reference the file from a changeset or remove it.";
+    }
 }

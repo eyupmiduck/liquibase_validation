@@ -65,4 +65,14 @@ public final class ChangesetIdUniqueRule implements ProjectRule {
         }
         return List.copyOf(violations);
     }
+
+    @Override
+    public String description() {
+        return "a duplicate changeset id/author/file identity (whole-graph rule)";
+    }
+
+    @Override
+    public String help() {
+        return "Give each changeset a unique id, or move it to its own file.";
+    }
 }

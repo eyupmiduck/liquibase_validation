@@ -97,6 +97,16 @@ class ProjectAnalysisRuleTest {
             }
 
             @Override
+            public String description() {
+                return "test project rule";
+            }
+
+            @Override
+            public String help() {
+                return "test help";
+            }
+
+            @Override
             public List<Violation> check(List<ChangeSet> changeSets) {
                 return List.of();
             }
@@ -127,6 +137,16 @@ class ProjectAnalysisRuleTest {
         @Override
         public boolean enabledByDefault() {
             return enabled;
+        }
+
+        @Override
+        public String description() {
+            return "test project analysis rule";
+        }
+
+        @Override
+        public String help() {
+            return "analysis help";
         }
 
         @Override

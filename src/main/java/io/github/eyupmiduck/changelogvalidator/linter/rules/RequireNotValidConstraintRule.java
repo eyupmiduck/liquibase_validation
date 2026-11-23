@@ -158,4 +158,14 @@ public final class RequireNotValidConstraintRule implements Rule {
             }
         }
     }
+
+    @Override
+    public String description() {
+        return "a validating `CHECK`/`FOREIGN KEY` added to an existing table without `NOT VALID`";
+    }
+
+    @Override
+    public String help() {
+        return "Add the constraint with `NOT VALID`, then validate it in a later changeset.";
+    }
 }

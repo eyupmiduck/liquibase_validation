@@ -96,4 +96,14 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         }
         return List.copyOf(violations);
     }
+
+    @Override
+    public String description() {
+        return "a foreign key whose referenced table is never created";
+    }
+
+    @Override
+    public String help() {
+        return "Create the referenced table, or add it to `knownTables`.";
+    }
 }

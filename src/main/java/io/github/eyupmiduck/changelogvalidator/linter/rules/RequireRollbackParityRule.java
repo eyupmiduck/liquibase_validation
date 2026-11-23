@@ -94,4 +94,14 @@ public final class RequireRollbackParityRule implements Rule {
                 "Make the rollback invert the whole forward change, not only part of it.",
                 context.changeSet().changelogFile(), context.changeSet().line(), 1));
     }
+
+    @Override
+    public String description() {
+        return "a rollback with far fewer statements than the forward SQL";
+    }
+
+    @Override
+    public String help() {
+        return "Make the rollback cover each forward statement, or accept the finding explicitly.";
+    }
 }

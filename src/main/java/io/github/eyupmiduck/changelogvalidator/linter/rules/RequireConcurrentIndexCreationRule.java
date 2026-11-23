@@ -89,4 +89,14 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
                     candidate.unit().file(), candidate.token().line(), candidate.token().column()));
         }
     }
+
+    @Override
+    public String description() {
+        return "a `CREATE [UNIQUE] INDEX` on a table not created in the same changeset";
+    }
+
+    @Override
+    public String help() {
+        return "Use `CREATE INDEX CONCURRENTLY` in a `runInTransaction=\"false\"` changeset.";
+    }
 }
