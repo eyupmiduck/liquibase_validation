@@ -355,6 +355,32 @@ whole-graph rule through the same gate. The two opt-in rules stay opt-in because
 they encode a production-safety strategy rather than a universal correctness
 rule.
 
+## Update (1.21.0): live round-trip and re-apply contracts
+
+Add `ChangelogRoundTripContract` and `ChangelogReapplyContract`, backed by a
+small `LiquibaseSession` that lists, applies and rolls back every changeset on a
+caller-owned connection. A session wraps the connection in a close-ignoring
+view, so the main changelog and its fixture/baseline changelog can share one
+connection without closing it.
+
+The round trip creates a scratch database in the shared container, applies the
+changelog and its fixtures, rolls them back in reverse order, compares a
+`CatalogSnapshot` of the project's round-trip schemas with the pre-changelog
+baseline, then re-applies and compares again. The re-apply contract runs the
+changelog twice and requires the second run to apply nothing.
+
+`ProjectProfile` gained two values for the awkward projects: `roundTripSchemas`
+(defaulting to the managed schemas) and `baselineChangelogs` (dependencies such
+as `ddl_utils` applied before the main changelog and deliberately left outside
+its rollback). A project with a `runAlways` changeset can name the ids the second
+run may repeat.
+
+The contracts are Testcontainers tests, so they belong in `verify`; they create
+one scratch database per contract class and reuse the project's one container.
+The library's own tests add a fixture changelog, a fixture changelog and an
+installed baseline schema, plus rollback-failure and non-idempotent fixtures for
+the failure paths.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

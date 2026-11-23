@@ -183,6 +183,19 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * The Liquibase tracking settings, derived from the profile's configuration
+     * so a contract and the regular test base cannot drift.
+     *
+     * @return the tracking settings
+     */
+    protected LiquibaseUpgrade.TrackingSettings trackingSettings() {
+        Configuration configuration = configuration();
+        return new LiquibaseUpgrade.TrackingSettings(
+                LIQUIBASE_SCHEMA, configuration.databaseChangeLogTable(),
+                configuration.databaseChangeLogLockTable());
+    }
+
+    /**
      * The PostgreSQL image to run, matching the one used for jOOQ codegen: the
      * {@value #POSTGRES_IMAGE_PROPERTY} system property when set (surefire and
      * the CI matrix set it), otherwise the configured image.
@@ -465,6 +478,64 @@ public abstract class PostgresTestBase {
     protected void dropDatabase(String database) throws SQLException {
         execute(adminConnection(configuration().databaseName()),
                 "DROP DATABASE IF EXISTS " + quoteIdentifier(database) + " WITH (FORCE)");
+    }
+
+    /**
+     * Prepares a freshly-created scratch database for a Liquibase run as the
+     * owner: installs the project's extensions, grants the owner and test roles
+     * the privileges a real deployment has, and creates the tracking schema. The
+     * shared template and the upgrade/round-trip scratch databases all use this,
+     * so their setup cannot drift.
+     *
+     * @param database        the scratch database
+     * @param liquibaseSchema the schema to hold the tracking tables
+     * @throws SQLException if the preparation fails
+     */
+    protected void prepareScratchDatabase(String database, String liquibaseSchema) throws SQLException {
+        Configuration configuration = configuration();
+        // The scratch database is fresh, so the project's extension hook (for
+        // example plpgsql_check or pg_background, which the changelog's routines
+        // reference) must run here too.
+        installExtensions(database);
+        // The owner creates the changelog's schemas and objects, so grant it what
+        // a real deployment would have (the init script does this for the
+        // project's main database only).
+        try (Connection admin = adminConnection(configuration.databaseName());
+             Statement statement = admin.createStatement()) {
+            statement.execute("GRANT CREATE ON DATABASE " + quoteIdentifier(database)
+                    + " TO " + quoteIdentifier(configuration.ownerUser()));
+        }
+        try (Connection admin = adminConnection(database);
+             Statement statement = admin.createStatement()) {
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.ownerUser()));
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.testUser()));
+            statement.execute("CREATE SCHEMA IF NOT EXISTS " + quoteIdentifier(liquibaseSchema)
+                    + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
+        }
+    }
+
+    /**
+     * Wraps a connection so {@link Connection#close()} does nothing. Used where a
+     * library (Liquibase) would otherwise close a connection the caller still
+     * owns.
+     *
+     * @param delegate the real connection
+     * @return a view of the connection whose {@code close()} is a no-op
+     */
+    protected static Connection closeIgnoring(Connection delegate) {
+        return (Connection) java.lang.reflect.Proxy.newProxyInstance(
+                Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if ("close".equals(method.getName())) {
+                        return null;
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                });
     }
 
     /**

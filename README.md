@@ -636,9 +636,10 @@ parity), the previous-release `UpgradeTestBase`, and abstract contract classes
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
 `CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
 `RoutineDocumentationContract`, `PrivilegeContract`, `RoutineSecurityContract`,
-`UpgradeContract`) that a project subclasses to inherit the tests themselves, so
-a project that builds a Liquibase changelog and PostgreSQL routines can share
-one implementation instead of copying it (see
+`ChangelogRoundTripContract`, `ChangelogReapplyContract`, `UpgradeContract`)
+that a project subclasses to inherit the tests themselves, so a project that
+builds a Liquibase changelog and PostgreSQL routines can share one implementation
+instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
 
 ```xml
@@ -810,6 +811,52 @@ The contract is non-vacuous. `routineSchemas()` defaults to the profile's
 routine schemas; consumers supply the definer allow-list, the catalog-routine
 list and the expected procedures.
 
+### Round trip and re-apply
+
+Two live contracts prove that a changelog is a living definition rather than a
+write-once script. They share the project's one container and create only a
+scratch database per contract class.
+
+`ChangelogRoundTripContract` applies the configured changelog to a fresh
+database, rolls every changeset back in reverse order, asserts the managed
+objects are gone or restored to the baseline, and applies the changelog again.
+It compares a `CatalogSnapshot` of `roundTripSchemas()` before the changelog,
+after rollback and after re-apply, so a rollback that leaves an object behind
+fails. The default rollback assertion also checks each managed schema is present
+exactly when it was in the baseline.
+
+`ChangelogReapplyContract` applies the changelog and its fixtures twice; the
+second run must apply no changeset and must not error. It proves that
+`runOnChange`, preconditions and repeatable definitions are safe to re-run.
+
+Both contracts read the changelog and fixtures from the project profile. Two
+profile fields cover the awkward cases:
+
+- `baselineChangelogs` are applied **before** the main changelog and are
+  deliberately left outside its rollback, for a dependency another project
+  installs (for example `ddl_utils` alongside `dml_utils`). A baseline schema is
+  still captured by `roundTripSchemas()` and must survive the rollback.
+- `roundTripSchemas` defaults to `managedSchemas`, but may add a fixture schema
+  the fixture changelog creates, so the rollback of the fixtures is covered too.
+
+```java
+static final ProjectProfile PROFILE = ProjectProfile.builder(CONFIGURATION)
+        .managedSchemas("my_project", "my_project_lib")
+        .roundTripSchemas("my_project", "my_project_lib", "my_project_fixtures")
+        .baselineChangelogs("db/dependency/db.changelog-master.xml")
+        .build();
+```
+
+A project with a deliberate `runAlways` changeset overrides
+`repeatableChangeSetIds()` with the ids the second run may apply. An installed
+prerequisite that is not a changelog can use `prepareBaseline(Connection)`.
+
+These are Testcontainers tests and belong in `verify`, not in the per-change
+unit-test loop: a round trip applies and rolls back the whole graph, so it is
+seconds to minutes, not milliseconds. The Maven Failsafe plugin is the natural
+home when a project separates unit and integration tests; the existing
+Testcontainers suite in this library runs them under Surefire in `verify`.
+
 ### Incremental upgrade from the previous release
 
 `UpgradeTestBase` checks the path a real consumer takes: it applies the **most
@@ -843,6 +890,7 @@ abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.
             .callerRole("my_project_caller")
             .routineRollbackDirectories("db/changelog/changes/functions-rollback")
             .triggerRollbackDirectories("db/changelog/changes/triggers-rollback")
+            .roundTripSchemas("my_project", "my_project_lib")
             .build();
 
     @Override

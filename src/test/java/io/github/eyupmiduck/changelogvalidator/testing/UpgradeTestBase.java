@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
@@ -85,18 +84,6 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      */
     protected Path cacheDirectory() {
         return PublishedRelease.DEFAULT_CACHE_DIRECTORY;
-    }
-
-    /**
-     * The Liquibase tracking settings the owner role uses.
-     *
-     * @return the tracking settings
-     */
-    protected LiquibaseUpgrade.TrackingSettings trackingSettings() {
-        Configuration configuration = configuration();
-        return new LiquibaseUpgrade.TrackingSettings(
-                LIQUIBASE_SCHEMA, configuration.databaseChangeLogTable(),
-                configuration.databaseChangeLogLockTable());
     }
 
     /**
@@ -196,27 +183,7 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     }
 
     private void prepareDatabase(String database) throws SQLException {
-        Configuration configuration = configuration();
-        // The scratch database is fresh, so the consumer's extension hook (for
-        // example plpgsql_check or pg_background, which the changelog's routines
-        // reference) must run here too, not only for the template.
-        installExtensions(database);
-        // The owner creates the changelog's schemas and objects, so grant it
-        // what a real deployment would have (the init script does this for the
-        // project's main database only).
-        try (Connection admin = openAdminConnection(configuration.databaseName());
-             Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON DATABASE " + quoteIdentifier(database)
-                    + " TO " + quoteIdentifier(configuration.ownerUser()));
-        }
-        try (Connection admin = openAdminConnection(database);
-             Statement statement = admin.createStatement()) {
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.ownerUser()));
-            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.testUser()));
-            statement.execute("CREATE SCHEMA IF NOT EXISTS "
-                    + quoteIdentifier(trackingSettings().liquibaseSchema())
-                    + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
-        }
+        prepareScratchDatabase(database, trackingSettings().liquibaseSchema());
     }
 
     /**

@@ -41,6 +41,8 @@ class ProjectProfileTest {
         assertEquals("db/changelog", profile.changelogRootResource());
         assertEquals("db/changelog/changes", profile.changesRootResource());
         assertEquals("plpgsql-check-whitelist.yml", profile.plpgsqlWhitelistResource());
+        assertEquals(List.of(PostgresTestBase.PUBLIC_SCHEMA), profile.roundTripSchemas());
+        assertEquals(List.of(), profile.baselineChangelogs());
 
         assertEquals(ChangelogTestSupport.changelogRoot(), profile.changelogRoot());
         assertEquals(ChangelogTestSupport.changesRoot(), profile.changesRoot());
@@ -59,6 +61,8 @@ class ProjectProfileTest {
                 .callerRole("app_caller")
                 .routineRollbackDirectories("db/changelog/changes/functions-rollback")
                 .triggerRollbackDirectories("db/changelog/changes/triggers-rollback")
+                .roundTripSchemas("app", "app_fixtures")
+                .baselineChangelogs("db/dependency/db.changelog-master.xml")
                 .build();
 
         assertEquals(List.of("public", "app", "app_lib"), profile.applicationSchemas());
@@ -68,6 +72,8 @@ class ProjectProfileTest {
                 profile.routineRollbackDirectories());
         assertEquals(List.of("db/changelog/changes/triggers-rollback"),
                 profile.triggerRollbackDirectories());
+        assertEquals(List.of("app", "app_fixtures"), profile.roundTripSchemas());
+        assertEquals(List.of("db/dependency/db.changelog-master.xml"), profile.baselineChangelogs());
     }
 
     /**
@@ -112,11 +118,11 @@ class ProjectProfileTest {
         assertThrows(IllegalArgumentException.class, () -> new ProjectProfile(
                 configuration(), List.of("app"), List.of("app"), List.of("app"), " ",
                 List.of(), List.of(), "db/changelog", "db/changelog/changes",
-                "plpgsql-check-whitelist.yml"));
+                "plpgsql-check-whitelist.yml", List.of(), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new ProjectProfile(
                 configuration(), List.of("app"), List.of("app"), List.of("app"), null,
                 List.of(), List.of(), " ", "db/changelog/changes",
-                "plpgsql-check-whitelist.yml"));
+                "plpgsql-check-whitelist.yml", List.of(), List.of()));
     }
 
     /**

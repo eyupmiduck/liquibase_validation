@@ -49,6 +49,14 @@ import java.util.Set;
  *                                    for example {@code db/changelog/changes}
  * @param plpgsqlWhitelistResource    the classpath resource holding the
  *                                    {@code plpgsql_check} allow-list
+ * @param roundTripSchemas            the schemas the round-trip contract captures
+ *                                    before, during and after the changelog;
+ *                                    defaults to {@code managedSchemas} when empty
+ * @param baselineChangelogs          extra classpath changelogs applied before
+ *                                    the main changelog and deliberately left
+ *                                    outside its rollback (for example an
+ *                                    installed dependency), in order; empty when
+ *                                    there are none
  */
 public record ProjectProfile(
         PostgresTestBase.Configuration configuration,
@@ -60,7 +68,9 @@ public record ProjectProfile(
         List<String> triggerRollbackDirectories,
         String changelogRootResource,
         String changesRootResource,
-        String plpgsqlWhitelistResource) {
+        String plpgsqlWhitelistResource,
+        List<String> roundTripSchemas,
+        List<String> baselineChangelogs) {
 
     /**
      * The library's own defaults, used by its contract tests: the stock image,
@@ -96,6 +106,9 @@ public record ProjectProfile(
         changelogRootResource = requireNonBlank(changelogRootResource, "changelogRootResource");
         changesRootResource = requireNonBlank(changesRootResource, "changesRootResource");
         plpgsqlWhitelistResource = requireNonBlank(plpgsqlWhitelistResource, "plpgsqlWhitelistResource");
+        roundTripSchemas = roundTripSchemas == null || roundTripSchemas.isEmpty()
+                ? managedSchemas : copyStrings(roundTripSchemas, "roundTripSchemas");
+        baselineChangelogs = copyStrings(baselineChangelogs, "baselineChangelogs");
         if (managedSchemas.isEmpty()) {
             throw new IllegalArgumentException("managedSchemas must not be empty");
         }
@@ -153,6 +166,8 @@ public record ProjectProfile(
         private String changelogRootResource = "db/changelog";
         private String changesRootResource = "db/changelog/changes";
         private String plpgsqlWhitelistResource = "plpgsql-check-whitelist.yml";
+        private List<String> roundTripSchemas = List.of();
+        private List<String> baselineChangelogs = List.of();
 
         private Builder(PostgresTestBase.Configuration configuration) {
             this.configuration = Objects.requireNonNull(configuration, "configuration");
@@ -309,6 +324,51 @@ public record ProjectProfile(
         }
 
         /**
+         * Sets the schemas the round-trip contract captures. Defaults to the
+         * managed schemas when unset, and may add a fixture or baseline schema
+         * the changelog's rollback must also restore.
+         *
+         * @param schemas the round-trip schemas
+         * @return this builder
+         */
+        public Builder roundTripSchemas(String... schemas) {
+            return roundTripSchemas(List.of(schemas));
+        }
+
+        /**
+         * Sets the schemas the round-trip contract captures.
+         *
+         * @param schemas the round-trip schemas
+         * @return this builder
+         */
+        public Builder roundTripSchemas(Collection<String> schemas) {
+            this.roundTripSchemas = List.copyOf(schemas);
+            return this;
+        }
+
+        /**
+         * Sets extra classpath changelogs applied before the main changelog and
+         * left outside its rollback, for example an installed dependency.
+         *
+         * @param resources the changelog resources, in application order
+         * @return this builder
+         */
+        public Builder baselineChangelogs(String... resources) {
+            return baselineChangelogs(List.of(resources));
+        }
+
+        /**
+         * Sets extra classpath changelogs applied before the main changelog.
+         *
+         * @param resources the changelog resources, in application order
+         * @return this builder
+         */
+        public Builder baselineChangelogs(Collection<String> resources) {
+            this.baselineChangelogs = List.copyOf(resources);
+            return this;
+        }
+
+        /**
          * Builds the profile, deriving the application schemas when they were
          * not set explicitly.
          *
@@ -324,7 +384,8 @@ public record ProjectProfile(
             }
             return new ProjectProfile(configuration, managedSchemas, effectiveApplicationSchemas,
                     routineSchemas, callerRole, routineRollbackDirectories, triggerRollbackDirectories,
-                    changelogRootResource, changesRootResource, plpgsqlWhitelistResource);
+                    changelogRootResource, changesRootResource, plpgsqlWhitelistResource,
+                    roundTripSchemas, baselineChangelogs);
         }
     }
 
