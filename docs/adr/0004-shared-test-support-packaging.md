@@ -326,6 +326,35 @@ This replaces the dml_utils `SearchPathPinTest` shape and gives both consumers
 one place for the definer allow-list, the catalog routine list and the expected
 procedures.
 
+## Update (1.20.0): changelog hygiene rules
+
+Add seven linter rules for the living-definition conventions:
+
+- `routine-run-on-change-required` (error, on): a routine changeset without
+  `runOnChange`.
+- `trigger-create-or-replace` (error, on for PostgreSQL 14+): a plain
+  `CREATE TRIGGER`.
+- `require-not-valid-constraint` (warning, opt-in): a validating `CHECK` or
+  `FOREIGN KEY` on an existing table, with a same-changeset `CREATE TABLE`
+  exemption.
+- `require-if-exists-on-drop` (warning, opt-in): `DROP TABLE`/`FUNCTION`/
+  `PROCEDURE`/`TRIGGER`/`INDEX` without `IF EXISTS`.
+- `changeset-author-required` (error, on): a blank changeset author.
+- `changeset-file-name-matches-id` (error, on): a numbered changeset whose
+  forward or rollback path does not match its id.
+- `changeset-id-unique` (error, on): a duplicate id/author/file identity.
+
+`changeset-id-unique` needs the whole graph, so add a `ProjectRule` interface and
+a `Linter` constructor that runs project rules after the per-changeset rules.
+Project rules use the same id, severity, include/exclude and whitelist model; the
+id-based `LinterConfig` methods make that possible without coupling the config to
+the rule type. `Rules.projectRules()` registers them alongside `Rules.all()`.
+
+The CLI and `ChangelogLinterContract` pass both lists, so a project gets the
+whole-graph rule through the same gate. The two opt-in rules stay opt-in because
+they encode a production-safety strategy rather than a universal correctness
+rule.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

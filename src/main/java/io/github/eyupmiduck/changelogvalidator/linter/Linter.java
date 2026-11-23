@@ -26,29 +26,42 @@ import java.util.*;
 public final class Linter {
 
     private final List<Rule> rules;
+    private final List<ProjectRule> projectRules;
     private final LinterConfig config;
 
     /**
-     * Creates a linter.
+     * Creates a linter with no project rules.
      *
-     * @param rules  the rules to run
+     * @param rules  the per-changeset rules to run
      * @param config the configuration
      * @throws IllegalArgumentException if two rules share an id, or the
      *                                  configuration references an unknown rule id
      */
     public Linter(List<Rule> rules, LinterConfig config) {
+        this(rules, List.of(), config);
+    }
+
+    /**
+     * Creates a linter.
+     *
+     * @param rules        the per-changeset rules to run
+     * @param projectRules the whole-graph rules to run after them
+     * @param config       the configuration
+     * @throws IllegalArgumentException if two rules share an id, or the
+     *                                  configuration references an unknown rule id
+     */
+    public Linter(List<Rule> rules, List<ProjectRule> projectRules, LinterConfig config) {
         Objects.requireNonNull(rules, "rules");
+        Objects.requireNonNull(projectRules, "projectRules");
         Objects.requireNonNull(config, "config");
         Set<String> known = new HashSet<>();
         for (Rule rule : rules) {
             Objects.requireNonNull(rule, "rule");
-            String id = Objects.requireNonNull(rule.id(), "rule id");
-            if (!id.matches("[a-z][a-z0-9]*(?:-[a-z0-9]+)*")) {
-                throw new IllegalArgumentException("rule id must be lower-case kebab-case: " + id);
-            }
-            if (!known.add(id)) {
-                throw new IllegalArgumentException("duplicate rule id: " + id);
-            }
+            register(known, rule.id());
+        }
+        for (ProjectRule rule : projectRules) {
+            Objects.requireNonNull(rule, "project rule");
+            register(known, rule.id());
         }
         for (String id : config.referencedRuleIds()) {
             if (!known.contains(id)) {
@@ -56,7 +69,18 @@ public final class Linter {
             }
         }
         this.rules = List.copyOf(rules);
+        this.projectRules = List.copyOf(projectRules);
         this.config = config;
+    }
+
+    private static void register(Set<String> known, String id) {
+        Objects.requireNonNull(id, "rule id");
+        if (!id.matches("[a-z][a-z0-9]*(?:-[a-z0-9]+)*")) {
+            throw new IllegalArgumentException("rule id must be lower-case kebab-case: " + id);
+        }
+        if (!known.add(id)) {
+            throw new IllegalArgumentException("duplicate rule id: " + id);
+        }
     }
 
     /**
@@ -70,6 +94,17 @@ public final class Linter {
     }
 
     /**
+     * Creates a linter with the default configuration and project rules.
+     *
+     * @param rules        the per-changeset rules to run
+     * @param projectRules the whole-graph rules to run after them
+     * @return the linter
+     */
+    public static Linter withRules(List<Rule> rules, List<ProjectRule> projectRules) {
+        return new Linter(rules, projectRules, LinterConfig.defaults());
+    }
+
+    /**
      * Runs every enabled rule over {@code changeSets}.
      *
      * @param changeSets the changesets
@@ -80,7 +115,9 @@ public final class Linter {
      *                               safety bound
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
-        if (rules.stream().noneMatch(config::isEnabled)) {
+        boolean anyRule = rules.stream().anyMatch(config::isEnabled)
+                || projectRules.stream().anyMatch(rule -> config.isEnabled(rule.id(), rule.enabledByDefault()));
+        if (!anyRule) {
             return List.of();
         }
         List<Finding> findings = new ArrayList<>();
@@ -98,6 +135,20 @@ public final class Linter {
                             violation.file(), violation.line(), violation.column(),
                             violation.statement(), violation.message(), violation.help()));
                 }
+            }
+        }
+        for (ProjectRule rule : projectRules) {
+            if (!config.isEnabled(rule.id(), rule.enabledByDefault())) {
+                continue;
+            }
+            Severity severity = config.severityFor(rule.id(), rule.defaultSeverity());
+            List<ProjectRule.Violation> violations = Objects.requireNonNull(rule.check(changeSets),
+                    () -> "project rule " + rule.id() + " returned null from check()");
+            for (ProjectRule.Violation violation : violations) {
+                ChangeSet changeSet = violation.changeSet();
+                findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
+                        changeSet.changelogFile(), violation.line(), violation.column(),
+                        violation.statement(), violation.message(), violation.help()));
             }
         }
         return List.copyOf(findings);

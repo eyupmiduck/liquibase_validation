@@ -104,6 +104,33 @@ final class RuleSupport {
     }
 
     /**
+     * Returns whether {@code table} is one of {@code tables}, comparing the final
+     * name segment so a schema-qualified and an unqualified reference to the same
+     * table match.
+     *
+     * @param tables the created table names
+     * @param table  the table to look for
+     * @return {@code true} when the table is present
+     */
+    static boolean containsTable(java.util.Set<String> tables, String table) {
+        if (tables.contains(table)) {
+            return true;
+        }
+        String simple = simpleName(table);
+        for (String candidate : tables) {
+            if (simpleName(candidate).equals(simple)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String simpleName(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(dot + 1);
+    }
+
+    /**
      * Returns the dot-separated qualified name starting at {@code start}, or
      * {@code null} when that token is not an identifier. Only identifiers joined
      * by dots are consumed, so following keywords are not appended to the name.

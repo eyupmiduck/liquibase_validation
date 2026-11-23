@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 
 import java.util.List;
@@ -31,6 +32,22 @@ public final class Rules {
                 new RequireRollbackParityRule(),
                 new DynamicSqlRule(),
                 new BlockRawAlterTableRule(),
-                new RequireDbmsPostgresqlRule());
+                new RequireDbmsPostgresqlRule(),
+                new RoutineRunOnChangeRule(),
+                new TriggerCreateOrReplaceRule(pgVersion),
+                new RequireNotValidConstraintRule(),
+                new RequireIfExistsOnDropRule(),
+                new ChangesetAuthorRequiredRule(),
+                new ChangesetFileNameMatchesIdRule());
+    }
+
+    /**
+     * Returns the built-in rules that need the whole changelog graph, run after
+     * the per-changeset rules.
+     *
+     * @return the project rules
+     */
+    public static List<ProjectRule> projectRules() {
+        return List.of(new ChangesetIdUniqueRule());
     }
 }

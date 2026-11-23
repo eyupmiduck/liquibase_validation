@@ -114,6 +114,17 @@ lists the built-in rules in registration (reporting) order.
 | [`routine-dynamic-sql`](#routine-dynamic-sql)                                     | info     | opt-in  | a routine body that uses `EXECUTE`                                                                         |
 | [`block-raw-alter-table`](#block-raw-alter-table)                                 | error    | on      | a raw `ALTER TABLE` in changelog SQL                                                                       |
 | [`require-dbms-postgresql`](#require-dbms-postgresql)                             | error    | on      | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate                                      |
+| [`routine-run-on-change-required`](#routine-run-on-change-required)               | error    | on      | a routine changeset without `runOnChange="true"`                                                           |
+| [`trigger-create-or-replace`](#trigger-create-or-replace)                         | error    | on 14+  | a `CREATE TRIGGER` without `OR REPLACE`                                                                    |
+| [`require-not-valid-constraint`](#require-not-valid-constraint)                   | warning  | opt-in  | a validating `CHECK`/`FOREIGN KEY` added to an existing table without `NOT VALID`                          |
+| [`require-if-exists-on-drop`](#require-if-exists-on-drop)                         | warning  | opt-in  | a supported `DROP` without `IF EXISTS`                                                                     |
+| [`changeset-author-required`](#changeset-author-required)                         | error    | on      | a changeset without a non-blank `author`                                                                   |
+| [`changeset-file-name-matches-id`](#changeset-file-name-matches-id)               | error    | on      | a numbered changeset whose SQL or rollback path does not match its id                                      |
+| [`changeset-id-unique`](#changeset-id-unique)                                     | error    | on      | a duplicate changeset id/author/file identity (whole-graph rule)                                           |
+
+`changeset-id-unique` is a project rule: it runs once over the whole graph after
+the per-changeset rules. `trigger-create-or-replace` is on for PostgreSQL 14+;
+when `pgVersion` is below 14 it is opt-in and reports nothing.
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -300,6 +311,118 @@ negative — and an error on by default.
 <changeSet id="050-index" author="me" dbms="postgresql">
     <sql>CREATE INDEX CONCURRENTLY idx ON t (c);</sql>
 </changeSet>
+```
+
+#### routine-run-on-change-required
+
+A stored-routine body is a living definition, so Liquibase must re-apply the
+changeset when the file changes. Without `runOnChange`, the database silently
+keeps the old body. The rule reports a changeset with a PostgreSQL routine source
+(`createProcedure`/`createFunction`) that is not `runOnChange="true"`. It is an
+error and on by default.
+
+```xml
+<!-- Reported. -->
+<changeSet id="function-app.foo" author="me">
+    <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+```xml
+<!-- Accepted. -->
+<changeSet id="function-app.foo" author="me" runOnChange="true">
+    <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### trigger-create-or-replace
+
+A plain `CREATE TRIGGER` cannot be re-applied after a body change. The rule
+reports it and points at `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+), in forward
+and rollback SQL. It is an error and on by default on PostgreSQL 14+; below 14 it
+is opt-in and reports nothing. The constraint-trigger form
+`CREATE [OR REPLACE] CONSTRAINT TRIGGER` is recognised too.
+
+```xml
+<!-- Reported: the body is CREATE TRIGGER ... -->
+<changeSet id="trigger-app.foo" author="me">
+    <sqlFile path="triggers/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### require-not-valid-constraint
+
+Adding a validating `CHECK` or `FOREIGN KEY` to an existing table scans the table
+while holding a blocking lock. Add it `NOT VALID` and validate it separately;
+a table created in the same changeset has no existing rows and is exempt. The
+rule reports the validating form on an existing table. It is a warning and
+opt-in, and it checks forward and rollback SQL.
+
+```sql
+-- Reported.
+ALTER TABLE app.orders ADD CONSTRAINT orders_total_check CHECK (total >= 0);
+
+-- Accepted.
+ALTER TABLE app.orders ADD CONSTRAINT orders_total_check CHECK (total >= 0) NOT VALID;
+```
+
+Only `CHECK` and `FOREIGN KEY` are checked: PostgreSQL cannot add `UNIQUE`,
+`PRIMARY KEY` or `EXCLUDE` as `NOT VALID`; those need a `USING INDEX` strategy.
+
+#### require-if-exists-on-drop
+
+A `DROP` without `IF EXISTS` fails when a re-applied or partially rolled-back
+changeset finds the object already gone. The rule reports `DROP TABLE`, `DROP
+FUNCTION`, `DROP PROCEDURE`, `DROP TRIGGER` and `DROP INDEX`, including
+`DROP INDEX CONCURRENTLY`, in forward and rollback SQL. It is a warning and
+opt-in.
+
+```sql
+-- Reported.
+DROP TABLE app.orders;
+
+-- Accepted.
+DROP TABLE IF EXISTS app.orders;
+```
+
+#### changeset-author-required
+
+The author is part of Liquibase's changeset identity and the history a project
+uses to find who made a change. The rule reports a missing, blank or
+whitespace-only `author`. It is an error and on by default.
+
+```xml
+<!-- Reported. -->
+<changeSet id="001-create" author="">
+    <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### changeset-file-name-matches-id
+
+A numbered changeset's forward file must be `sql_changes/<id>.sql` and its
+rollback `rollback/<id>-rollback.sql`. The rule reports a filename or directory
+that does not match the id. It is an error and on by default. Routine and trigger
+ids have their own path convention and are left to `ChangelogLayoutContract`.
+
+```xml
+<!-- Reported: the changeset is 001-create but the file is 002-create.sql. -->
+<changeSet id="001-create" author="me">
+    <sqlFile path="sql_changes/002-create.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### changeset-id-unique
+
+Liquibase identifies a changeset by id, author and file, so a repeat is
+ambiguous. This whole-graph project rule reports every occurrence after the first
+with the same id, author and normalized changelog file. It is an error and on by
+default.
+
+```xml
+<!-- Reported: the second changeset repeats the first identity. -->
+<changeSet id="001-create" author="me"> ... </changeSet>
+<changeSet id="001-create" author="me"> ... </changeSet>
 ```
 
 ### Configuration
