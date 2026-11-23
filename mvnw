@@ -99,9 +99,10 @@ die() {
 
 trim() {
   # MWRAPPER-139:
-  #   Trims surrounding whitespace, carriage returns, tabs, and linefeeds.
-  #   Internal whitespace is preserved; only the ends are stripped.
-  printf "%s" "${1}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+  #   Trims trailing and leading whitespace, carriage returns, tabs, and linefeeds.
+  #   Needed for removing poorly interpreted newline sequences when running in more
+  #   exotic environments such as mingw bash on Windows.
+  printf "%s" "${1}" | tr -d '[:space:]'
 }
 
 scriptDir="$(dirname "$0")"
@@ -149,7 +150,7 @@ exec_maven() {
   exec "$MAVEN_HOME/bin/$MVN_CMD" "$@" || die "cannot exec $MAVEN_HOME/bin/$MVN_CMD"
 }
 
-if [ -d "$MAVEN_HOME" ] && [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
+if [ -d "$MAVEN_HOME" ]; then
   verbose "found existing MAVEN_HOME at $MAVEN_HOME"
   exec_maven "$@"
 fi
@@ -159,54 +160,15 @@ case "${distributionUrl-}" in
 *) die "distributionUrl is not valid, must match *-bin.zip or maven-mvnd-*.zip, but found '${distributionUrl-}'" ;;
 esac
 
-# prepare tmp dir and an install lock
+# prepare tmp dir
 if TMP_DOWNLOAD_DIR="$(mktemp -d)" && [ -d "$TMP_DOWNLOAD_DIR" ]; then
-  LOCK_DIR="${MAVEN_HOME}.lock"
-  lock_acquired=false
-  STAGING_DIR=''
-  clean() {
-    rm -rf -- "$TMP_DOWNLOAD_DIR"
-    [ -z "${STAGING_DIR-}" ] || rm -rf -- "$STAGING_DIR"
-    # Only the owner may remove the lock: a waiter that times out or is
-    # interrupted must not delete the winner's (empty) lock directory.
-    if [ "$lock_acquired" = true ]; then
-      rmdir -- "$LOCK_DIR" 2>/dev/null || :
-    fi
-  }
+  clean() { rm -rf -- "$TMP_DOWNLOAD_DIR"; }
   trap clean HUP INT TERM EXIT
 else
   die "cannot create temp dir"
 fi
 
 mkdir -p -- "${MAVEN_HOME%/*}"
-
-# Serialize installs so two wrappers cannot race the final mv. A loser waits for
-# the winner to finish rather than moving its extraction inside an existing dir.
-if ! mkdir -- "$LOCK_DIR" 2>/dev/null; then
-  verbose "another mvnw is installing Maven; waiting for $MAVEN_HOME"
-  attempt=0
-  while [ "$attempt" -lt 60 ]; do
-    if [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
-      rm -rf -- "$TMP_DOWNLOAD_DIR"
-      exec_maven "$@"
-    fi
-    attempt=$((attempt + 1))
-    sleep 1
-  done
-  die "timed out waiting for another mvnw install to finish"
-fi
-
-# The wait loop above always ends in exec_maven or die, so reaching here means
-# this process created LOCK_DIR and may remove it in clean().
-lock_acquired=true
-
-# Only a process that holds the lock can see an incomplete MAVEN_HOME left by an
-# earlier failed install: a concurrent installer would still hold LOCK_DIR (or
-# have completed it), so deleting here cannot race another install.
-if [ -d "$MAVEN_HOME" ]; then
-  verbose "removing incomplete MAVEN_HOME at $MAVEN_HOME"
-  rm -rf -- "$MAVEN_HOME"
-fi
 
 # Download and Install Apache Maven
 verbose "Couldn't find MAVEN_HOME, downloading and installing it ..."
@@ -215,9 +177,6 @@ verbose "Downloading to: $TMP_DOWNLOAD_DIR/$distributionUrlName"
 
 # select .zip or .tar.gz
 if ! command -v unzip >/dev/null; then
-  if [ -n "${distributionSha256Sum-}" ]; then
-    die "unzip is required to verify the configured distributionSha256Sum; install unzip or remove the checksum"
-  fi
   distributionUrl="${distributionUrl%.zip}.tar.gz"
   distributionUrlName="${distributionUrl##*/}"
 fi
@@ -260,13 +219,8 @@ elif set_java_home; then
   verbose " - Compiling Downloader.java ..."
   "$(native_path "$JAVACCMD")" "$(native_path "$javaSource")" || die "Failed to compile Downloader.java"
   verbose " - Running Downloader.java ..."
-  "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")" \
-    || die "java: Failed to fetch $distributionUrl"
-else
-  die "no wget, no curl and no usable JDK (JAVA_HOME); cannot download $distributionUrl"
+  "$(native_path "$JAVACMD")" -cp "$(native_path "$TMP_DOWNLOAD_DIR")" Downloader "$distributionUrl" "$(native_path "$targetZip")"
 fi
-
-[ -f "$TMP_DOWNLOAD_DIR/$distributionUrlName" ] || die "download did not produce $distributionUrlName"
 
 # If specified, validate the SHA-256 sum of the Maven distribution zip file
 if [ -n "${distributionSha256Sum-}" ]; then
@@ -335,37 +289,7 @@ fi
 
 verbose "Found extracted Maven distribution directory: $actualDistributionDir"
 printf %s\\n "$distributionUrl" >"$TMP_DOWNLOAD_DIR/$actualDistributionDir/mvnw.url"
-
-# Install atomically: stage the distribution on the destination filesystem and
-# finish with a rename. A cross-filesystem `mv` copies incrementally, so moving
-# straight into MAVEN_HOME can leave a half-populated tree that the reuse
-# fast-path (and a waiting wrapper) would accept as complete.
-STAGING_DIR="${MAVEN_HOME%/*}/.staging.$$"
-mkdir -- "$STAGING_DIR" 2>/dev/null || STAGING_DIR="$(mktemp -d "${MAVEN_HOME%/*}/.staging.XXXXXX")"
-if ! mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$STAGING_DIR/dist"; then
-  rm -rf -- "$STAGING_DIR" "$MAVEN_HOME"
-  STAGING_DIR=''
-  die "fail to stage MAVEN_HOME"
-fi
-if [ -e "$MAVEN_HOME" ]; then
-  # Another wrapper completed the install while this one waited. Keep a complete
-  # tree; replace an incomplete one explicitly (mv would move into a directory).
-  if [ -x "$MAVEN_HOME/bin/$MVN_CMD" ]; then
-    verbose "another mvnw completed the install; using $MAVEN_HOME"
-    rm -rf -- "$STAGING_DIR"
-    STAGING_DIR=''
-    clean || :
-    exec_maven "$@"
-  fi
-  rm -rf -- "$MAVEN_HOME"
-fi
-if ! mv -- "$STAGING_DIR/dist" "$MAVEN_HOME"; then
-  rm -rf -- "$STAGING_DIR" "$MAVEN_HOME"
-  STAGING_DIR=''
-  die "fail to move MAVEN_HOME"
-fi
-rmdir -- "$STAGING_DIR" 2>/dev/null || :
-STAGING_DIR=''
+mv -- "$TMP_DOWNLOAD_DIR/$actualDistributionDir" "$MAVEN_HOME" || [ -d "$MAVEN_HOME" ] || die "fail to move MAVEN_HOME"
 
 clean || :
 exec_maven "$@"
