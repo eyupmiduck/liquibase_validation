@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
@@ -71,6 +72,64 @@ public final class Rules {
      */
     public static List<ProjectRule> projectRules() {
         return List.of(new ChangesetIdUniqueRule());
+    }
+
+    /**
+     * Returns the built-in project-analysis rules, run after the changeset-only
+     * project rules. They are opt-in and read their options from {@code config}.
+     *
+     * @param config the configuration
+     * @return the project-analysis rules
+     */
+    public static List<ProjectAnalysisRule> projectAnalysisRules(LinterConfig config) {
+        return List.of(
+                new DuplicateObjectRule(),
+                new ForeignKeyTargetRule(knownTables(config, ForeignKeyTargetRule.ID)),
+                new UnvalidatedConstraintRule(),
+                new OrderingDependencyRule(knownTables(config, OrderingDependencyRule.ID)),
+                new ConflictingCommentRule(),
+                new UnregisteredRoutineFileRule());
+    }
+
+    /**
+     * Returns the built-in project-analysis rules with no options.
+     *
+     * @return the project-analysis rules
+     */
+    public static List<ProjectAnalysisRule> projectAnalysisRules() {
+        return projectAnalysisRules(LinterConfig.defaults());
+    }
+
+    /**
+     * Reads a rule's {@code knownTables} allow-list: tables installed outside
+     * the changelog that the rule should treat as existing.
+     *
+     * @param config the configuration
+     * @param ruleId the rule id
+     * @return the known tables, or an empty set
+     * @throws IllegalArgumentException when the option is not a list of strings
+     */
+    private static Set<String> knownTables(LinterConfig config, String ruleId) {
+        LinterConfig.RuleSettings settings = config.rules().get(ruleId);
+        if (settings == null) {
+            return Set.of();
+        }
+        Object value = settings.options().get("knownTables");
+        if (value == null) {
+            return Set.of();
+        }
+        if (!(value instanceof List<?> list)) {
+            throw new IllegalArgumentException("knownTables for " + ruleId + " must be a list");
+        }
+        List<String> tables = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof String table) || table.isBlank()) {
+                throw new IllegalArgumentException(
+                        "knownTables for " + ruleId + " must contain non-blank strings");
+            }
+            tables.add(table.strip());
+        }
+        return Set.copyOf(tables);
     }
 
     /**

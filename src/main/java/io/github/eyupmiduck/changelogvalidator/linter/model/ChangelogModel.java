@@ -65,11 +65,26 @@ public final class ChangelogModel {
      * @throws IOException if a changelog file cannot be read
      */
     public static List<ChangeSet> changesets(Path changelogRoot, Path masterChangelog) throws IOException {
+        return project(changelogRoot, masterChangelog).changesets();
+    }
+
+    /**
+     * Reads the whole changelog graph: the visited files and their includes, the
+     * effective properties, and the changesets in execution order.
+     *
+     * @param changelogRoot   the changelog root, used to resolve references that
+     *                        are not relative to the changelog file
+     * @param masterChangelog the master changelog file to traverse
+     * @return the project
+     * @throws IOException if a changelog file cannot be read
+     */
+    public static ChangelogProject project(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
-        List<ChangeSet> changesets = new ArrayList<>();
-        visit(root, masterChangelog.toAbsolutePath().normalize(), new LinkedHashMap<>(),
-                new LinkedHashMap<>(), changesets, new LinkedHashSet<>());
-        return List.copyOf(changesets);
+        Path master = masterChangelog.toAbsolutePath().normalize();
+        Map<String, String> globals = new LinkedHashMap<>();
+        ProjectAccumulator accumulator = new ProjectAccumulator();
+        visit(root, master, globals, new LinkedHashMap<>(), accumulator, new LinkedHashSet<>());
+        return accumulator.project(root, master, globals);
     }
 
     /**
@@ -82,33 +97,40 @@ public final class ChangelogModel {
      * visited.
      */
     private static void visit(Path root, Path changelogFile, Map<String, String> globals,
-                              Map<String, String> inheritedLocals, List<ChangeSet> changesets,
+                              Map<String, String> inheritedLocals, ProjectAccumulator accumulator,
                               Set<Path> active) throws IOException {
         Path normalized = changelogFile.toAbsolutePath().normalize();
         if (active.contains(normalized)) {
             throw new IOException("circular changelog include: " + normalized);
         }
         active.add(normalized);
+        Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
+        FileBuilder file = new FileBuilder(normalized, snapshot(globals, inheritedLocals));
+        accumulator.files.add(file);
         try {
-            Map<String, String> locals = new LinkedHashMap<>(inheritedLocals);
             Document document = parse(normalized);
             Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
             for (Element child : childElements(document.getDocumentElement())) {
                 switch (tagName(child)) {
                     case "property" -> addProperty(globals, locals, child);
                     case "include" -> {
-                        String file = child.getAttribute("file");
-                        if (file.isBlank()) {
+                        String included = child.getAttribute("file");
+                        if (included.isBlank()) {
                             throw new IOException("include without a file attribute: " + normalized);
                         }
                         boolean relativeToChangelogFile =
                                 "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
                         Path base = relativeToChangelogFile ? normalized.getParent() : root;
-                        visit(root, resolveWithin(root, base, file, "include"), globals, locals,
-                                changesets, active);
+                        Path resolved = resolveWithin(root, base, included, "include");
+                        file.includes.add(resolved);
+                        visit(root, resolved, globals, locals, accumulator, active);
                     }
-                    case "changeSet" -> changesets.add(changeSet(root, normalized, child,
-                            snapshot(globals, locals), lines));
+                    case "changeSet" -> {
+                        ChangeSet changeSet = changeSet(root, normalized, child,
+                                snapshot(globals, locals), lines);
+                        accumulator.changesets.add(changeSet);
+                        file.changesets.add(changeSet);
+                    }
                     case "includeAll" -> throw new IOException(
                             "includeAll is not supported by the linter; list the included changelogs explicitly: "
                                     + child.getAttribute("path"));
@@ -119,6 +141,7 @@ public final class ChangelogModel {
                 }
             }
         } finally {
+            file.properties = snapshot(globals, locals);
             active.remove(normalized);
         }
     }
@@ -794,5 +817,42 @@ public final class ChangelogModel {
 
     private static Document parse(Path changelogFile) throws IOException {
         return XmlDocuments.parse(changelogFile);
+    }
+
+    /**
+     * Accumulates the graph while {@link #visit} walks it.
+     */
+    private static final class ProjectAccumulator {
+
+        private final List<FileBuilder> files = new ArrayList<>();
+        private final List<ChangeSet> changesets = new ArrayList<>();
+
+        private ChangelogProject project(Path root, Path master, Map<String, String> properties) {
+            List<ChangelogProject.File> finished = files.stream()
+                    .map(FileBuilder::build)
+                    .toList();
+            return new ChangelogProject(root, master, finished, changesets, properties);
+        }
+    }
+
+    /**
+     * A mutable file record while the traversal is still adding its includes and
+     * changesets.
+     */
+    private static final class FileBuilder {
+
+        private final Path path;
+        private final List<Path> includes = new ArrayList<>();
+        private final List<ChangeSet> changesets = new ArrayList<>();
+        private Map<String, String> properties;
+
+        private FileBuilder(Path path, Map<String, String> properties) {
+            this.path = path;
+            this.properties = properties;
+        }
+
+        private ChangelogProject.File build() {
+            return new ChangelogProject.File(path, includes, properties, changesets);
+        }
     }
 }

@@ -101,7 +101,7 @@ public final class LinterCli {
                 err.println("error: no changesets found in " + options.master());
                 return 2;
             }
-            Linter linter = new Linter(Rules.all(config), Rules.projectRules(), config);
+            Linter linter = new Linter(Rules.all(config), Rules.projectRules(), Rules.projectAnalysisRules(config), config);
             List<Finding> findings = linter.lint(changeSets);
             Whitelist.Report report = Whitelist.load(options.whitelist()).apply(findings);
             options.reporter().report(report.unmatched(), out);

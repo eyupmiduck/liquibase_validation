@@ -31,7 +31,7 @@ class SarifSampleChangelogTest {
 
         List<ChangeSet> changeSets = ChangelogModel.changesets(sarif, sarif.resolve("sample-changelog.xml"));
         List<Finding> findings = new Linter(Rules.all(config.postgresMajorVersion()),
-                Rules.projectRules(), config).lint(changeSets);
+                Rules.projectRules(), Rules.projectAnalysisRules(config), config).lint(changeSets);
 
         assertEquals(1, findings.size(), () -> "unexpected findings: " + findings);
         assertEquals(RequireConcurrentIndexCreationRule.ID, findings.get(0).ruleId());

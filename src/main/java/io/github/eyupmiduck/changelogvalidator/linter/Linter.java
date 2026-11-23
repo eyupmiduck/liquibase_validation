@@ -4,6 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlNormalizer;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
@@ -27,6 +28,7 @@ public final class Linter {
 
     private final List<Rule> rules;
     private final List<ProjectRule> projectRules;
+    private final List<ProjectAnalysisRule> projectAnalysisRules;
     private final LinterConfig config;
 
     /**
@@ -38,11 +40,11 @@ public final class Linter {
      *                                  configuration references an unknown rule id
      */
     public Linter(List<Rule> rules, LinterConfig config) {
-        this(rules, List.of(), config);
+        this(rules, List.of(), List.of(), config);
     }
 
     /**
-     * Creates a linter.
+     * Creates a linter with changeset-only project rules.
      *
      * @param rules        the per-changeset rules to run
      * @param projectRules the whole-graph rules to run after them
@@ -51,8 +53,24 @@ public final class Linter {
      *                                  configuration references an unknown rule id
      */
     public Linter(List<Rule> rules, List<ProjectRule> projectRules, LinterConfig config) {
+        this(rules, projectRules, List.of(), config);
+    }
+
+    /**
+     * Creates a linter.
+     *
+     * @param rules                the per-changeset rules to run
+     * @param projectRules         the changeset-only whole-graph rules
+     * @param projectAnalysisRules the project-model rules, run after the others
+     * @param config               the configuration
+     * @throws IllegalArgumentException if two rules share an id, or the
+     *                                  configuration references an unknown rule id
+     */
+    public Linter(List<Rule> rules, List<ProjectRule> projectRules,
+                  List<ProjectAnalysisRule> projectAnalysisRules, LinterConfig config) {
         Objects.requireNonNull(rules, "rules");
         Objects.requireNonNull(projectRules, "projectRules");
+        Objects.requireNonNull(projectAnalysisRules, "projectAnalysisRules");
         Objects.requireNonNull(config, "config");
         Set<String> known = new HashSet<>();
         for (Rule rule : rules) {
@@ -63,6 +81,10 @@ public final class Linter {
             Objects.requireNonNull(rule, "project rule");
             register(known, rule.id());
         }
+        for (ProjectAnalysisRule rule : projectAnalysisRules) {
+            Objects.requireNonNull(rule, "project analysis rule");
+            register(known, rule.id());
+        }
         for (String id : config.referencedRuleIds()) {
             if (!known.contains(id)) {
                 throw new IllegalArgumentException("unknown rule id in configuration: " + id);
@@ -70,6 +92,7 @@ public final class Linter {
         }
         this.rules = List.copyOf(rules);
         this.projectRules = List.copyOf(projectRules);
+        this.projectAnalysisRules = List.copyOf(projectAnalysisRules);
         this.config = config;
     }
 
@@ -90,7 +113,7 @@ public final class Linter {
      * @return the linter
      */
     public static Linter withRules(List<Rule> rules) {
-        return new Linter(rules, LinterConfig.defaults());
+        return new Linter(rules, List.of(), List.of(), LinterConfig.defaults());
     }
 
     /**
@@ -101,7 +124,20 @@ public final class Linter {
      * @return the linter
      */
     public static Linter withRules(List<Rule> rules, List<ProjectRule> projectRules) {
-        return new Linter(rules, projectRules, LinterConfig.defaults());
+        return new Linter(rules, projectRules, List.of(), LinterConfig.defaults());
+    }
+
+    /**
+     * Creates a linter with the default configuration and project-analysis rules.
+     *
+     * @param rules                the per-changeset rules to run
+     * @param projectRules         the changeset-only whole-graph rules
+     * @param projectAnalysisRules the project-model rules
+     * @return the linter
+     */
+    public static Linter withRules(List<Rule> rules, List<ProjectRule> projectRules,
+                                   List<ProjectAnalysisRule> projectAnalysisRules) {
+        return new Linter(rules, projectRules, projectAnalysisRules, LinterConfig.defaults());
     }
 
     /**
@@ -115,27 +151,48 @@ public final class Linter {
      *                               safety bound
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
+        return lint(ChangelogProject.of(changeSets));
+    }
+
+    /**
+     * Runs every enabled rule over a whole changelog project.
+     *
+     * @param project the changelog graph and its changesets
+     * @return the findings, in per-changeset, project, then analysis order
+     * @throws IOException           if a SQL file cannot be read
+     * @throws IllegalStateException if property substitution in a changeset's SQL
+     *                               cycles, does not converge, or exceeds the
+     *                               safety bound
+     */
+    public List<Finding> lint(ChangelogProject project) throws IOException {
+        Objects.requireNonNull(project, "project");
         boolean anyChangesetRule = rules.stream().anyMatch(config::isEnabled);
         boolean anyProjectRule = projectRules.stream()
                 .anyMatch(rule -> config.isEnabled(rule.id(), rule.enabledByDefault()));
-        if (!anyChangesetRule && !anyProjectRule) {
+        boolean anyAnalysisRule = projectAnalysisRules.stream()
+                .anyMatch(rule -> config.isEnabled(rule.id(), rule.enabledByDefault()));
+        if (!anyChangesetRule && !anyProjectRule && !anyAnalysisRule) {
             return List.of();
         }
         List<Finding> findings = new ArrayList<>();
-        if (anyChangesetRule) {
-            for (ChangeSet changeSet : changeSets) {
+        List<ProjectAnalysisRule.AnalyzedChangeSet> analyzed = new ArrayList<>();
+        if (anyChangesetRule || anyAnalysisRule) {
+            for (ChangeSet changeSet : project.changesets()) {
                 RuleContext context = context(changeSet);
-                for (Rule rule : rules) {
-                    if (!config.isEnabled(rule)) {
-                        continue;
-                    }
-                    Severity severity = config.severityFor(rule);
-                    List<Rule.Violation> violations = Objects.requireNonNull(rule.check(context),
-                            () -> "rule " + rule.id() + " returned null from check()");
-                    for (Rule.Violation violation : violations) {
-                        findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
-                                violation.file(), violation.line(), violation.column(),
-                                violation.statement(), violation.message(), violation.help()));
+                analyzed.add(new ProjectAnalysisRule.AnalyzedChangeSet(changeSet, context));
+                if (anyChangesetRule) {
+                    for (Rule rule : rules) {
+                        if (!config.isEnabled(rule)) {
+                            continue;
+                        }
+                        Severity severity = config.severityFor(rule);
+                        List<Rule.Violation> violations = Objects.requireNonNull(rule.check(context),
+                                () -> "rule " + rule.id() + " returned null from check()");
+                        for (Rule.Violation violation : violations) {
+                            findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
+                                    violation.file(), violation.line(), violation.column(),
+                                    violation.statement(), violation.message(), violation.help()));
+                        }
                     }
                 }
             }
@@ -145,13 +202,32 @@ public final class Linter {
                 continue;
             }
             Severity severity = config.severityFor(rule.id(), rule.defaultSeverity());
-            List<ProjectRule.Violation> violations = Objects.requireNonNull(rule.check(changeSets),
+            List<ProjectRule.Violation> violations = Objects.requireNonNull(rule.check(project.changesets()),
                     () -> "project rule " + rule.id() + " returned null from check()");
             for (ProjectRule.Violation violation : violations) {
                 ChangeSet changeSet = violation.changeSet();
                 findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
                         changeSet.changelogFile(), violation.line(), violation.column(),
                         violation.statement(), violation.message(), violation.help()));
+            }
+        }
+        if (anyAnalysisRule) {
+            ProjectAnalysisRule.ProjectContext context = new ProjectAnalysisRule.ProjectContext(project, analyzed);
+            for (ProjectAnalysisRule rule : projectAnalysisRules) {
+                if (!config.isEnabled(rule.id(), rule.enabledByDefault())) {
+                    continue;
+                }
+                Severity severity = config.severityFor(rule.id(), rule.defaultSeverity());
+                List<ProjectAnalysisRule.Violation> violations = Objects.requireNonNull(rule.check(context),
+                        () -> "project analysis rule " + rule.id() + " returned null from check()");
+                for (ProjectAnalysisRule.Violation violation : violations) {
+                    ChangeSet changeSet = violation.changeSet();
+                    findings.add(new Finding(rule.id(), severity,
+                            changeSet == null ? "" : changeSet.id(),
+                            changeSet == null ? "" : changeSet.author(),
+                            violation.file(), violation.line(), violation.column(),
+                            violation.statement(), violation.message(), violation.help()));
+                }
             }
         }
         return List.copyOf(findings);

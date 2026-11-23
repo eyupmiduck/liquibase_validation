@@ -134,7 +134,7 @@ class ChangelogModelNormalisationTest {
         List<ChangeSet> changesets = ChangelogModel.changesets(changelogRoot, master);
         LinterConfig config = new LinterConfig(null, Severity.ERROR, List.of(),
                 List.of(RequireConcurrentIndexCreationRule.ID), Map.of());
-        Linter linter = new Linter(Rules.all(17), Rules.projectRules(), config);
+        Linter linter = new Linter(Rules.all(17), Rules.projectRules(), Rules.projectAnalysisRules(config), config);
 
         List<Finding> findings = linter.lint(changesets);
 
