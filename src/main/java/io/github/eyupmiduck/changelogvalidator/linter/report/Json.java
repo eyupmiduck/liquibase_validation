@@ -1,10 +1,10 @@
 package io.github.eyupmiduck.changelogvalidator.linter.report;
 
 /**
- * Minimal JSON string quoting for the reporters. Keeping this local avoids a
- * JSON dependency for a small, fixed output shape.
+ * Minimal JSON string quoting for the reporters and the rule-metadata output.
+ * Keeping this local avoids a JSON dependency for a small, fixed output shape.
  */
-final class Json {
+public final class Json {
 
     private static final char[] HEX = "0123456789abcdef".toCharArray();
 
@@ -17,7 +17,7 @@ final class Json {
      * @param value the value, possibly null
      * @return the JSON literal
      */
-    static String quote(String value) {
+    public static String quote(String value) {
         if (value == null) {
             return "null";
         }

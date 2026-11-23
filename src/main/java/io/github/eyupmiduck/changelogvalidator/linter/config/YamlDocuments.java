@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.config;
 
+import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -30,5 +31,19 @@ public final class YamlDocuments {
         options.setNestingDepthLimit(50);
         options.setCodePointLimit(1_000_000);
         return new Yaml(new SafeConstructor(options));
+    }
+
+    /**
+     * Renders a value as block-style YAML, for writing a whitelist.
+     *
+     * @param value the value to render
+     * @return the YAML document
+     */
+    public static String dump(Object value) {
+        DumperOptions options = new DumperOptions();
+        options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+        options.setPrettyFlow(true);
+        options.setIndent(2);
+        return new Yaml(options).dump(value);
     }
 }

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -239,6 +240,196 @@ class LinterCliTest {
     }
 
     /**
+     * {@code --version} prints the artifact version and does not need a
+     * changelog root.
+     */
+    @Test
+    void printsVersion() {
+        Result result = run("--version");
+
+        assertEquals(0, result.code());
+        assertTrue(result.out().startsWith("liquibase-linter "), result.out());
+        assertFalse(result.out().contains("${"), result.out());
+    }
+
+    /**
+     * {@code --list-rules} prints the rule metadata as a table and does not need a
+     * changelog root.
+     */
+    @Test
+    void listsRules() {
+        Result result = run("--list-rules");
+
+        assertEquals(0, result.code());
+        assertTrue(result.out().contains("ID"));
+        assertTrue(result.out().contains("KIND"));
+        assertTrue(result.out().contains("changeset-author-required"));
+        assertTrue(result.out().contains("project-analysis"));
+    }
+
+    /**
+     * {@code --list-rules --reporter json} is machine-readable.
+     */
+    @Test
+    void listsRulesAsJson() {
+        Result result = run("--list-rules", "--reporter", "json");
+
+        assertEquals(0, result.code());
+        assertTrue(result.out().startsWith("["), result.out());
+        assertTrue(result.out().contains("\"id\":\"changeset-author-required\""), result.out());
+        assertTrue(result.out().contains("\"severity\":\"error\""), result.out());
+        assertTrue(result.out().contains("\"default\":\"on\""), result.out());
+    }
+
+    /**
+     * The SARIF reporter is for findings, not the rule catalogue.
+     */
+    @Test
+    void rejectsSarifRuleList() {
+        Result result = run("--list-rules", "--reporter", "sarif");
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("sarif"), result.err());
+    }
+
+    /**
+     * A normal run prints severity counts to stderr, keeping stdout for the
+     * reporter.
+     */
+    @Test
+    void printsSeveritySummary() throws IOException {
+        Path root = changelog("bad", FORBIDDEN);
+
+        Result result = run("--changelog-root", root.toString(), "--reporter", "json");
+
+        assertEquals(1, result.code());
+        assertTrue(result.out().startsWith("["), result.out());
+        assertTrue(result.err().contains("1 finding: 1 error, 0 warnings, 0 info"), result.err());
+    }
+
+    /**
+     * A warning is counted separately from an error.
+     */
+    @Test
+    void printsWarningSummary() throws IOException {
+        Path root = changelog("clean", CLEAN);
+        Path config = config("""
+                include:
+                  - changeset-rollback-required
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--config", config.toString());
+
+        assertEquals(0, result.code());
+        assertTrue(result.err().contains("1 finding: 0 errors, 1 warning, 0 info"), result.err());
+    }
+
+    /**
+     * {@code --update-whitelist} writes a reviewed baseline and prints the added
+     * entries and the findings it now accepts.
+     */
+    @Test
+    void updatesWhitelist() throws IOException {
+        Path root = changelog("bad", FORBIDDEN);
+        Path whitelist = tempDir.resolve("baseline.yml");
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString(),
+                "--update-whitelist");
+
+        assertEquals(0, result.code());
+        assertTrue(result.err().contains("whitelist updated"), result.err());
+        assertTrue(result.err().contains("+ rule=changeset-run-in-transaction-required"), result.err());
+        assertTrue(result.out().contains("changeset-run-in-transaction-required"), result.out());
+        String yaml = Files.readString(whitelist);
+        assertTrue(yaml.contains("rule: changeset-run-in-transaction-required"), yaml);
+        assertTrue(yaml.contains("reason:"), yaml);
+
+        Result second = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString());
+        assertEquals(0, second.code());
+        assertTrue(second.err().contains("no findings"), second.err());
+    }
+
+    /**
+     * A stale entry is removed by an update and reported.
+     */
+    @Test
+    void removesStaleEntriesOnUpdate() throws IOException {
+        Path root = changelog("clean", CLEAN);
+        Path whitelist = whitelist("""
+                - rule: changeset-run-in-transaction-required
+                  changeset: 999-gone
+                  reason: the changeset was removed
+                """);
+
+        Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString(),
+                "--update-whitelist");
+
+        assertEquals(0, result.code());
+        assertTrue(result.err().contains("1 entry removed"), result.err());
+        assertFalse(Files.readString(whitelist).contains("999-gone"));
+    }
+
+    /**
+     * An inline suppression with a reason hides the finding for that changeset.
+     */
+    @Test
+    void suppressesFindingsWithInlineComment() throws IOException {
+        Path root = changelog("suppressed", """
+                <changeSet id="001-bad" author="a" dbms="postgresql">
+                    <sql>
+                        -- liquibase-linter:ignore reason=accepted for this test
+                        CREATE INDEX CONCURRENTLY idx ON t (c);
+                    </sql>
+                </changeSet>
+                """);
+
+        Result result = run("--changelog-root", root.toString());
+
+        assertEquals(0, result.code());
+        assertTrue(result.err().contains("no findings"), result.err());
+    }
+
+    /**
+     * A suppression without a reason fails closed instead of hiding findings.
+     */
+    @Test
+    void rejectsInlineSuppressionWithoutReason() throws IOException {
+        Path root = changelog("bad-suppression", """
+                <changeSet id="001-bad" author="a" dbms="postgresql">
+                    <sql>
+                        -- liquibase-linter:ignore
+                        CREATE INDEX CONCURRENTLY idx ON t (c);
+                    </sql>
+                </changeSet>
+                """);
+
+        Result result = run("--changelog-root", root.toString());
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("reason"), result.err());
+    }
+
+    /**
+     * A suppression naming an unknown rule fails closed.
+     */
+    @Test
+    void rejectsUnknownRuleInInlineSuppression() throws IOException {
+        Path root = changelog("bad-rule", """
+                <changeSet id="001-bad" author="a" dbms="postgresql">
+                    <sql>
+                        -- liquibase-linter:ignore no-such-rule reason=typo
+                        CREATE INDEX CONCURRENTLY idx ON t (c);
+                    </sql>
+                </changeSet>
+                """);
+
+        Result result = run("--changelog-root", root.toString());
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("unknown rule id"), result.err());
+    }
+
+    /**
      * A graph with no changesets is an error, not a vacuous pass.
      */
     @Test
@@ -279,7 +470,7 @@ class LinterCliTest {
         Result result = run("--changelog-root", root.toString(), "--whitelist", whitelist.toString());
 
         assertEquals(0, result.code());
-        assertEquals("", result.err());
+        assertTrue(result.err().contains("no findings"), result.err());
     }
 
     /**

@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogModel;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
+import io.github.eyupmiduck.changelogvalidator.linter.model.RoutineBodies;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -209,6 +210,83 @@ class LinterTest {
     }
 
     /**
+     * An inline suppression with a reason hides the finding for the changeset.
+     */
+    @Test
+    void suppressesFindingsWithAnInlineComment() throws IOException {
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule()))
+                .lint(List.of(inlineChangeSet("""
+                        -- liquibase-linter:ignore reason=accepted for this test
+                        SELECT bad""")));
+
+        assertTrue(findings.isEmpty(), findings.toString());
+    }
+
+    /**
+     * A suppression naming another known rule does not hide this rule's finding.
+     */
+    @Test
+    void suppressesOnlyTheNamedRule() throws IOException {
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule(), new OptInRule()))
+                .lint(List.of(inlineChangeSet("""
+                        -- liquibase-linter:ignore test-opt-in reason=accepted
+                        SELECT bad""")));
+
+        assertEquals(1, findings.size(), findings.toString());
+        assertEquals(RULE_ID, findings.getFirst().ruleId());
+    }
+
+    /**
+     * A suppression without a reason fails closed instead of hiding a finding.
+     */
+    @Test
+    void rejectsASuppressionWithoutAReason() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> Linter.withRules(List.of(new ForbiddenWordRule()))
+                        .lint(List.of(inlineChangeSet("""
+                                -- liquibase-linter:ignore
+                                SELECT bad"""))));
+
+        assertTrue(failure.getMessage().contains("reason"), failure.getMessage());
+    }
+
+    /**
+     * A suppression naming an unknown rule fails closed, so a typo cannot look
+     * like a working suppression.
+     */
+    @Test
+    void rejectsAnUnknownRuleInASuppression() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> Linter.withRules(List.of(new ForbiddenWordRule()))
+                        .lint(List.of(inlineChangeSet("""
+                                -- liquibase-linter:ignore no-such-rule reason=typo
+                                SELECT bad"""))));
+
+        assertTrue(failure.getMessage().contains("unknown rule id"), failure.getMessage());
+    }
+
+    /**
+     * A suppression inside a routine body is found by re-lexing the body.
+     */
+    @Test
+    void suppressesFindingsInsideARoutineBody() throws IOException {
+        SqlSource source = new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, """
+                CREATE FUNCTION f() RETURNS void AS $$
+                -- liquibase-linter:ignore reason=accepted in the body
+                BEGIN
+                    PERFORM bad;
+                END;
+                $$ LANGUAGE plpgsql;
+                """, false, ";", true, null);
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, false,
+                null, null, null, List.of(source), false, List.of());
+
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule())).lint(List.of(changeSet));
+
+        assertTrue(findings.isEmpty(), findings.toString());
+    }
+
+    /**
      * A rule that flags the word {@code bad} in forward SQL.
      */
     private static final class ForbiddenWordRule implements Rule {
@@ -226,11 +304,11 @@ class LinterTest {
         @Override
         public List<Violation> check(RuleContext context) {
             List<Violation> violations = new ArrayList<>();
-            for (SqlUnit unit : context.forward()) {
-                for (Token token : unit.tokens()) {
+            for (RoutineBodies.Body body : RoutineBodies.find(context.forward())) {
+                for (Token token : body.tokens()) {
                     if (token.matchesKeyword("bad")) {
                         violations.add(new Violation("uses the forbidden word", "remove it",
-                                unit.file(), token.line(), token.column()));
+                                body.unit().file(), token.line(), token.column()));
                     }
                 }
             }
