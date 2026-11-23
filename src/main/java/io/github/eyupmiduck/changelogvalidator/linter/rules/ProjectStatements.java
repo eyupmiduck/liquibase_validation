@@ -51,6 +51,9 @@ final class ProjectStatements {
         List<Statement> statements = new ArrayList<>();
         int order = 0;
         for (ProjectAnalysisRule.AnalyzedChangeSet analyzed : context.changesets()) {
+            if (!RuleSupport.appliesToPostgres(analyzed.changeSet())) {
+                continue;
+            }
             for (SqlUnit unit : RuleSupport.applicableToPostgres(analyzed.context().forward())) {
                 if (unit.source().kind() == SqlSource.Kind.ROUTINE_BODY) {
                     continue;

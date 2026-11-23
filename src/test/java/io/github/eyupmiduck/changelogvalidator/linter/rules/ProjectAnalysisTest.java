@@ -77,6 +77,14 @@ class ProjectAnalysisTest {
     }
 
     @Test
+    void ignoresChangesetsScopedToAnotherDatabase() throws IOException {
+        assertTrue(lint(new DuplicateObjectRule(),
+                changeSet("a", "CREATE TABLE t (id int);"),
+                "<changeSet id=\"b\" author=\"me\" dbms=\"mysql\">"
+                        + "<sql>CREATE TABLE t (id int);</sql></changeSet>").isEmpty());
+    }
+
+    @Test
     void reportsAForeignKeyToATableNeverCreated() throws IOException {
         assertTrue(lint(new ForeignKeyTargetRule(),
                 changeSet("a", "CREATE TABLE parent (id int);"),
