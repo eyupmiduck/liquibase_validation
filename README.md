@@ -87,8 +87,8 @@ variants and `ignore`). `<includeAll>` follows every XML changelog under a
 directory in alphabetical path order, with `endsWithFilter`,
 `minDepth`, `maxDepth` and `errorIfMissingOrEmpty`; an unformatted SQL file
 found by `includeAll` is one raw change, while a file with the formatted-SQL
-marker is parsed as a changelog. Unsupported directives
-(`--ignoreLines`, `--include`, `--includeAll`, `--rollbackSqlFile`) and
+marker is parsed as a changelog. Unsupported directives (`--ignoreLines`, `--include`, `--includeAll`,
+`--rollbackSqlFile`) and
 attributes fail with a diagnostic rather than being ignored.
 
 Statement splitting supports the default `;`, a word delimiter such as `GO`, an

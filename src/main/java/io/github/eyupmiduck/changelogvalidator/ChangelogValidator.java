@@ -329,28 +329,6 @@ public final class ChangelogValidator {
     }
 
     /**
-     * The reachable changelog graph: XML documents, SQL changelog files, and the
-     * parsed changesets of every formatted SQL file.
-     */
-    private record Reachable(Map<Path, Document> xmlFiles, Map<Path, Boolean> sqlFiles,
-                             Map<Path, List<ChangeSet>> parsedSql) {
-
-        private List<Path> allFiles() {
-            List<Path> files = new ArrayList<>(xmlFiles.keySet());
-            files.addAll(sqlFiles.keySet());
-            return List.copyOf(files);
-        }
-    }
-
-    /**
-     * A changelog file waiting to be visited. {@code formattedSql} is true when
-     * the file is a formatted SQL changelog: an included SQL file must carry the
-     * marker, and an {@code includeAll} SQL file is checked by content.
-     */
-    private record Pending(Path file, boolean formattedSql) {
-    }
-
-    /**
      * Finds every {@code .sql} file under {@code changelogRoot}, relative to
      * that root. Callers can use this to assert that validation saw content.
      *
@@ -423,6 +401,28 @@ public final class ChangelogValidator {
 
     private static Document parse(Path changelogFile) throws IOException {
         return XmlDocuments.parse(changelogFile);
+    }
+
+    /**
+     * The reachable changelog graph: XML documents, SQL changelog files, and the
+     * parsed changesets of every formatted SQL file.
+     */
+    private record Reachable(Map<Path, Document> xmlFiles, Map<Path, Boolean> sqlFiles,
+                             Map<Path, List<ChangeSet>> parsedSql) {
+
+        private List<Path> allFiles() {
+            List<Path> files = new ArrayList<>(xmlFiles.keySet());
+            files.addAll(sqlFiles.keySet());
+            return List.copyOf(files);
+        }
+    }
+
+    /**
+     * A changelog file waiting to be visited. {@code formattedSql} is true when
+     * the file is a formatted SQL changelog: an included SQL file must carry the
+     * marker, and an {@code includeAll} SQL file is checked by content.
+     */
+    private record Pending(Path file, boolean formattedSql) {
     }
 
     /**

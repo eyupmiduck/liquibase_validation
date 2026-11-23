@@ -52,7 +52,7 @@ public final class ChangelogIncludes {
      *                      element
      * @param includeAll    the {@code <includeAll>} element
      * @return the included files, sorted by their path under the include
-     *         directory
+     * directory
      * @throws IOException if the directory or an attribute is invalid, or a file
      *                     escapes the root
      */

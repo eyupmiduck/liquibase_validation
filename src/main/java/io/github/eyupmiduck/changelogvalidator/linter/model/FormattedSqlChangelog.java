@@ -299,6 +299,23 @@ public final class FormattedSqlChangelog {
             this.header = header;
         }
 
+        private static boolean booleanAttribute(Map<String, String> attributes, String name,
+                                                boolean defaultValue) {
+            String value = attributes.get(name);
+            return value == null ? defaultValue : Boolean.parseBoolean(value);
+        }
+
+        private static String stringAttribute(Map<String, String> attributes, String name,
+                                              String defaultValue) {
+            String value = attributes.get(name);
+            return value == null ? defaultValue : value;
+        }
+
+        private static String nullableAttribute(Map<String, String> attributes, String name) {
+            String value = attributes.get(name);
+            return value == null || value.isBlank() ? null : value;
+        }
+
         private void forwardLine(int lineNumber, String text) {
             if (forwardLine < 0) {
                 forwardLine = lineNumber;
@@ -368,23 +385,6 @@ public final class FormattedSqlChangelog {
                     rollbackSources,
                     new Normalisation(properties, List.of()),
                     line));
-        }
-
-        private static boolean booleanAttribute(Map<String, String> attributes, String name,
-                                                boolean defaultValue) {
-            String value = attributes.get(name);
-            return value == null ? defaultValue : Boolean.parseBoolean(value);
-        }
-
-        private static String stringAttribute(Map<String, String> attributes, String name,
-                                              String defaultValue) {
-            String value = attributes.get(name);
-            return value == null ? defaultValue : value;
-        }
-
-        private static String nullableAttribute(Map<String, String> attributes, String name) {
-            String value = attributes.get(name);
-            return value == null || value.isBlank() ? null : value;
         }
     }
 }
