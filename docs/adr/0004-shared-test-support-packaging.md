@@ -381,6 +381,28 @@ The library's own tests add a fixture changelog, a fixture changelog and an
 installed baseline schema, plus rollback-failure and non-idempotent fixtures for
 the failure paths.
 
+## Update: project analysis, layering and routine-file contracts
+
+The contracts and linter features added after the 1.21.0 round-trip work:
+
+- `ChangelogProject` and `ProjectAnalysisRule`, with the opt-in `project-*`
+  rules (duplicate object, foreign-key target, unvalidated constraint, ordering,
+  conflicting comment and unregistered routine) and the `knownTables` option.
+- `SchemaLayeringContract` over `SchemaLayeringCheck`, which verifies that a
+  lower schema does not reference a higher one, with a `Reference` allow-list
+  and a non-vacuity check.
+- `RoutineFileContract` over `RoutineFileCheck`, which walks the routine and
+  trigger trees directly and checks each file's declaration and rollback drop.
+- Formatted SQL changelogs and `includeAll` support in the changelog reader and
+  validator; `ChangelogLayoutContract` and `ChangelogSqlFilesContract` cover
+  the resulting files.
+- The CLI gained `--version`, `--list-rules` (table and JSON), inline
+  suppressions, `--update-whitelist` and severity summaries. The README rule
+  table is generated from rule metadata, and a drift test keeps it consistent.
+
+`ProjectProfile` remains the single value the contracts read. The README is the
+authoritative consumption guide for the current contract list and hooks.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

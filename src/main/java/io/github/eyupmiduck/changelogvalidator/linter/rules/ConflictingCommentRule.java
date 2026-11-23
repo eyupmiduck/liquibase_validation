@@ -112,9 +112,6 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
         return List.copyOf(violations);
     }
 
-    private record Comment(ChangeSet changeSet, Path file, int line, int column, String text) {
-    }
-
     @Override
     public String description() {
         return "an object commented twice, with the same or different text";
@@ -123,5 +120,8 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
     @Override
     public String help() {
         return "Keep one `COMMENT ON` for the object.";
+    }
+
+    private record Comment(ChangeSet changeSet, Path file, int line, int column, String text) {
     }
 }

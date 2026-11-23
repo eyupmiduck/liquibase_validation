@@ -328,9 +328,6 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         return List.copyOf(violations);
     }
 
-    private record Located(ChangeSet changeSet, Path file, int line, int column) {
-    }
-
     @Override
     public String description() {
         return "a table, index, column or constraint name declared twice";
@@ -339,5 +336,8 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
     @Override
     public String help() {
         return "Remove the duplicate declaration or rename one object.";
+    }
+
+    private record Located(ChangeSet changeSet, Path file, int line, int column) {
     }
 }

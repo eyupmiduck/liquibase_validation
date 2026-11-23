@@ -158,6 +158,23 @@ public final class Linter {
         return new Linter(rules, projectRules, projectAnalysisRules, LinterConfig.defaults());
     }
 
+    private static boolean isSuppressed(Set<String> suppressed, String ruleId) {
+        return suppressed.contains(SUPPRESS_ALL) || suppressed.contains(ruleId);
+    }
+
+    private static int indexOfIgnoreCase(String text, String target) {
+        return text.toLowerCase(Locale.ROOT).indexOf(target.toLowerCase(Locale.ROOT));
+    }
+
+    private static String unquote(String value) {
+        if (value.length() >= 2
+                && (value.charAt(0) == '"' || value.charAt(0) == '\'')
+                && value.charAt(value.length() - 1) == value.charAt(0)) {
+            return value.substring(1, value.length() - 1).strip();
+        }
+        return value;
+    }
+
     /**
      * Runs every enabled rule over {@code changeSets}.
      *
@@ -344,23 +361,6 @@ public final class Linter {
             }
             rules.add(id);
         }
-    }
-
-    private static boolean isSuppressed(Set<String> suppressed, String ruleId) {
-        return suppressed.contains(SUPPRESS_ALL) || suppressed.contains(ruleId);
-    }
-
-    private static int indexOfIgnoreCase(String text, String target) {
-        return text.toLowerCase(Locale.ROOT).indexOf(target.toLowerCase(Locale.ROOT));
-    }
-
-    private static String unquote(String value) {
-        if (value.length() >= 2
-                && (value.charAt(0) == '"' || value.charAt(0) == '\'')
-                && value.charAt(value.length() - 1) == value.charAt(0)) {
-            return value.substring(1, value.length() - 1).strip();
-        }
-        return value;
     }
 
     private List<SqlUnit> units(ChangeSet changeSet, List<SqlSource> sources, boolean rollback) throws IOException {

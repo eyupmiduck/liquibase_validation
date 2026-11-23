@@ -164,9 +164,6 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
         return List.copyOf(violations);
     }
 
-    private record Located(ChangeSet changeSet, Path file, int line, int column, int order) {
-    }
-
     @Override
     public String description() {
         return "a table used in a changeset that creates it later";
@@ -175,5 +172,8 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
     @Override
     public String help() {
         return "Move the creating changeset earlier, or add the table to `knownTables`.";
+    }
+
+    private record Located(ChangeSet changeSet, Path file, int line, int column, int order) {
     }
 }

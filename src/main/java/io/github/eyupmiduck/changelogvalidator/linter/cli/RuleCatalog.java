@@ -135,13 +135,13 @@ public final class RuleCatalog {
     /**
      * One rule's metadata.
      *
-     * @param id               the stable rule id
-     * @param kind             the rule kind
-     * @param severity         the default severity
-     * @param defaultState     the default state, for example {@code on} or
-     *                         {@code opt-in}
-     * @param description      a one-line description of what the rule detects
-     * @param help             how to fix a violation
+     * @param id           the stable rule id
+     * @param kind         the rule kind
+     * @param severity     the default severity
+     * @param defaultState the default state, for example {@code on} or
+     *                     {@code opt-in}
+     * @param description  a one-line description of what the rule detects
+     * @param help         how to fix a violation
      */
     public record Entry(String id, Kind kind, Severity severity, String defaultState,
                         String description, String help) {

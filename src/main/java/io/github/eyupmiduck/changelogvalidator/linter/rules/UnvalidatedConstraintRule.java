@@ -174,10 +174,6 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return List.copyOf(violations);
     }
 
-    private record Located(io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet changeSet,
-                           Path file, int line, int column) {
-    }
-
     @Override
     public String description() {
         return "a `NOT VALID` constraint that is never validated";
@@ -186,5 +182,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
     @Override
     public String help() {
         return "Add a later `VALIDATE CONSTRAINT` changeset.";
+    }
+
+    private record Located(io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet changeSet,
+                           Path file, int line, int column) {
     }
 }

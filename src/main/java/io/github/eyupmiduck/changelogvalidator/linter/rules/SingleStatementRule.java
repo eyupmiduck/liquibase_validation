@@ -22,9 +22,9 @@ import java.util.Set;
  * {@code DATABASECHANGELOG} in an invalid state. Forward and rollback SQL are
  * evaluated separately.
  *
- * <p>This rule assumes the run-in-transaction rule (bead ddl-w8y.11) has already
- * required {@code runInTransaction="false"}; it only fires on changesets that
- * already set it.
+ * <p>This rule assumes the run-in-transaction rule has already required
+ * {@code runInTransaction="false"}; it only fires on changesets that already
+ * set it.
  */
 public final class SingleStatementRule implements Rule {
 
