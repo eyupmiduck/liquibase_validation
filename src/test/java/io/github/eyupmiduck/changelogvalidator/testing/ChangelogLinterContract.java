@@ -131,7 +131,7 @@ public abstract class ChangelogLinterContract {
     @Test
     void changelogPassesTheVerifyGate() throws IOException {
         LinterConfig config = LinterConfigLoader.load(configFile());
-        Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), Rules.projectRules(), config);
+        Linter linter = new Linter(Rules.all(config), Rules.projectRules(), config);
 
         List<ChangeSet> changeSets = ChangelogModel.changesets(changelogRoot(), master());
         assertFalse(changeSets.isEmpty(), "the changelog graph should contain at least one changeset");
@@ -155,7 +155,7 @@ public abstract class ChangelogLinterContract {
      */
     @Test
     void transactionForbiddenStatementInATransactionalChangesetFails() throws IOException {
-        Linter linter = new Linter(Rules.all(null), Rules.projectRules(), LinterConfig.defaults());
+        Linter linter = new Linter(Rules.all((Integer) null), Rules.projectRules(), LinterConfig.defaults());
         List<Finding> findings = linter.lint(List.of(deliberatelyBadChangeSet()));
 
         assertEquals(List.of("changeset-run-in-transaction-required"),
@@ -207,7 +207,7 @@ public abstract class ChangelogLinterContract {
     }
 
     private List<Finding> deliberatelyBadFindings() throws IOException {
-        Linter linter = new Linter(Rules.all(null), Rules.projectRules(), LinterConfig.defaults());
+        Linter linter = new Linter(Rules.all((Integer) null), Rules.projectRules(), LinterConfig.defaults());
         return linter.lint(List.of(deliberatelyBadChangeSet()));
     }
 

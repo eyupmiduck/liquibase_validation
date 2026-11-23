@@ -2,6 +2,8 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Modifier;
@@ -9,11 +11,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -52,7 +56,7 @@ class RulesTest {
 
     @Test
     void registersEveryRuleImplementationInThePackage() throws Exception {
-        Set<String> registered = Rules.all(null).stream()
+        Set<String> registered = Rules.all((Integer) null).stream()
                 .map(Rule::id)
                 .collect(Collectors.toSet());
         assertFalse(registered.isEmpty());
@@ -100,5 +104,22 @@ class RulesTest {
 
         assertFalse(implementations == 0, "no project rule implementations found to check");
         assertTrue(missing.isEmpty(), () -> "project rules missing from Rules.projectRules(): " + missing);
+    }
+
+    @Test
+    void rejectsAMalformedDynamicSqlAllowList() {
+        LinterConfig notAList = config(Map.of("allowedRoutines", "app.foo"));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(notAList));
+
+        LinterConfig nonString = config(Map.of("allowedRoutines", List.of(1)));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(nonString));
+
+        LinterConfig blank = config(Map.of("allowedRoutines", List.of(" ")));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(blank));
+    }
+
+    private static LinterConfig config(Map<String, Object> options) {
+        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
+                Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null, options)));
     }
 }

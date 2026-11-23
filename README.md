@@ -112,6 +112,9 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-rollback-required`](#changeset-rollback-required)                     | warning  | opt-in  | a changeset with no `<rollback>`                                                                           |
 | [`changeset-rollback-parity`](#changeset-rollback-parity)                         | warning  | opt-in  | a rollback with far fewer statements than the forward SQL                                                  |
 | [`routine-dynamic-sql`](#routine-dynamic-sql)                                     | info     | opt-in  | a routine body that uses `EXECUTE`                                                                         |
+| [`routine-select-star`](#routine-select-star)                                     | error    | on      | `SELECT *`, `alias.*` or `table.*` in a routine body                                                       |
+| [`routine-transaction-control`](#routine-transaction-control)                     | error    | on      | `COMMIT` or `ROLLBACK` in a function body                                                                  |
+| [`routine-argument-naming`](#routine-argument-naming)                             | error    | on      | a routine parameter or local without its `i_`/`o_`/`io_`/`l_` prefix                                       |
 | [`block-raw-alter-table`](#block-raw-alter-table)                                 | error    | on      | a raw `ALTER TABLE` in changelog SQL                                                                       |
 | [`require-dbms-postgresql`](#require-dbms-postgresql)                             | error    | on      | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate                                      |
 | [`routine-run-on-change-required`](#routine-run-on-change-required)               | error    | on      | a routine changeset without `runOnChange="true"`                                                           |
@@ -243,11 +246,91 @@ linter does not imply the changeset is clean; it complements `plpgsql_check`
 (which analyses the static body, not the dynamic string). It only fires on
 routine bodies, is informational and opt-in.
 
+The rule extracts and re-lexes the dollar-quoted body, so an `EXECUTE` in a
+comment or a string literal is not reported. A known dynamic-SQL boundary can be
+allow-listed by routine name:
+
+```yaml
+rules:
+  routine-dynamic-sql:
+    options:
+      allowedRoutines:
+        - ddl_utils_lib.alter_table
+```
+
 ```xml
 <!-- Reported (info): the body's dynamic SQL is invisible to the token rules. -->
 <changeSet id="function-app.foo" author="me" runOnChange="true">
     <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
 </changeSet>
+```
+
+#### routine-select-star
+
+`SELECT *` (and `alias.*` or `table.*`) ties a routine's result and `INTO`
+assignment to the current column order, so a later table change silently changes
+what the routine returns. The rule reports a star in a body's select list,
+including a nested subquery, in forward and rollback SQL. It is an error and on
+by default.
+
+A star inside a function call is not a select-list star: `count(*)` is accepted,
+as is a star in a string or a comment.
+
+```sql
+-- Reported: the result changes when app.orders gains a column.
+SELECT * FROM app.orders;
+
+-- Accepted.
+SELECT o.id, o.total FROM app.orders o;
+```
+
+#### routine-transaction-control
+
+A PostgreSQL function runs inside the caller's transaction and cannot manage it;
+`COMMIT` or `ROLLBACK` in a function body fails at run time. The rule reports
+either statement in a function body, in forward and rollback SQL. A procedure may
+manage transactions, so procedure bodies are left alone. It is an error and on by
+default.
+
+```sql
+-- Reported in a function.
+CREATE FUNCTION app.f() RETURNS void AS $$
+BEGIN
+    COMMIT;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+#### routine-argument-naming
+
+A prefix makes a routine body readable without the declaration in view: an input
+parameter starts with `i_`, an output parameter with `o_`, an input/output
+parameter with `io_`, and a local variable with `l_`. The rule checks the
+declaration's named parameters and the locals a PL/pgSQL body declares in a
+`DECLARE` block or as a `FOR` loop target. It is an error and on by default.
+
+Unnamed parameters (`integer`, `double precision`) and SQL-language bodies have
+no names to check. A name in a comment or a string is ignored, and
+`SELECT ... FOR UPDATE` is not mistaken for a loop declaration.
+
+```sql
+-- Reported: the parameter and the local lack their prefixes.
+CREATE FUNCTION app.f(x integer) RETURNS void AS $$
+DECLARE
+    total integer;
+BEGIN
+    total := x;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Accepted.
+CREATE FUNCTION app.f(i_x integer) RETURNS void AS $$
+DECLARE
+    l_total integer;
+BEGIN
+    l_total := i_x;
+END;
+$$ LANGUAGE plpgsql;
 ```
 
 #### block-raw-alter-table
@@ -452,8 +535,10 @@ rules:
 | `include`   | opt-in rule ids to turn on                                                                                           |
 | `rules`     | per-rule `severity` override and free-form `options`                                                                 |
 
-Unknown keys, an unknown rule id, and a malformed value fail fast, so a typo
-cannot silently disable a rule.
+The only option today is `routine-dynamic-sql`'s `allowedRoutines` (a list of
+`schema.name` routines that may build SQL dynamically). Unknown keys, an unknown
+rule id, and a malformed value fail fast, so a typo cannot silently disable a
+rule.
 
 A finding can be accepted with a per-module `.liquibase-linter-whitelist.yml`
 (the CLI's `--whitelist`; a missing file accepts nothing):
