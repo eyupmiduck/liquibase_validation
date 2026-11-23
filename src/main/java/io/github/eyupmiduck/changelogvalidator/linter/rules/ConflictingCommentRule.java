@@ -30,6 +30,36 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
      */
     public static final String ID = "project-conflicting-comment";
 
+    private static int indexOf(List<Token> tokens, String keyword, int from) {
+        int depth = 0;
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword(keyword)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String key(List<Token> tokens, int is) {
+        if (tokens.size() < 3 || tokens.get(2).type() != TokenType.WORD) {
+            return null;
+        }
+        StringBuilder key = new StringBuilder(tokens.get(2).text());
+        for (int i = 3; i < is; i++) {
+            key.append(' ').append(tokens.get(i).text());
+        }
+        return key.toString();
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -80,36 +110,6 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
                     value.line(), value.column(), text));
         }
         return List.copyOf(violations);
-    }
-
-    private static int indexOf(List<Token> tokens, String keyword, int from) {
-        int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static String key(List<Token> tokens, int is) {
-        if (tokens.size() < 3 || tokens.get(2).type() != TokenType.WORD) {
-            return null;
-        }
-        StringBuilder key = new StringBuilder(tokens.get(2).text());
-        for (int i = 3; i < is; i++) {
-            key.append(' ').append(tokens.get(i).text());
-        }
-        return key.toString();
-    }
-
-    private static boolean isPunctuation(Token token, String text) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
     }
 
     private record Comment(ChangeSet changeSet, Path file, int line, int column, String text) {

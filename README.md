@@ -18,7 +18,9 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   directory (`functions`, `procedures`, or their `-rollback` variants) are
   exempt from the `NNN-` SQL naming rule. The separate
   `ChangelogLayoutCheck` joins a changeset id to its forward and rollback files
-  and, for a routine or trigger, to the declaration inside the file.
+  and, for a routine or trigger, to the declaration inside the file. The
+  directory-oriented `RoutineFileCheck` does the same for every file under the
+  routine and trigger trees, whether or not a changeset references it.
 - `io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck` — runs
   `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
@@ -34,6 +36,11 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   domain, composite/enum/range/base type and function/procedure (and, by
   default, trigger) has a non-blank comment. An explicit allow-list accepts a
   missing comment, and an entry that accepts nothing is stale.
+- `io.github.eyupmiduck.changelogvalidator.SchemaLayeringCheck` — checks that a
+  routine in a lower schema does not reference a higher schema, using the
+  routine bodies and signatures in the catalog. An explicit allow-list accepts a
+  known upward reference, and a schema with no routine, relation or type fails
+  the non-vacuity check.
 - `io.github.eyupmiduck.changelogvalidator.linter` — a changelog linter: a
   hand-written PostgreSQL tokenizer, Liquibase-compatible statement splitting, a
   changeset model, a rule engine with tty/JSON/SARIF reporters, and rules that
@@ -47,8 +54,8 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   database/changelog `Configuration` plus the managed and routine schemas,
   caller role and rollback directories), a classpath `ChangelogTestSupport`,
   `TestResources`, the `ChangelogAssertions`/`RoutineAssertions` helpers,
-  contract classes for the linter, changelog naming, orphaned SQL, tracking
-  tables and `plpgsql_check`,
+  contract classes for the linter, changelog naming, orphaned SQL, layout,
+  routine files, tracking tables, schema layering and `plpgsql_check`,
   and an `UpgradeTestBase` that
   applies the most recent published release's changelog and then the current one
   (see [Using the library](#using-the-library),
@@ -127,9 +134,9 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-file-name-matches-id`](#changeset-file-name-matches-id)               | error    | on      | a numbered changeset whose SQL or rollback path does not match its id                                      |
 | [`changeset-id-unique`](#changeset-id-unique)                                     | error    | on      | a duplicate changeset id/author/file identity (whole-graph rule)                                           |
 | [`project-duplicate-object`](#project-duplicate-object)                           | warning  | opt-in  | a table, index, column or constraint name declared twice                                                   |
-| [`project-foreign-key-target`](#project-foreign-key-target)                       | warning  | opt-in  | a foreign key whose referenced table is never created                                                     |
-| [`project-unvalidated-constraint`](#project-unvalidated-constraint)               | warning  | opt-in  | a `NOT VALID` constraint that is never validated                                                          |
-| [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                         |
+| [`project-foreign-key-target`](#project-foreign-key-target)                       | warning  | opt-in  | a foreign key whose referenced table is never created                                                      |
+| [`project-unvalidated-constraint`](#project-unvalidated-constraint)               | warning  | opt-in  | a `NOT VALID` constraint that is never validated                                                           |
+| [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                          |
 | [`project-conflicting-comment`](#project-conflicting-comment)                     | warning  | opt-in  | an object commented twice, with the same or different text                                                 |
 | [`project-unregistered-routine`](#project-unregistered-routine)                   | warning  | opt-in  | a routine SQL file no changeset references                                                                 |
 
@@ -710,9 +717,10 @@ one setup, plus the generic lock and catalog helpers), `TestResources`, the
 `ChangelogAssertions`/`RoutineAssertions` helpers (including routine/rollback
 parity), the previous-release `UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
 `ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
-`TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
-`CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
-`RoutineDocumentationContract`, `PrivilegeContract`, `RoutineSecurityContract`,
+`RoutineFileContract`, `TrackingTablesContract`, `PlpgsqlCheckContract`,
+`RollbackSignatureContract`, `CommentContract`, `AuditColumnsContract`,
+`RoutineSignatureContract`, `RoutineDocumentationContract`, `PrivilegeContract`,
+`RoutineSecurityContract`, `SchemaLayeringContract`,
 `ChangelogRoundTripContract`, `ChangelogReapplyContract`, `UpgradeContract`)
 that a project subclasses to inherit the tests themselves, so a project that
 builds a Liquibase changelog and PostgreSQL routines can share one implementation
@@ -786,6 +794,42 @@ The contract returns its `ProjectProfile`, so the changelog locations come from
 the same values as the other contracts. The rule complements
 `ChangelogNamingContract`: naming checks the shape of an id and a file name,
 while layout checks that they agree with each other and with the SQL declaration.
+
+### Routine and trigger files
+
+`RoutineFileContract` walks the `functions/`, `procedures/` and `triggers/`
+trees directly, rather than following the changeset graph:
+
+- `functions/<schema>/<name>.sql` declares exactly one function
+  `<schema>.<name>`;
+- `procedures/<schema>/<name>.sql` declares exactly one procedure
+  `<schema>.<name>`;
+- `triggers/<schema>/<name>.sql` declares exactly one trigger `<name>` on a
+  table in `<schema>`;
+- `<kind>-rollback/<schema>/<name>-rollback.sql` drops that object; a routine
+  rollback may drop several overloads, but every drop must name the same object.
+
+A `DO $$ ... $$` wrapper around a `DROP TRIGGER` is understood, and non-SQL files
+such as a directory README are ignored. The contract reads the changes directory
+from the `ProjectProfile`; override `changesRoot()` for a one-off layout. It
+complements `ChangelogLayoutContract`: layout joins a changeset id to its files,
+while this one also catches a file that no changeset references.
+
+### Schema layering
+
+`SchemaLayeringContract` checks that a routine in a lower schema does not
+reference a higher schema. `schemaLayers()` defaults to the profile's managed
+schemas, ordered highest to lowest (for example `dml_utils`, `dml_utils_lib`,
+`dml_utils_data`); override it when the managed schemas are not in dependency
+order. Add a known exception to `allowedReferences()`; an entry that matches no
+real reference is stale and fails.
+
+The check reads routine bodies and signatures from the catalog and looks for
+`schema.object` references. A name in a comment or a string is not a reference,
+and dynamic SQL inside a dollar-quoted body is opaque, so the check sees
+statically written qualified references only. Extension-owned routines are
+excluded. The contract is non-vacuous: every configured schema must contain at
+least one routine, relation or type, so a misspelled schema cannot pass.
 
 ### Catalog comments
 
