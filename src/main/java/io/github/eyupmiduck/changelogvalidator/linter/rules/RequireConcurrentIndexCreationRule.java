@@ -42,21 +42,7 @@ public final class RequireConcurrentIndexCreationRule implements Rule {
      * table match.
      */
     private static boolean isCreated(Set<String> created, String table) {
-        if (created.contains(table)) {
-            return true;
-        }
-        String simple = simpleName(table);
-        for (String candidate : created) {
-            if (simpleName(candidate).equals(simple)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static String simpleName(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot < 0 ? name : name.substring(dot + 1);
+        return RuleSupport.containsTable(created, table);
     }
 
     @Override

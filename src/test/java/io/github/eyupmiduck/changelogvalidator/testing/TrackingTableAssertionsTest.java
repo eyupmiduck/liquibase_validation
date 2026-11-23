@@ -21,7 +21,8 @@ class TrackingTableAssertionsTest extends PostgresTestBase {
     void defaultTrackingTablesAreIsolated() throws Exception {
         try (Connection owner = openOwnerConnection()) {
             TrackingTableAssertions.assertTrackingTablesAreIsolated(owner, LIQUIBASE_SCHEMA,
-                    databaseChangeLogTableName(), databaseChangeLogLockTableName(), List.of(PUBLIC_SCHEMA));
+                    configuration().databaseChangeLogTable(), configuration().databaseChangeLogLockTable(),
+                    List.of(PUBLIC_SCHEMA));
         }
     }
 
@@ -52,7 +53,7 @@ class TrackingTableAssertionsTest extends PostgresTestBase {
     void missingTrackingTableIsReported() throws Exception {
         try (Connection owner = openOwnerConnection()) {
             assertThrows(AssertionError.class, () -> TrackingTableAssertions.assertTrackingTablesAreIsolated(
-                    owner, LIQUIBASE_SCHEMA, "no_such_table", databaseChangeLogLockTableName(),
+                    owner, LIQUIBASE_SCHEMA, "no_such_table", configuration().databaseChangeLogLockTable(),
                     List.of(PUBLIC_SCHEMA)));
         }
     }

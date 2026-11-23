@@ -18,6 +18,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.sql.*;
+import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -34,12 +35,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * connects to it as the test role. The private database is dropped after the
  * class finishes.
  *
- * <p>A subclass supplies the project-specific configuration by overriding
- * {@link #configuration()} (preferred, especially when the project also has an
- * {@link UpgradeTestBase} subclass) or the individual {@code protected}
- * accessors: the role/database names, the changelog resource, the optional
- * fixture changelog, the PostgreSQL image default and any extensions the
- * template database needs. The shared helpers assume the test role is a member
+ * <p>A subclass supplies the project-specific values by overriding
+ * {@link #projectProfile()} with one constant: it carries the
+ * database/role/image/changelog {@link Configuration configuration}, the
+ * managed and routine schemas, the caller role and the rollback directories.
+ * {@link #configuration()} and the schema/role convenience accessors derive
+ * from that profile. A one-off test may still override {@link #configuration()}
+ * or an individual accessor. The shared helpers assume the test role is a member
  * of the caller role and has {@code CREATE} on the public schema, which the init
  * script must arrange.
  *
@@ -156,19 +158,65 @@ public abstract class PostgresTestBase {
     }
 
     /**
-     * The container and changelog configuration. The default derives it from the
-     * accessors below, so a subclass may override either this method once or the
-     * individual accessors; a consumer with both a regular base and an
-     * {@link UpgradeTestBase} subclass overrides this method so the two share
-     * one value.
+     * Wraps a connection so {@link Connection#close()} does nothing. Used where a
+     * library (Liquibase) would otherwise close a connection the caller still
+     * owns.
+     *
+     * @param delegate the real connection
+     * @return a view of the connection whose {@code close()} is a no-op
+     */
+    protected static Connection closeIgnoring(Connection delegate) {
+        return (Connection) java.lang.reflect.Proxy.newProxyInstance(
+                Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    if ("close".equals(method.getName())) {
+                        return null;
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException error) {
+                        throw error.getCause();
+                    }
+                });
+    }
+
+    /**
+     * The project values shared by this base and every contract: the container
+     * and changelog configuration, the managed, application and routine schemas,
+     * the caller role, the rollback directories and the changelog resource
+     * locations.
+     *
+     * <p>Override this once with a constant. A consumer's regular test base and
+     * every contract subclass then read the same values, so they cannot drift.
+     *
+     * @return the project profile
+     */
+    protected ProjectProfile projectProfile() {
+        return ProjectProfile.DEFAULT;
+    }
+
+    /**
+     * The container and changelog configuration, derived from
+     * {@link #projectProfile()} so the profile is the single source of truth.
      *
      * @return the configuration
      */
     protected Configuration configuration() {
-        return new Configuration(
-                databaseName(), ownerUser(), ownerPassword(), testUser(), testPassword(),
-                defaultPostgresImage(), masterResource(), databaseChangeLogTableName(),
-                databaseChangeLogLockTableName(), fixturesResource(), null);
+        return projectProfile().configuration();
+    }
+
+    /**
+     * The Liquibase tracking settings, derived from the profile's configuration
+     * so a contract and the regular test base cannot drift.
+     *
+     * @return the tracking settings
+     */
+    protected LiquibaseUpgrade.TrackingSettings trackingSettings() {
+        Configuration configuration = configuration();
+        return new LiquibaseUpgrade.TrackingSettings(
+                LIQUIBASE_SCHEMA, configuration.databaseChangeLogTable(),
+                configuration.databaseChangeLogLockTable());
     }
 
     /**
@@ -181,97 +229,57 @@ public abstract class PostgresTestBase {
     }
 
     /**
-     * The default PostgreSQL image when the {@code postgres.image} system
-     * property is not set. Override to point at the project's custom image,
-     * which must bake in the roles created by the init script.
+     * The application schemas the changelog manages.
      *
-     * @return the default image reference
+     * @return the managed schemas
      */
-    protected String defaultPostgresImage() {
-        return DEFAULT_POSTGRES_IMAGE;
+    protected Collection<String> managedSchemas() {
+        return projectProfile().managedSchemas();
     }
 
     /**
-     * The database name the container is created with and tests connect to.
+     * The schemas that must not hold Liquibase's generic tracking-table names.
      *
-     * @return the database name
+     * @return the application schemas
      */
-    protected String databaseName() {
-        return "test";
+    protected Collection<String> applicationSchemas() {
+        return projectProfile().applicationSchemas();
     }
 
     /**
-     * The owner role, which runs Liquibase and owns the schema objects.
+     * The schemas whose functions and procedures the routine contracts inspect.
      *
-     * @return the owner role name
+     * @return the routine schemas
      */
-    protected String ownerUser() {
-        return "test";
+    protected Collection<String> routineSchemas() {
+        return projectProfile().routineSchemas();
     }
 
     /**
-     * The owner role's password.
+     * The application role the grant changeset targets, or {@code null}.
      *
-     * @return the owner password
+     * @return the caller role, or {@code null}
      */
-    protected String ownerPassword() {
-        return "test";
+    protected String callerRole() {
+        return projectProfile().callerRole();
     }
 
     /**
-     * The test role, which acts as an application caller.
+     * The classpath directories holding routine rollback SQL.
      *
-     * @return the test role name
+     * @return the rollback directories
      */
-    protected String testUser() {
-        return "test";
+    protected Collection<String> routineRollbackDirectories() {
+        return projectProfile().routineRollbackDirectories();
     }
 
     /**
-     * The test role's password.
+     * The classpath directories holding trigger rollback SQL.
      *
-     * @return the test password
+     * @return the rollback directories
      */
-    protected String testPassword() {
-        return "test";
-    }
-
-    /**
-     * The master changelog resource path, relative to the classpath root.
-     *
-     * @return the master changelog resource
-     */
-    protected String masterResource() {
-        return ChangelogTestSupport.MASTER_RESOURCE;
-    }
-
-    /**
-     * The optional fixture changelog resource applied after the production
-     * changelog, or {@code null} when there is none. Override to load test-only
-     * fixture tables.
-     *
-     * @return the fixture changelog resource, or {@code null}
-     */
-    protected String fixturesResource() {
-        return null;
-    }
-
-    /**
-     * Returns the Liquibase tracking table name for this project.
-     *
-     * @return the change-log table name
-     */
-    protected String databaseChangeLogTableName() {
-        return "databasechangelog";
-    }
-
-    /**
-     * Returns the Liquibase tracking lock table name for this project.
-     *
-     * @return the change-log lock table name
-     */
-    protected String databaseChangeLogLockTableName() {
-        return "databasechangeloglock";
+    protected Collection<String> triggerRollbackDirectories() {
+        return projectProfile().triggerRollbackDirectories();
     }
 
     /**
@@ -494,6 +502,40 @@ public abstract class PostgresTestBase {
     protected void dropDatabase(String database) throws SQLException {
         execute(adminConnection(configuration().databaseName()),
                 "DROP DATABASE IF EXISTS " + quoteIdentifier(database) + " WITH (FORCE)");
+    }
+
+    /**
+     * Prepares a freshly-created scratch database for a Liquibase run as the
+     * owner: installs the project's extensions, grants the owner and test roles
+     * the privileges a real deployment has, and creates the tracking schema. The
+     * shared template and the upgrade/round-trip scratch databases all use this,
+     * so their setup cannot drift.
+     *
+     * @param database        the scratch database
+     * @param liquibaseSchema the schema to hold the tracking tables
+     * @throws SQLException if the preparation fails
+     */
+    protected void prepareScratchDatabase(String database, String liquibaseSchema) throws SQLException {
+        Configuration configuration = configuration();
+        // The scratch database is fresh, so the project's extension hook (for
+        // example plpgsql_check or pg_background, which the changelog's routines
+        // reference) must run here too.
+        installExtensions(database);
+        // The owner creates the changelog's schemas and objects, so grant it what
+        // a real deployment would have (the init script does this for the
+        // project's main database only).
+        try (Connection admin = adminConnection(configuration.databaseName());
+             Statement statement = admin.createStatement()) {
+            statement.execute("GRANT CREATE ON DATABASE " + quoteIdentifier(database)
+                    + " TO " + quoteIdentifier(configuration.ownerUser()));
+        }
+        try (Connection admin = adminConnection(database);
+             Statement statement = admin.createStatement()) {
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.ownerUser()));
+            statement.execute("GRANT CREATE ON SCHEMA public TO " + quoteIdentifier(configuration.testUser()));
+            statement.execute("CREATE SCHEMA IF NOT EXISTS " + quoteIdentifier(liquibaseSchema)
+                    + " AUTHORIZATION " + quoteIdentifier(configuration.ownerUser()));
+        }
     }
 
     /**
@@ -1139,10 +1181,11 @@ public abstract class PostgresTestBase {
      * role names, the PostgreSQL image, the changelog resources and the
      * Liquibase tracking-table names.
      *
-     * <p>A consumer overrides {@link #configuration()} once with a constant of
-     * this type instead of overriding every accessor. Its regular test base and
-     * its {@link UpgradeTestBase} subclass then share one value, so the two
-     * cannot drift.
+     * <p>A consumer normally puts one constant of this type in its
+     * {@link ProjectProfile} and returns that profile from
+     * {@link #projectProfile()}; the regular test base and every contract then
+     * share the value. A one-off test may still override
+     * {@link #configuration()}.
      *
      * @param databaseName               the database the container is created
      *                                   with and the tests connect to

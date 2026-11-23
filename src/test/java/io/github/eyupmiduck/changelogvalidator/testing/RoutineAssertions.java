@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.testing;
 
 import io.github.eyupmiduck.changelogvalidator.AuditColumnsCheck;
+import io.github.eyupmiduck.changelogvalidator.CatalogCommentsCheck;
 import io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck;
 
 import java.io.IOException;
@@ -80,6 +81,8 @@ public final class RoutineAssertions {
     /**
      * Asserts that every base table in {@code schemas} follows the audit-column
      * convention, so {@link AuditColumnsCheck#findViolations} reports nothing.
+     * The assertion is non-vacuous: a schema set with no base table fails rather
+     * than passing.
      *
      * @param connection an open owner connection to the migrated database
      * @param schemas    the schemas whose tables are checked
@@ -87,6 +90,9 @@ public final class RoutineAssertions {
      */
     public static void assertAuditColumnsFollowConvention(Connection connection, Collection<String> schemas)
             throws SQLException {
+        assertFalse(schemas.isEmpty(), "at least one schema is required");
+        assertTrue(tableCount(connection, schemas) > 0,
+                () -> "no base tables found in " + schemas);
         List<AuditColumnsCheck.Violation> violations = AuditColumnsCheck.findViolations(connection, schemas);
         assertEquals(List.of(), violations.stream().map(AuditColumnsCheck.Violation::describe).toList(),
                 () -> "schemas " + schemas + " must follow the audit-column convention");
@@ -95,7 +101,8 @@ public final class RoutineAssertions {
     /**
      * Probes each named table's audit columns on a real row and asserts the
      * shared trigger refreshed {@code updated_at} and preserved
-     * {@code created_at}. The probe rolls its update back.
+     * {@code created_at}. The probe rolls its update back. The assertion is
+     * non-vacuous: an empty table list fails, and a table with no row fails.
      *
      * @param connection an open owner connection to the migrated database
      * @param schema     the table schema
@@ -104,11 +111,59 @@ public final class RoutineAssertions {
      */
     public static void assertUpdateTriggerRefreshesAuditColumns(Connection connection, String schema,
                                                                 Collection<String> tables) throws SQLException {
+        assertFalse(tables.isEmpty(), "at least one probe table is required");
         for (String table : tables) {
             AuditColumnsCheck.Probe probe = AuditColumnsCheck.probeUpdate(connection, schema, table)
                     .orElseThrow(() -> new AssertionError("no row to probe in " + schema + "." + table));
             assertTrue(probe.passed(), probe::describe);
         }
+    }
+
+    /**
+     * Probes the named tables grouped by schema. The assertion is non-vacuous:
+     * an empty map fails, and an empty table list for a schema fails.
+     *
+     * @param connection     an open owner connection to the migrated database
+     * @param tablesBySchema the schema-to-tables map
+     * @throws SQLException if the probe cannot run
+     */
+    public static void assertUpdateTriggerRefreshesAuditColumns(Connection connection,
+                                                                Map<String, Collection<String>> tablesBySchema)
+            throws SQLException {
+        assertFalse(tablesBySchema.isEmpty(), "at least one schema with probe tables is required");
+        for (Map.Entry<String, Collection<String>> entry : tablesBySchema.entrySet()) {
+            assertUpdateTriggerRefreshesAuditColumns(connection, entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
+     * Asserts that every inspected object in {@code schemas} has a non-blank
+     * comment, using the catalog-comment check. The assertion is non-vacuous: a
+     * configuration that inspects no object fails rather than passing.
+     *
+     * @param connection      an open connection to the migrated database
+     * @param schemas         the schemas whose objects are checked
+     * @param allowed         the accepted missing-comment exceptions
+     * @param includeTriggers whether trigger comments are required
+     * @throws SQLException if the catalog cannot be read
+     */
+    public static void assertCatalogObjectsHaveComments(Connection connection, Collection<String> schemas,
+                                                        Collection<CatalogCommentsCheck.AllowedObject> allowed,
+                                                        boolean includeTriggers) throws SQLException {
+        CatalogCommentsCheck.Report report = CatalogCommentsCheck.check(
+                connection, schemas, allowed, new CatalogCommentsCheck.Options(includeTriggers));
+        assertTrue(report.checkedObjects() > 0,
+                () -> "no objects were inspected; check the configured schemas: " + schemas);
+        assertEquals(List.of(), report.unexpected().stream()
+                        .map(CatalogCommentsCheck.Violation::describe).toList(),
+                () -> "objects without comments:\n" + report.unexpected().stream()
+                        .map(CatalogCommentsCheck.Violation::describe)
+                        .collect(Collectors.joining("\n")));
+        assertEquals(List.of(), report.stale().stream()
+                        .map(CatalogCommentsCheck.AllowedObject::describe).toList(),
+                () -> "allow-list entries that accepted no violation:\n" + report.stale().stream()
+                        .map(CatalogCommentsCheck.AllowedObject::describe)
+                        .collect(Collectors.joining("\n")));
     }
 
     /**
@@ -241,6 +296,29 @@ public final class RoutineAssertions {
                     fail("rollback DROP does not resolve: " + signature);
                 }
                 return oid;
+            }
+        }
+    }
+
+    /**
+     * Counts the base and partitioned tables (excluding partitions) in
+     * {@code schemas}, so a non-vacuity assertion can fail when a misconfigured
+     * schema contains nothing to check.
+     */
+    private static int tableCount(Connection connection, Collection<String> schemas) throws SQLException {
+        String sql = """
+                SELECT count(*)::int
+                FROM pg_catalog.pg_class AS c
+                JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+                WHERE n.nspname IN (%s)
+                  AND c.relkind IN ('r', 'p')
+                  AND NOT c.relispartition
+                """.formatted(placeholders(schemas.size()));
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            bind(statement, schemas);
+            try (ResultSet rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
             }
         }
     }

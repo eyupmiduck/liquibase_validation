@@ -63,6 +63,18 @@ public final class TokenWords {
     }
 
     /**
+     * Returns whether the token at {@code index} is {@code keyword}.
+     *
+     * @param words   the tokens
+     * @param index   the index; an out-of-range index is {@code false}
+     * @param keyword the keyword
+     * @return {@code true} when the token at the index matches
+     */
+    public static boolean at(List<Token> words, int index, String keyword) {
+        return index >= 0 && index < words.size() && words.get(index).matchesKeyword(keyword);
+    }
+
+    /**
      * Returns whether {@code words} contain the keyword anywhere.
      *
      * @param words   the word tokens

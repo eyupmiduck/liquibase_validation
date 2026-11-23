@@ -13,6 +13,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenCl
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Shared helpers for the rules: token selection within a statement, qualified
@@ -101,6 +102,33 @@ final class RuleSupport {
      */
     static boolean isDot(Token token) {
         return token.type() == TokenType.PUNCTUATION && token.text().equals(".");
+    }
+
+    /**
+     * Returns whether {@code table} is one of {@code tables}, comparing the final
+     * name segment so a schema-qualified and an unqualified reference to the same
+     * table match.
+     *
+     * @param tables the created table names
+     * @param table  the table to look for
+     * @return {@code true} when the table is present
+     */
+    static boolean containsTable(Set<String> tables, String table) {
+        if (tables.contains(table)) {
+            return true;
+        }
+        String simple = simpleName(table);
+        for (String candidate : tables) {
+            if (simpleName(candidate).equals(simple)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String simpleName(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(dot + 1);
     }
 
     /**

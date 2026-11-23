@@ -10,8 +10,21 @@
  * schema prefix, owner/test roles and changelog resource.
  *
  * <p>The {@code *Contract} classes hold the tests themselves: a consumer
- * subclasses one and supplies only its project values, so the checks stay
- * identical across projects. {@code TestResources} gives those contracts and the
- * consumer's own tests classpath access to files and SQL directories.
+ * subclasses one and returns its one {@link
+ * io.github.eyupmiduck.changelogvalidator.testing.ProjectProfile} from
+ * {@code projectProfile()}, so the checks stay identical across projects and the
+ * schema, role and changelog values cannot drift between test classes.
+ * {@code ChangelogLayoutContract} additionally joins a changeset id to its file
+ * names and, for a routine or trigger, to the declaration inside the file.
+ * {@code CommentContract} checks the catalog-comment convention over the
+ * profile's managed schemas, and {@code AuditColumnsContract} checks the
+ * audit-column convention plus an optional behavioral trigger probe.
+ * {@code RoutineSignatureContract} rejects unexpected overloads,
+ * {@code RoutineDocumentationContract} checks the routine README headings,
+ * {@code PrivilegeContract} checks the caller grants and default-privilege
+ * hardening, and {@code RoutineSecurityContract} checks definers, search paths
+ * and procedure kinds.
+ * {@code TestResources} gives those contracts and the consumer's own tests
+ * classpath access to files and SQL directories.
  */
 package io.github.eyupmiduck.changelogvalidator.testing;

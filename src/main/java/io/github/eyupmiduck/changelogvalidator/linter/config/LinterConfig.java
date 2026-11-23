@@ -62,13 +62,24 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * @return {@code true} when the rule is enabled
      */
     public boolean isEnabled(Rule rule) {
-        if (exclude.contains(rule.id())) {
+        return isEnabled(rule.id(), rule.enabledByDefault());
+    }
+
+    /**
+     * Returns whether the rule with {@code id} runs under this configuration.
+     *
+     * @param id               the rule id
+     * @param enabledByDefault whether the rule runs without an explicit include
+     * @return {@code true} when the rule is enabled
+     */
+    public boolean isEnabled(String id, boolean enabledByDefault) {
+        if (exclude.contains(id)) {
             return false;
         }
-        if (include.contains(rule.id())) {
+        if (include.contains(id)) {
             return true;
         }
-        return rule.enabledByDefault();
+        return enabledByDefault;
     }
 
     /**
@@ -78,8 +89,19 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * @return the configured severity, or the rule's default
      */
     public Severity severityFor(Rule rule) {
-        RuleSettings settings = rules.get(rule.id());
-        return settings != null && settings.severity() != null ? settings.severity() : rule.defaultSeverity();
+        return severityFor(rule.id(), rule.defaultSeverity());
+    }
+
+    /**
+     * Returns the effective severity for the rule with {@code id}.
+     *
+     * @param id              the rule id
+     * @param defaultSeverity the rule's default severity
+     * @return the configured severity, or the default
+     */
+    public Severity severityFor(String id, Severity defaultSeverity) {
+        RuleSettings settings = rules.get(id);
+        return settings != null && settings.severity() != null ? settings.severity() : defaultSeverity;
     }
 
     /**

@@ -80,6 +80,20 @@ Negative / risks:
 - Possible drift from PostgreSQL's own lexer over time; keep a version note and
   a reference corpus of tricky inputs.
 
+## Update (1.21.0): routine-body extraction
+
+A `CREATE FUNCTION`/`CREATE PROCEDURE` body is a single dollar-quoted token, so
+the body rules could not inspect its statements. `RoutineBodies` now finds the
+`AS $$...$$` (or `AS $tag$...$tag$`) token and re-lexes its content with the
+original offset base, so each body token keeps the absolute file offset, line and
+column of the original declaration. This reuses the same lexer; there is still no
+AST, and the rules match body token sequences. Single-quoted SQL bodies are not
+extracted.
+
+The lexer gained an overload that starts at a known offset, line and column. The
+existing single-argument `tokenize` keeps its behaviour, so the change is
+additive.
+
 ## Revisit triggers
 
 - A rule needs identifier resolution, type/expression validation, or another

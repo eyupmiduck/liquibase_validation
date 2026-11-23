@@ -3,43 +3,34 @@ package io.github.eyupmiduck.changelogvalidator.testing;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Contract for a consuming project's routine/rollback signature test: the
  * rollback files under the given classpath directories drop exactly the
  * routines in the given schemas.
  *
- * <p>A consumer extends this class, supplies its
- * {@link #configuration() configuration} (the contract, not its own test base,
- * is the direct superclass), the routine schemas and the rollback directories
- * to read.
+ * <p>A consumer extends this class and returns its one
+ * {@link ProjectProfile} from {@link #projectProfile()}; the configuration,
+ * routine schemas and rollback directories come from that profile. Override
+ * {@link #rollbackDirectories()} for a one-off directory list.
  */
 public abstract class RollbackSignatureContract extends PostgresTestBase {
 
     /**
-     * The consumer's container and changelog configuration. It must be supplied
-     * because the contract, not the consumer's own test base, is the direct
-     * superclass of the consumer's test class.
-     *
-     * @return the configuration
-     */
-    @Override
-    protected abstract Configuration configuration();
-
-    /**
-     * The schemas whose routines are checked.
-     *
-     * @return the routine schemas
-     */
-    protected abstract Collection<String> routineSchemas();
-
-    /**
-     * The classpath directories holding the rollback SQL files.
+     * The classpath directories holding the rollback SQL files: the profile's
+     * routine and trigger rollback directories, in that order.
      *
      * @return the rollback directories
      */
-    protected abstract Collection<String> rollbackDirectories();
+    protected Collection<String> rollbackDirectories() {
+        List<String> directories = new ArrayList<>();
+        directories.addAll(projectProfile().routineRollbackDirectories());
+        directories.addAll(projectProfile().triggerRollbackDirectories());
+        return List.copyOf(directories);
+    }
 
     /**
      * The rollback DROP signatures cover exactly the routines: no routine lacks

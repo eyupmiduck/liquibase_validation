@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <!-- runAlways re-runs on every update, and CREATE TABLE is not repeatable, so
+         a second application must fail rather than silently pass. -->
+    <changeSet id="001-run-always" author="lee.horner" dbms="postgresql" runAlways="true">
+        <sql>CREATE TABLE rehearsal_always
+             (
+                 id integer
+             );</sql>
+    </changeSet>
+</databaseChangeLog>

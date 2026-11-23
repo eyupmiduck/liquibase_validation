@@ -209,6 +209,178 @@ published release; the library's own tests cover `UpgradeTestBase` and the
 rollback machinery. `RollbackSignatureContract` has a library test that creates
 a probe routine and points the contract at a rollback fixture.
 
+## Update (1.13.0): ProjectProfile
+
+The per-contract `configuration()` plus separate schema, caller and directory
+hooks still repeated the project's values across test classes. Add
+`ProjectProfile`, a value object carrying the database/changelog `Configuration`,
+the managed, application and routine schemas, the caller role, the routine and
+trigger rollback directories, and the changelog and `plpgsql_check` resource
+locations.
+
+`PostgresTestBase.projectProfile()` is the single source of truth;
+`configuration()` and the schema/role accessors derive from it. The contracts
+read the profile, so a consumer normally overrides `projectProfile()` once per
+test class and supplies no other schema or directory hooks. The old hooks remain
+overridable for a one-off case, and `Configuration` stays the database/changelog
+component of the profile. The builder fills the conventional changelog locations
+and derives the application schemas from `public` plus the managed schemas, so a
+consumer states only what differs.
+
+## Update (1.14.0): changelog layout contract
+
+Add `ChangelogLayoutContract` (and the public `ChangelogLayoutCheck`) for a
+living-definition changelog. It joins a changeset id to its forward and rollback
+files, and for a routine or trigger to the declaration inside the file. The
+numeric id maps to `sql_changes/<id>.sql` and `rollback/<id>-rollback.sql`; a
+`function-`/`procedure-`/`trigger-<schema>.<name>` id maps to the matching
+per-object directory and its `-rollback` directory. A routine file must declare
+exactly the qualified name the path names, and a trigger must be on a table in
+the path's schema. A file-based changeset needs a rollback file by default, and
+no SQL file may be referenced twice.
+
+The contract reads `ProjectProfile`, so the changelog locations and the
+rollback requirement are project values rather than per-contract hooks. It
+complements `ChangelogNamingContract`: naming checks the shape of an id and a
+file name, while layout checks that they agree with each other and with the SQL
+declaration.
+
+## Update (1.15.0): catalog comment contract
+
+Add `CatalogCommentsCheck` and `CommentContract` for the project-wide comment
+convention. The check inspects schemas, tables, table columns, domains,
+composite/enum/range/base types, functions and procedures (including trigger
+functions), and optionally triggers. It excludes array types, relation row types,
+extension-owned routines and PostgreSQL's support routines for a type, so a
+range or composite type does not require a comment on its generated helpers.
+
+A `CommentContract` reads the profile's managed schemas and requires trigger
+comments by default. An explicit `AllowedObject` allow-list accepts a missing
+comment; an entry that matches no missing comment is stale and fails, and the
+contract fails when no object was inspected. `RoutineAssertions` exposes the
+same assertion for a consumer that does not use the contract.
+
+## Update (1.16.0): audit-column contract
+
+Add `AuditColumnsContract` over `AuditColumnsCheck`. The catalog test checks
+every base and partitioned table (not a partition) in the profile's managed
+schemas. The behavioral probe is optional: override `probeTables()` with a
+schema-to-table map and the contract verifies on a real row that the trigger
+refreshes `updated_at` and preserves `created_at`, rolling the update back. The
+consumer seeds the probe row in its own fixture.
+
+Both assertions are non-vacuous: a schema set with no table and an empty probe
+list fail, and a probe table with no row fails. `RoutineAssertions` exposes the
+same non-vacuous assertions for a consumer that does not use the contract.
+
+## Update (1.17.0): routine signature and documentation contracts
+
+Add `RoutineSignatureContract` and `RoutineDocumentationContract`, both reading
+`RoutineCatalog` so they share one definition of a routine and one catalog query.
+
+`RoutineSignatureContract` promotes the ddl_utils ad-hoc test: one signature per
+routine unless allowed, a stale allow-list entry fails, and an empty routine set
+fails non-vacuously.
+
+`RoutineDocumentationContract` checks that every routine has a README heading and
+that no heading names a removed routine. The default format is a Markdown
+heading `### \`schema.name (i_arg, ...)\``; optional-argument brackets are
+stripped and the argument names/arity are compared to the catalog. An abbreviated
+heading containing `...` is checked by name only. A consumer can override
+`documentedRoutines (resource, content)` for another format and
+`readmeResources ()` for different files. The default resources are the functions
+and procedures READMEs under the profile's changelog root.
+
+The two contracts are separate so a project can adopt the signature check while
+its routine documentation is still being completed.
+
+## Update (1.18.0): privilege contract
+
+Add `PrivilegeContract` over `GrantAssertions`. It checks that no routine is
+executable by `PUBLIC`, that the caller can execute every callable routine, that
+each configured `applicationTypes()` entry is not usable by `PUBLIC` and has an
+explicit caller `USAGE` grant, that a routine and an enum type created after the
+default-privilege changeset do not regain `PUBLIC` access, and that the grant
+rollback mirrors the forward grants. The routine and type checks are
+non-vacuous; the default-privilege probe is skipped when a project does not
+configure default privileges.
+
+`GrantAssertions.assertGrantRollbackMirrors` now also rejects a stale rollback
+entry (a revoke or `PUBLIC` restore with no matching forward grant), not only a
+missing one. The test fixtures include a stale-rollback negative case.
+
+`applicationTypes()` is the explicit type/domain list so a project can include
+table row types and domains, not just the standalone `pg_type` rows.
+
+## Update (1.19.0): routine-security contract
+
+Add `RoutineSecurityContract` over the shared `RoutineCatalog`, which now also
+exposes `prosecdef`, the pinned `search_path` from `proconfig`, and the
+function/procedure kind. The contract checks that only allow-listed routines are
+`SECURITY DEFINER` (with stale allow-list entries rejected), that every definer
+and every configured catalog-inspecting routine pins a `search_path` containing
+`pg_catalog`, that no routine pins `$user`, `DEFAULT` or `public`, and that each
+declared procedure really is a procedure. It is non-vacuous.
+
+This replaces the dml_utils `SearchPathPinTest` shape and gives both consumers
+one place for the definer allow-list, the catalog routine list and the expected
+procedures.
+
+## Update (1.20.0): changelog hygiene rules
+
+Add seven linter rules for the living-definition conventions:
+
+- `routine-run-on-change-required` (error, on): a routine changeset without
+  `runOnChange`.
+- `trigger-create-or-replace` (error, on for PostgreSQL 14+): a plain
+  `CREATE TRIGGER`.
+- `require-not-valid-constraint` (warning, opt-in): a validating `CHECK` or
+  `FOREIGN KEY` on an existing table, with a same-changeset `CREATE TABLE`
+  exemption.
+- `require-if-exists-on-drop` (warning, opt-in): `DROP TABLE`/`FUNCTION`/
+  `PROCEDURE`/`TRIGGER`/`INDEX` without `IF EXISTS`.
+- `changeset-author-required` (error, on): a blank changeset author.
+- `changeset-file-name-matches-id` (error, on): a numbered changeset whose
+  forward or rollback path does not match its id.
+- `changeset-id-unique` (error, on): a duplicate id/author/file identity.
+
+`changeset-id-unique` needs the whole graph, so add a `ProjectRule` interface and
+a `Linter` constructor that runs project rules after the per-changeset rules.
+Project rules use the same id, severity, include/exclude and whitelist model; the
+id-based `LinterConfig` methods make that possible without coupling the config to
+the rule type. `Rules.projectRules()` registers them alongside `Rules.all()`.
+
+The CLI and `ChangelogLinterContract` pass both lists, so a project gets the
+whole-graph rule through the same gate. The two opt-in rules stay opt-in because
+they encode a production-safety strategy rather than a universal correctness
+rule.
+
+## Update (1.21.0): live round-trip and re-apply contracts
+
+Add `ChangelogRoundTripContract` and `ChangelogReapplyContract`, backed by a
+small `LiquibaseSession` that lists, applies and rolls back every changeset on a
+caller-owned connection. A session wraps the connection in a close-ignoring
+view, so the main changelog and its fixture/baseline changelog can share one
+connection without closing it.
+
+The round trip creates a scratch database in the shared container, applies the
+changelog and its fixtures, rolls them back in reverse order, compares a
+`CatalogSnapshot` of the project's round-trip schemas with the pre-changelog
+baseline, then re-applies and compares again. The re-apply contract runs the
+changelog twice and requires the second run to apply nothing.
+
+`ProjectProfile` gained two values for the awkward projects: `roundTripSchemas`
+(defaulting to the managed schemas) and `baselineChangelogs` (dependencies such
+as `ddl_utils` applied before the main changelog and deliberately left outside
+its rollback). A project with a `runAlways` changeset can name the ids the second
+run may repeat.
+
+The contracts are Testcontainers tests, so they belong in `verify`; they create
+one scratch database per contract class and reuse the project's one container.
+The library's own tests add a fixture changelog, a fixture changelog and an
+installed baseline schema, plus rollback-failure and non-idempotent fixtures for
+the failure paths.
+
 ## Revisit triggers
 
 - A third consumer appears that does not use Testcontainers or jOOQ, making the

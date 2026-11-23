@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -103,6 +104,21 @@ class DynamicSqlRuleTest {
     }
 
     /**
+     * A legacy single-quoted body is still scanned, even though the body
+     * extractor only re-lexes dollar-quoted bodies.
+     */
+    @Test
+    void reportsDynamicSqlInALegacySingleQuotedBody() {
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION app.f() RETURNS void AS 'BEGIN EXECUTE ''DROP TABLE t''; END'"
+                        + " LANGUAGE plpgsql;")));
+
+        assertEquals(1, violations.size());
+        assertEquals("EXECUTE", violations.getFirst().statement());
+    }
+
+    /**
      * A routine or parameter named execute in the declaration header is not
      * dynamic SQL; only the body after AS is scanned.
      */
@@ -147,5 +163,47 @@ class DynamicSqlRuleTest {
         LinterConfig config = new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID), Map.of());
         Linter linter = new Linter(List.of(new DynamicSqlRule()), config);
         assertEquals(1, linter.lint(List.of(changeSet)).size());
+    }
+
+    /**
+     * An allow-listed routine is skipped, while the same body with no allow-list
+     * is reported.
+     */
+    @Test
+    void skipsAnAllowListedRoutine() {
+        String sql = "CREATE FUNCTION ddl_utils_lib.alter_table(i_x text) RETURNS void AS $$"
+                + " BEGIN EXECUTE i_x; END; $$ LANGUAGE plpgsql;";
+
+        assertEquals(1, new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, sql))).size());
+        assertTrue(new DynamicSqlRule(Set.of("ddl_utils_lib.alter_table"))
+                .check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, sql))).isEmpty());
+    }
+
+    /**
+     * A bare body has no routine name, so it cannot be allow-listed.
+     */
+    @Test
+    void cannotAllowListABareBody() {
+        String sql = "BEGIN EXECUTE 'DROP TABLE t'; END;";
+        assertEquals(1, new DynamicSqlRule(Set.of("anything"))
+                .check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, sql))).size());
+    }
+
+    /**
+     * The allow-list is read from the rule options through {@link Rules#all}.
+     */
+    @Test
+    void readsTheAllowListFromTheConfiguration() throws IOException {
+        LinterConfig config = new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
+                Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null,
+                        Map.of("allowedRoutines", List.of(" app.foo ")))));
+        String sql = "CREATE FUNCTION app.foo() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE t'; END;"
+                + " $$ LANGUAGE plpgsql;";
+        ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true, null, null, null,
+                List.of(new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, sql, true, ";", false, null)),
+                true, List.of());
+
+        assertTrue(new Linter(Rules.all(config), List.of(), config).lint(List.of(changeSet)).stream()
+                .noneMatch(finding -> finding.ruleId().equals(DynamicSqlRule.ID)));
     }
 }

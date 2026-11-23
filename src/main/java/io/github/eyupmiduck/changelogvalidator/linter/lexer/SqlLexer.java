@@ -50,13 +50,17 @@ public final class SqlLexer {
 
     private final String sql;
     private final int length;
+    private final int offsetBase;
     private int position;
-    private int line = 1;
-    private int column = 1;
+    private int line;
+    private int column;
 
-    private SqlLexer(String sql) {
+    private SqlLexer(String sql, int offsetBase, int lineBase, int columnBase) {
         this.sql = sql;
         this.length = sql.length();
+        this.offsetBase = offsetBase;
+        this.line = lineBase;
+        this.column = columnBase;
     }
 
     /**
@@ -66,7 +70,29 @@ public final class SqlLexer {
      * @return the tokens, in input order
      */
     public static List<Token> tokenize(String sql) {
-        return new SqlLexer(sql).scan();
+        return tokenize(sql, 0, 1, 1);
+    }
+
+    /**
+     * Tokenizes a fragment whose offsets and first line/column are already known,
+     * for example a routine body extracted from a dollar-quoted string. Each
+     * returned token carries the absolute offset in the original input and the
+     * absolute line/column, so a finding points at the original file.
+     *
+     * @param sql        the fragment to tokenize
+     * @param offsetBase the fragment's zero-based offset in the original input
+     * @param lineBase   the absolute one-based line of the fragment's first character
+     * @param columnBase the absolute one-based column of the fragment's first character
+     * @return the tokens, in input order, with absolute offsets and positions
+     */
+    public static List<Token> tokenize(String sql, int offsetBase, int lineBase, int columnBase) {
+        if (offsetBase < 0) {
+            throw new IllegalArgumentException("offsetBase must not be negative, was " + offsetBase);
+        }
+        if (lineBase < 1 || columnBase < 1) {
+            throw new IllegalArgumentException("lineBase and columnBase must be one-based");
+        }
+        return new SqlLexer(sql, offsetBase, lineBase, columnBase).scan();
     }
 
     private static boolean isWhitespace(char character) {
@@ -200,7 +226,8 @@ public final class SqlLexer {
             type = TokenType.ERROR;
         }
         consumeTo(end);
-        return new Token(type, sql.substring(start, end), start, end, startLine, startColumn);
+        return new Token(type, sql.substring(start, end), offsetBase + start, offsetBase + end,
+                startLine, startColumn);
     }
 
     private char peek(int ahead) {

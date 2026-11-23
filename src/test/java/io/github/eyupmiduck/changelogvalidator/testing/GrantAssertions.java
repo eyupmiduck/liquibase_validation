@@ -219,23 +219,31 @@ public final class GrantAssertions {
                 "GRANT EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+TO " + callerRole + ";",
                 rollbackResource,
                 "REVOKE EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+FROM " + callerRole + ";",
-                "every function granted to " + callerRole + " should be revoked in the rollback");
+                "every function granted to " + callerRole + " should be revoked in the rollback",
+                "the rollback revokes a function that the forward does not grant to " + callerRole);
         assertMirrors(forwardResource,
                 "REVOKE EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+FROM public;",
                 rollbackResource,
                 "GRANT EXECUTE ON (?:FUNCTION|PROCEDURE)\\s+(.*?)\\s+TO public;",
-                "every function revoked from PUBLIC should have its PUBLIC grant restored");
+                "every function revoked from PUBLIC should have its PUBLIC grant restored",
+                "the rollback grants PUBLIC a function that the forward does not revoke");
     }
 
     private static void assertMirrors(String forwardResource, String forwardRegex,
-                                      String rollbackResource, String rollbackRegex, String message)
+                                      String rollbackResource, String rollbackRegex,
+                                      String missingMessage, String staleMessage)
             throws IOException {
         Set<String> forward = extract(forwardResource, forwardRegex);
         Set<String> rollback = extract(rollbackResource, rollbackRegex);
 
         Set<String> missing = new LinkedHashSet<>(forward);
         missing.removeAll(rollback);
-        assertTrue(missing.isEmpty(), () -> message + "; missing: " + missing);
+        assertTrue(missing.isEmpty(), () -> missingMessage + "; missing: " + missing);
+
+        Set<String> stale = new LinkedHashSet<>(rollback);
+        stale.removeAll(forward);
+        assertTrue(stale.isEmpty(), () -> staleMessage + "; stale: " + stale);
+
         assertFalse(forward.isEmpty(), () -> "no matches for " + forwardRegex + " in " + forwardResource);
     }
 

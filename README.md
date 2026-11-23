@@ -16,7 +16,9 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   `<sqlFile>` elements and as the external body of a
   `<createProcedure>`/`<createFunction>` element; files under a routine
   directory (`functions`, `procedures`, or their `-rollback` variants) are
-  exempt from the `NNN-` SQL naming rule.
+  exempt from the `NNN-` SQL naming rule. The separate
+  `ChangelogLayoutCheck` joins a changeset id to its forward and rollback files
+  and, for a routine or trigger, to the declaration inside the file.
 - `io.github.eyupmiduck.changelogvalidator.PlpgsqlCheck` — runs
   `plpgsql_check` over the PL/pgSQL routines in a set of schemas and validates
   the findings against an allow-list, reporting unexpected findings and stale
@@ -27,6 +29,11 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
   an enabled `BEFORE UPDATE ... FOR EACH ROW` trigger. A behavioral probe can
   verify on a real row that an `UPDATE` refreshes `updated_at` and preserves
   `created_at`, rolling the change back.
+- `io.github.eyupmiduck.changelogvalidator.CatalogCommentsCheck` — checks the
+  catalog-comment convention on a set of schemas: every schema, table, column,
+  domain, composite/enum/range/base type and function/procedure (and, by
+  default, trigger) has a non-blank comment. An explicit allow-list accepts a
+  missing comment, and an entry that accepts nothing is stale.
 - `io.github.eyupmiduck.changelogvalidator.linter` — a changelog linter: a
   hand-written PostgreSQL tokenizer, Liquibase-compatible statement splitting, a
   changeset model, a rule engine with tty/JSON/SARIF reporters, and rules that
@@ -36,10 +43,12 @@ analyse PL/pgSQL routines with the `plpgsql_check` extension.
 - `io.github.eyupmiduck.changelogvalidator.testing` — shared test support,
   published under the `tests` classifier: a Testcontainers `PostgresTestBase`
   (shared container, migrated template database, per-class clone, introspection
-  and SQLSTATE helpers, and a `Configuration` value), a classpath
-  `ChangelogTestSupport`, `TestResources`, the
-  `ChangelogAssertions`/`RoutineAssertions` helpers, contract classes for the
-  linter, changelog naming, orphaned SQL, tracking tables and `plpgsql_check`,
+  and SQLSTATE helpers, and a `ProjectProfile` carrying the
+  database/changelog `Configuration` plus the managed and routine schemas,
+  caller role and rollback directories), a classpath `ChangelogTestSupport`,
+  `TestResources`, the `ChangelogAssertions`/`RoutineAssertions` helpers,
+  contract classes for the linter, changelog naming, orphaned SQL, tracking
+  tables and `plpgsql_check`,
   and an `UpgradeTestBase` that
   applies the most recent published release's changelog and then the current one
   (see [Using the library](#using-the-library),
@@ -103,8 +112,22 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-rollback-required`](#changeset-rollback-required)                     | warning  | opt-in  | a changeset with no `<rollback>`                                                                           |
 | [`changeset-rollback-parity`](#changeset-rollback-parity)                         | warning  | opt-in  | a rollback with far fewer statements than the forward SQL                                                  |
 | [`routine-dynamic-sql`](#routine-dynamic-sql)                                     | info     | opt-in  | a routine body that uses `EXECUTE`                                                                         |
+| [`routine-select-star`](#routine-select-star)                                     | error    | on      | `SELECT *`, `alias.*` or `table.*` in a routine body                                                       |
+| [`routine-transaction-control`](#routine-transaction-control)                     | error    | on      | `COMMIT` or `ROLLBACK` in a function body                                                                  |
+| [`routine-argument-naming`](#routine-argument-naming)                             | error    | on      | a routine parameter or local without its `i_`/`o_`/`io_`/`l_` prefix                                       |
 | [`block-raw-alter-table`](#block-raw-alter-table)                                 | error    | on      | a raw `ALTER TABLE` in changelog SQL                                                                       |
 | [`require-dbms-postgresql`](#require-dbms-postgresql)                             | error    | on      | PostgreSQL-only SQL in a changeset without a `dbms="postgresql"` gate                                      |
+| [`routine-run-on-change-required`](#routine-run-on-change-required)               | error    | on      | a routine changeset without `runOnChange="true"`                                                           |
+| [`trigger-create-or-replace`](#trigger-create-or-replace)                         | error    | on 14+  | a `CREATE TRIGGER` without `OR REPLACE`                                                                    |
+| [`require-not-valid-constraint`](#require-not-valid-constraint)                   | warning  | opt-in  | a validating `CHECK`/`FOREIGN KEY` added to an existing table without `NOT VALID`                          |
+| [`require-if-exists-on-drop`](#require-if-exists-on-drop)                         | warning  | opt-in  | a supported `DROP` without `IF EXISTS`                                                                     |
+| [`changeset-author-required`](#changeset-author-required)                         | error    | on      | a changeset without a non-blank `author`                                                                   |
+| [`changeset-file-name-matches-id`](#changeset-file-name-matches-id)               | error    | on      | a numbered changeset whose SQL or rollback path does not match its id                                      |
+| [`changeset-id-unique`](#changeset-id-unique)                                     | error    | on      | a duplicate changeset id/author/file identity (whole-graph rule)                                           |
+
+`changeset-id-unique` is a project rule: it runs once over the whole graph after
+the per-changeset rules. `trigger-create-or-replace` is on for PostgreSQL 14+;
+when `pgVersion` is below 14 it is opt-in and reports nothing.
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -223,11 +246,96 @@ linter does not imply the changeset is clean; it complements `plpgsql_check`
 (which analyses the static body, not the dynamic string). It only fires on
 routine bodies, is informational and opt-in.
 
+The rule extracts and re-lexes the dollar-quoted body, so an `EXECUTE` in a
+comment or a string literal is not reported. A known dynamic-SQL boundary can be
+allow-listed by routine name:
+
+```yaml
+rules:
+  routine-dynamic-sql:
+    options:
+      allowedRoutines:
+        - ddl_utils_lib.alter_table
+```
+
 ```xml
 <!-- Reported (info): the body's dynamic SQL is invisible to the token rules. -->
 <changeSet id="function-app.foo" author="me" runOnChange="true">
     <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
 </changeSet>
+```
+
+#### routine-select-star
+
+`SELECT *` (and `alias.*` or `table.*`) ties a routine's result and `INTO`
+assignment to the current column order, so a later table change silently changes
+what the routine returns. The rule reports a star in a body's select list,
+including a nested subquery, in forward and rollback SQL. It is an error and on
+by default.
+
+A star inside a function call is not a select-list star: `count(*)` is accepted,
+as is a star in a string or a comment.
+
+```sql
+-- Reported: the result changes when app.orders gains a column.
+SELECT *
+FROM app.orders;
+
+-- Accepted.
+SELECT o.id, o.total
+FROM app.orders o;
+```
+
+#### routine-transaction-control
+
+A PostgreSQL function runs inside the caller's transaction and cannot manage it;
+`COMMIT` or `ROLLBACK` in a function body fails at run time. The rule reports
+either statement in a function body, in forward and rollback SQL. A procedure may
+manage transactions, so procedure bodies are left alone. It is an error and on by
+default.
+
+```sql
+-- Reported in a function.
+CREATE FUNCTION app.f() RETURNS void AS
+$$
+BEGIN
+    COMMIT;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+#### routine-argument-naming
+
+A prefix makes a routine body readable without the declaration in view: an input
+parameter starts with `i_`, an output parameter with `o_`, an input/output
+parameter with `io_`, and a local variable with `l_`. The rule checks the
+declaration's named parameters and the locals a PL/pgSQL body declares in a
+`DECLARE` block or as a `FOR` loop target. It is an error and on by default.
+
+Unnamed parameters (`integer`, `double precision`) and SQL-language bodies have
+no names to check. A name in a comment or a string is ignored, and
+`SELECT ... FOR UPDATE` is not mistaken for a loop declaration.
+
+```sql
+-- Reported: the parameter and the local lack their prefixes.
+CREATE FUNCTION app.f(x integer) RETURNS void AS
+$$
+DECLARE
+    total integer;
+BEGIN
+    total := x;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Accepted.
+CREATE FUNCTION app.f(i_x integer) RETURNS void AS
+$$
+DECLARE
+    l_total integer;
+BEGIN
+    l_total := i_x;
+END;
+$$ LANGUAGE plpgsql;
 ```
 
 #### block-raw-alter-table
@@ -293,6 +401,120 @@ negative — and an error on by default.
 </changeSet>
 ```
 
+#### routine-run-on-change-required
+
+A stored-routine body is a living definition, so Liquibase must re-apply the
+changeset when the file changes. Without `runOnChange`, the database silently
+keeps the old body. The rule reports a changeset with a PostgreSQL routine source (`createProcedure`/`createFunction`)
+that is not `runOnChange="true"`. It is an
+error and on by default.
+
+```xml
+<!-- Reported. -->
+<changeSet id="function-app.foo" author="me">
+    <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+```xml
+<!-- Accepted. -->
+<changeSet id="function-app.foo" author="me" runOnChange="true">
+    <createProcedure path="functions/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### trigger-create-or-replace
+
+A plain `CREATE TRIGGER` cannot be re-applied after a body change. The rule
+reports it and points at `CREATE OR REPLACE TRIGGER` (PostgreSQL 14+), in forward
+and rollback SQL. It is an error and on by default on PostgreSQL 14+; below 14 it
+is opt-in and reports nothing. The constraint-trigger form
+`CREATE [OR REPLACE] CONSTRAINT TRIGGER` is recognised too.
+
+```xml
+<!-- Reported: the body is CREATE TRIGGER ... -->
+<changeSet id="trigger-app.foo" author="me">
+    <sqlFile path="triggers/app/foo.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### require-not-valid-constraint
+
+Adding a validating `CHECK` or `FOREIGN KEY` to an existing table scans the table
+while holding a blocking lock. Add it `NOT VALID` and validate it separately;
+a table created in the same changeset has no existing rows and is exempt. The
+rule reports the validating form on an existing table. It is a warning and
+opt-in, and it checks forward and rollback SQL.
+
+```sql
+-- Reported.
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_total_check CHECK (total >= 0);
+
+-- Accepted.
+ALTER TABLE app.orders
+    ADD CONSTRAINT orders_total_check CHECK (total >= 0) NOT VALID;
+```
+
+Only `CHECK` and `FOREIGN KEY` are checked: PostgreSQL cannot add `UNIQUE`,
+`PRIMARY KEY` or `EXCLUDE` as `NOT VALID`; those need a `USING INDEX` strategy.
+
+#### require-if-exists-on-drop
+
+A `DROP` without `IF EXISTS` fails when a re-applied or partially rolled-back
+changeset finds the object already gone. The rule reports `DROP TABLE`, `DROP
+FUNCTION`, `DROP PROCEDURE`, `DROP TRIGGER` and `DROP INDEX`, including
+`DROP INDEX CONCURRENTLY`, in forward and rollback SQL. It is a warning and
+opt-in.
+
+```sql
+-- Reported.
+DROP TABLE app.orders;
+
+-- Accepted.
+DROP TABLE IF EXISTS app.orders;
+```
+
+#### changeset-author-required
+
+The author is part of Liquibase's changeset identity and the history a project
+uses to find who made a change. The rule reports a missing, blank or
+whitespace-only `author`. It is an error and on by default.
+
+```xml
+<!-- Reported. -->
+<changeSet id="001-create" author="">
+    <sqlFile path="sql_changes/001-create.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### changeset-file-name-matches-id
+
+A numbered changeset's forward file must be `sql_changes/<id>.sql` and its
+rollback `rollback/<id>-rollback.sql`. The rule reports a filename or directory
+that does not match the id. It is an error and on by default. Routine and trigger
+ids have their own path convention and are left to `ChangelogLayoutContract`.
+
+```xml
+<!-- Reported: the changeset is 001-create but the file is 002-create.sql. -->
+<changeSet id="001-create" author="me">
+    <sqlFile path="sql_changes/002-create.sql" relativeToChangelogFile="true"/>
+</changeSet>
+```
+
+#### changeset-id-unique
+
+Liquibase identifies a changeset by id, author and file, so a repeat is
+ambiguous. This whole-graph project rule reports every occurrence after the first
+with the same id, author and normalized changelog file. It is an error and on by
+default.
+
+```xml
+<!-- Reported: the second changeset repeats the first identity. -->
+<changeSet id="001-create" author="me">...</changeSet>
+<changeSet id="001-create" author="me">...</changeSet>
+```
+
 ### Configuration
 
 The configuration is a per-module `.liquibase-linter.yml`, passed with
@@ -320,8 +542,10 @@ rules:
 | `include`   | opt-in rule ids to turn on                                                                                           |
 | `rules`     | per-rule `severity` override and free-form `options`                                                                 |
 
-Unknown keys, an unknown rule id, and a malformed value fail fast, so a typo
-cannot silently disable a rule.
+The only option today is `routine-dynamic-sql`'s `allowedRoutines` (a list of
+`schema.name` routines that may build SQL dynamically). Unknown keys, an unknown
+rule id, and a malformed value fail fast, so a typo cannot silently disable a
+rule.
 
 A finding can be accepted with a per-module `.liquibase-linter-whitelist.yml`
 (the CLI's `--whitelist`; a missing file accepts nothing):
@@ -408,16 +632,20 @@ The library is published to GitHub Packages from a `v*` tag (for example
 
 The same artifact also publishes a `tests` classifier with shared test support
 (`io.github.eyupmiduck.changelogvalidator.testing`): `ChangelogTestSupport`,
-`PostgresTestBase` (with a `Configuration` value so a project's regular test
-base and its upgrade test share one setup, plus the generic lock and catalog
-helpers), `TestResources`, the `ChangelogAssertions`/`RoutineAssertions`
-helpers (including routine/rollback parity), the previous-release
-`UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
-`ChangelogNamingContract`, `ChangelogSqlFilesContract`,
+`PostgresTestBase` (with a `ProjectProfile` value carrying the database and
+changelog `Configuration`, the managed/routine schemas, the caller role and the
+rollback directories, so a project's regular test base and every contract share
+one setup, plus the generic lock and catalog helpers), `TestResources`, the
+`ChangelogAssertions`/`RoutineAssertions` helpers (including routine/rollback
+parity), the previous-release `UpgradeTestBase`, and abstract contract classes (`ChangelogLinterContract`,
+`ChangelogNamingContract`, `ChangelogSqlFilesContract`, `ChangelogLayoutContract`,
 `TrackingTablesContract`, `PlpgsqlCheckContract`, `RollbackSignatureContract`,
-`UpgradeContract`) that a project subclasses to inherit the tests themselves, so
-a project that builds a Liquibase changelog and PostgreSQL routines can share
-one implementation instead of copying it (see
+`CommentContract`, `AuditColumnsContract`, `RoutineSignatureContract`,
+`RoutineDocumentationContract`, `PrivilegeContract`, `RoutineSecurityContract`,
+`ChangelogRoundTripContract`, `ChangelogReapplyContract`, `UpgradeContract`)
+that a project subclasses to inherit the tests themselves, so a project that
+builds a Liquibase changelog and PostgreSQL routines can share one implementation
+instead of copying it (see
 [docs/adr/0004-shared-test-support-packaging.md](docs/adr/0004-shared-test-support-packaging.md)):
 
 ```xml
@@ -468,6 +696,173 @@ Before a consuming repository's `GITHUB_TOKEN` can read the package, grant
 that repository read access under the package's **Manage Actions access**
 settings.
 
+### Changelog layout
+
+`ChangelogLayoutContract` checks the in-place file layout that a changeset id
+promises:
+
+- `NNN-name` uses `sql_changes/NNN-name.sql` and
+  `rollback/NNN-name-rollback.sql`;
+- `function-<schema>.<name>`, `procedure-<schema>.<name>` and
+  `trigger-<schema>.<name>` use the matching `functions/`, `procedures/` or
+  `triggers/` path and its `-rollback` directory;
+- a routine or trigger file declares exactly the object its path names, and a
+  trigger is on a table in the path's schema;
+- a file-based changeset has its matching rollback file unless the project
+  overrides `rollbackRequired()`, and no SQL file is referenced twice.
+
+The contract returns its `ProjectProfile`, so the changelog locations come from
+the same values as the other contracts. The rule complements
+`ChangelogNamingContract`: naming checks the shape of an id and a file name,
+while layout checks that they agree with each other and with the SQL declaration.
+
+### Catalog comments
+
+`CatalogCommentsCheck` enforces the project-wide comment convention. It inspects
+the configured schemas and reports every missing or blank comment on:
+
+- a schema;
+- a base, partitioned or foreign table (not a partition, view or materialized
+  view);
+- a column of those tables;
+- a domain, composite, enum, range or user-defined base type, excluding array
+  types and a relation's implicit row type;
+- a function or procedure, including a trigger function, excluding
+  extension-owned routines and PostgreSQL's support routines for a type;
+- a trigger, when `Options.includeTriggers()` is true (the default).
+
+`CommentContract` reads the profile's managed schemas and defaults to requiring
+trigger comments. Override `allowedObjects()` for an explicit exception; an entry
+that accepts no missing comment is stale and fails. The contract also fails when
+no object was inspected, so a misspelled schema cannot pass.
+
+### Audit columns
+
+`AuditColumnsContract` checks that every base and partitioned table (not a
+partition) in the profile's managed schemas has `created_at` and `updated_at` as
+`timestamptz NOT NULL DEFAULT now()` and an enabled unrestricted
+`BEFORE UPDATE ... FOR EACH ROW` trigger. The contract fails when the schema set
+contains no table, so a misconfigured schema cannot pass.
+
+Override `probeTables()` with a schema-to-table map to run the behavioral probe
+on a real row: it verifies the trigger refreshes `updated_at` and preserves
+`created_at`, then rolls the update back. A probe table with no row fails. Leave
+the map empty to run only the catalog check. Consumers seed the probe row in
+their own fixture; the contract does not invent data.
+
+### Routine signatures and documentation
+
+`RoutineSignatureContract` checks every function and procedure in the profile's
+routine schemas: a routine name must have one signature, and an intentional
+overload must be listed in `allowedOverloads()`. An allow-list entry that no
+longer matches a real overload is stale and fails, so a removed exception cannot
+hide a new overload. The contract fails non-vacuously when the routine schemas
+contain no routine.
+
+`RoutineDocumentationContract` checks that every routine has a README section
+and that no README section names a routine that no longer exists. The default
+format is a Markdown heading:
+
+```markdown
+### `schema.name(i_arg, ...)`
+```
+
+The default parser strips optional-argument brackets and compares the argument
+names and arity to the catalog. A heading containing `...` is treated as an
+abbreviated signature and is checked by name only. Override
+`documentedRoutines(resource, content)` for a different format and
+`readmeResources()` for different files. The contract defaults to the functions
+and procedures READMEs under the profile's changelog root and is non-vacuous.
+
+The contracts are separate because a project may adopt the signature check
+before its routine READMEs are complete.
+
+### Privileges
+
+`PrivilegeContract` checks the caller grants and the default-privilege hardening:
+
+- no routine in the profile's routine schemas is executable by `PUBLIC`
+- the caller role can execute every callable routine (procedures and
+  non-trigger functions)
+- every configured `applicationTypes()` entry is not usable by `PUBLIC`, and
+  the caller has an explicit `USAGE` grant on it
+- a routine and an enum type created after the default-privilege changeset do
+  not regain `PUBLIC` access (skipped when `defaultPrivilegesExpected()` is
+  false)
+- the grant changeset rollback mirrors the forward grants and has no stale
+  revoke or stale `PUBLIC` restore
+
+`applicationTypes()` is the configured type/domain list and must be non-empty.
+The routine checks fail when the routine schemas contain no routine. The default
+grant resources are
+`<changes>/sql_changes/999-grant-privileges.sql` and
+`<changes>/rollback/999-grant-privileges-rollback.sql`; override them for a
+different name.
+
+### Routine security
+
+`RoutineSecurityContract` checks the routine security conventions:
+
+- only routines listed in `allowedSecurityDefiners()` may be
+  `SECURITY DEFINER`; an allow-list entry that is no longer a definer is stale
+- a `SECURITY DEFINER` routine must pin a `search_path` that includes
+  `pg_catalog`
+- each routine in `catalogRoutines()` must pin a `search_path` that includes
+  `pg_catalog`
+- no routine may pin a caller-controlled or mutable path: `$user`, `DEFAULT`
+  and `public` are rejected
+- each routine in `expectedProcedures()` must really be a procedure
+
+The contract is non-vacuous. `routineSchemas()` defaults to the profile's
+routine schemas; consumers supply the definer allow-list, the catalog-routine
+list and the expected procedures.
+
+### Round trip and re-apply
+
+Two live contracts prove that a changelog is a living definition rather than a
+write-once script. They share the project's one container and create only a
+scratch database per contract class.
+
+`ChangelogRoundTripContract` applies the configured changelog to a fresh
+database, rolls every changeset back in reverse order, asserts the managed
+objects are gone or restored to the baseline, and applies the changelog again.
+It compares a `CatalogSnapshot` of `roundTripSchemas()` before the changelog,
+after rollback and after re-apply, so a rollback that leaves an object behind
+fails. The default rollback assertion also checks each managed schema is present
+exactly when it was in the baseline.
+
+`ChangelogReapplyContract` applies the changelog and its fixtures twice; the
+second run must apply no changeset and must not error. It proves that
+`runOnChange`, preconditions and repeatable definitions are safe to re-run.
+
+Both contracts read the changelog and fixtures from the project profile. Two
+profile fields cover the awkward cases:
+
+- `baselineChangelogs` are applied **before** the main changelog and are
+  deliberately left outside its rollback, for a dependency another project
+  installs (for example `ddl_utils` alongside `dml_utils`). A baseline schema is
+  still captured by `roundTripSchemas()` and must survive the rollback.
+- `roundTripSchemas` defaults to `managedSchemas`, but may add a fixture schema
+  the fixture changelog creates, so the rollback of the fixtures is covered too.
+
+```java
+static final ProjectProfile PROFILE = ProjectProfile.builder(CONFIGURATION)
+        .managedSchemas("my_project", "my_project_lib")
+        .roundTripSchemas("my_project", "my_project_lib", "my_project_fixtures")
+        .baselineChangelogs("db/dependency/db.changelog-master.xml")
+        .build();
+```
+
+A project with a deliberate `runAlways` changeset overrides
+`repeatableChangeSetIds()` with the ids the second run may apply. An installed
+prerequisite that is not a changelog can use `prepareBaseline(Connection)`.
+
+These are Testcontainers tests and belong in `verify`, not in the per-change
+unit-test loop: a round trip applies and rolls back the whole graph, so it is
+seconds to minutes, not milliseconds. The Maven Failsafe plugin is the natural
+home when a project separates unit and integration tests; the existing
+Testcontainers suite in this library runs them under Surefire in `verify`.
+
 ### Incremental upgrade from the previous release
 
 `UpgradeTestBase` checks the path a real consumer takes: it applies the **most
@@ -477,47 +872,9 @@ same `FILENAME` for a changeset applied from the released jar and from the
 current classpath, so the second run applies only the delta; a changeset that
 was released and then edited fails Liquibase's checksum validation.
 
-Extend the shared `UpgradeContract` and supply the coordinates of the project's
-own artifact, the schemas the changelog manages, and the project-specific
-assertions for the upgraded database:
-
-```java
-class LiquibaseUpgradeTest extends UpgradeContract {
-
-    @Override
-    protected PublishedRelease.Coordinates releaseCoordinates() {
-        return new PublishedRelease.Coordinates(
-                "https://maven.pkg.github.com/eyupmiduck/my_project",
-                "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
-    }
-
-    @Override
-    protected Collection<String> managedSchemas() {
-        return List.of("my_project", "my_project_lib");
-    }
-
-    @Override
-    protected Configuration configuration() {
-        return PostgresTestBase.CONFIGURATION;
-    }
-
-    @Override
-    protected void assertUpgradedDatabase() {
-        assertEquals(2, upgradeDsl().fetchOne(
-                        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'my_project%'")
-                .get(0, Integer.class));
-    }
-}
-```
-
-The fixture-free version resolves the release automatically: it reads
-`maven-metadata.xml` from the repository, selects the highest non-`SNAPSHOT`
-version strictly below the current version, and downloads the jar to
-`target/previous-release` (override `cacheDirectory()` to change that). The
-roles, image, tracking-table names and changelog resource come from
-`PostgresTestBase.configuration()`: a project declares one
-`Configuration` constant next to its test base and returns it from both
-classes, so the two cannot drift.
+Extend the shared `UpgradeContract`, supply the coordinates of the project's own
+artifact and the project-specific assertions, and return the project profile from
+your test base:
 
 ```java
 abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.testing.PostgresTestBase {
@@ -533,20 +890,46 @@ abstract class PostgresTestBase extends io.github.eyupmiduck.changelogvalidator.
             // before the changelog runs; null when the project needs none.
             PostgresTestBase::installProjectExtensions);
 
+    static final ProjectProfile PROFILE = ProjectProfile.builder(CONFIGURATION)
+            .managedSchemas("my_project", "my_project_lib")
+            .routineSchemas("my_project", "my_project_lib")
+            .callerRole("my_project_caller")
+            .routineRollbackDirectories("db/changelog/changes/functions-rollback")
+            .triggerRollbackDirectories("db/changelog/changes/triggers-rollback")
+            .roundTripSchemas("my_project", "my_project_lib")
+            .build();
+
     @Override
-    protected Configuration configuration() {
-        return CONFIGURATION;
+    protected ProjectProfile projectProfile() {
+        return PROFILE;
     }
 }
 
-class LiquibaseUpgradeTest extends UpgradeTestBase {
+class BaselineUpgradeTest extends UpgradeContract {
 
     @Override
-    protected Configuration configuration() {
-        return PostgresTestBase.CONFIGURATION;
+    protected PublishedRelease.Coordinates releaseCoordinates() {
+        return new PublishedRelease.Coordinates(
+                "https://maven.pkg.github.com/eyupmiduck/my_project",
+                "io.github.eyupmiduck", "my_project", "1.2.0-SNAPSHOT");
+    }
+
+    @Override
+    protected void assertUpgradedDatabase() {
+        assertEquals(2, upgradeDsl().fetchOne(
+                        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'my_project%'")
+                .get(0, Integer.class));
     }
 }
 ```
+
+The fixture-free version resolves the release automatically: it reads
+`maven-metadata.xml` from the repository, selects the highest non-`SNAPSHOT`
+version strictly below the current version, and downloads the jar to
+`target/previous-release` (override `cacheDirectory()` to change that). The
+roles, image, tracking-table names, changelog resource and managed schemas come
+from the profile; a project declares one `ProjectProfile` constant next to its
+test base, so its regular tests and every contract read the same values.
 
 Credentials are read from `GITHUB_ACTOR`/`GITHUB_TOKEN` (or `GH_TOKEN`), falling
 back to the `github` server in `~/.m2/settings.xml` with `${env.VAR}`

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -63,6 +64,8 @@ class RoutineAssertionsTest extends PostgresTestBase {
         try (Connection owner = openOwnerConnection()) {
             RoutineAssertions.assertAuditColumnsFollowConvention(owner, List.of("audited"));
             RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(owner, "audited", List.of("widget"));
+            RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(
+                    owner, Map.of("audited", List.of("widget")));
         }
     }
 
@@ -77,6 +80,54 @@ class RoutineAssertionsTest extends PostgresTestBase {
                     () -> RoutineAssertions.assertAuditColumnsFollowConvention(owner, List.of("audited")));
         } finally {
             dsl.execute("DROP TABLE audited.unaudited");
+        }
+    }
+
+    /**
+     * A schema set with no base table is rejected instead of passing vacuously.
+     */
+    @Test
+    void rejectsASchemaWithoutTables() throws Exception {
+        try (Connection owner = openOwnerConnection()) {
+            assertThrows(AssertionError.class,
+                    () -> RoutineAssertions.assertAuditColumnsFollowConvention(owner, List.of(PUBLIC_SCHEMA)));
+        }
+    }
+
+    /**
+     * An empty probe list is rejected instead of passing vacuously.
+     */
+    @Test
+    void rejectsAnEmptyProbeList() throws Exception {
+        try (Connection owner = openOwnerConnection()) {
+            assertThrows(AssertionError.class,
+                    () -> RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(
+                            owner, "audited", List.of()));
+            assertThrows(AssertionError.class,
+                    () -> RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(owner, Map.of()));
+            assertThrows(AssertionError.class,
+                    () -> RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(
+                            owner, Map.of("audited", List.of())));
+        }
+    }
+
+    /**
+     * A probe table with no row is rejected instead of passing vacuously.
+     */
+    @Test
+    void rejectsAProbeTableWithoutRows() throws Exception {
+        dsl.execute("""
+                CREATE TABLE audited.empty_probe (
+                    id integer,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )""");
+        try (Connection owner = openOwnerConnection()) {
+            assertThrows(AssertionError.class,
+                    () -> RoutineAssertions.assertUpdateTriggerRefreshesAuditColumns(
+                            owner, "audited", List.of("empty_probe")));
+        } finally {
+            dsl.execute("DROP TABLE audited.empty_probe");
         }
     }
 

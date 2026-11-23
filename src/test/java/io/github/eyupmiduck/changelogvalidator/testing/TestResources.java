@@ -31,6 +31,16 @@ public final class TestResources {
     }
 
     /**
+     * Returns whether a classpath resource exists.
+     *
+     * @param resource the resource path, relative to the classpath root
+     * @return {@code true} when the resource is present
+     */
+    public static boolean exists(String resource) {
+        return TestResources.class.getClassLoader().getResource(resource) != null;
+    }
+
+    /**
      * Reads a classpath resource as UTF-8 text.
      *
      * @param resource the resource path, relative to the classpath root

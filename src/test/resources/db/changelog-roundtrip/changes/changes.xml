@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <!-- A small but realistic changelog for the round-trip and re-apply
+         contracts: it creates a schema, a table and a runOnChange function, and
+         each change has a rollback. -->
+    <changeSet id="001-create-schema" author="lee.horner" dbms="postgresql">
+        <sql>CREATE SCHEMA roundtrip_app;</sql>
+        <rollback>
+            <sql>DROP SCHEMA roundtrip_app;</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="002-create-table" author="lee.horner" dbms="postgresql">
+        <sql>CREATE TABLE roundtrip_app.widget
+             (
+                 id   integer PRIMARY KEY,
+                 name text NOT NULL
+             );</sql>
+        <rollback>
+            <sql>DROP TABLE roundtrip_app.widget;</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="003-create-function" author="lee.horner" dbms="postgresql" runOnChange="true">
+        <sql splitStatements="false">CREATE OR REPLACE FUNCTION roundtrip_app.widget_count() RETURNS bigint
+            LANGUAGE sql AS
+        $$
+        SELECT count(*)
+        FROM roundtrip_app.widget;
+        $$</sql>
+        <rollback>
+            <sql>DROP FUNCTION roundtrip_app.widget_count();</sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

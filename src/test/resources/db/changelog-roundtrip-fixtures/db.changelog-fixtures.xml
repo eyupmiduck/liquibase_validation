@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <!-- Test-only objects applied after the main changelog and rolled back before
+         it, so the contracts cover a project with fixtures. -->
+    <changeSet id="fixture-001-create-schema" author="lee.horner" dbms="postgresql">
+        <sql>CREATE SCHEMA roundtrip_fixtures;</sql>
+        <rollback>
+            <sql>DROP SCHEMA roundtrip_fixtures;</sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="fixture-002-create-table" author="lee.horner" dbms="postgresql">
+        <sql>CREATE TABLE roundtrip_fixtures.sample
+             (
+                 id integer
+             );</sql>
+        <rollback>
+            <sql>DROP TABLE roundtrip_fixtures.sample;</sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

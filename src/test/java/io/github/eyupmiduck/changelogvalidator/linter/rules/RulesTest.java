@@ -1,6 +1,9 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Modifier;
@@ -8,12 +11,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Verifies that every built-in {@link Rule} in this package is registered in
@@ -31,7 +34,7 @@ class RulesTest {
         }
     }
 
-    private static List<Class<?>> ruleClasses() throws Exception {
+    private static List<Class<?>> classesInPackage() throws Exception {
         Package rulePackage = Rules.class.getPackage();
         Path directory = Path.of(Rules.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                 .resolve(rulePackage.getName().replace('.', '/'));
@@ -42,28 +45,33 @@ class RulesTest {
                 if (!name.endsWith(".class") || name.contains("$")) {
                     continue;
                 }
-                Class<?> type = Class.forName(rulePackage.getName() + "."
-                        + name.substring(0, name.length() - ".class".length()));
-                if (Rule.class.isAssignableFrom(type)
-                        && !type.isInterface()
-                        && !Modifier.isAbstract(type.getModifiers())) {
-                    classes.add(type);
-                }
+                classes.add(Class.forName(rulePackage.getName() + "."
+                        + name.substring(0, name.length() - ".class".length())));
             }
         }
         return classes;
     }
 
+    private static LinterConfig config(Map<String, Object> options) {
+        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
+                Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null, options)));
+    }
+
     @Test
     void registersEveryRuleImplementationInThePackage() throws Exception {
-        Set<String> registered = Rules.all(null).stream()
+        Set<String> registered = Rules.all((Integer) null).stream()
                 .map(Rule::id)
                 .collect(Collectors.toSet());
         assertFalse(registered.isEmpty());
 
         List<String> missing = new ArrayList<>();
         int implementations = 0;
-        for (Class<?> type : ruleClasses()) {
+        for (Class<?> type : classesInPackage()) {
+            if (!Rule.class.isAssignableFrom(type)
+                    || type.isInterface()
+                    || Modifier.isAbstract(type.getModifiers())) {
+                continue;
+            }
             Rule rule = instantiate(type);
             implementations++;
             if (!registered.contains(rule.id())) {
@@ -73,5 +81,43 @@ class RulesTest {
 
         assertFalse(implementations == 0, "no rule implementations found to check");
         assertTrue(missing.isEmpty(), () -> "rules missing from Rules.all(): " + missing);
+    }
+
+    @Test
+    void registersEveryProjectRuleImplementationInThePackage() throws Exception {
+        Set<String> registered = Rules.projectRules().stream()
+                .map(ProjectRule::id)
+                .collect(Collectors.toSet());
+        assertFalse(registered.isEmpty());
+
+        List<String> missing = new ArrayList<>();
+        int implementations = 0;
+        for (Class<?> type : classesInPackage()) {
+            if (!ProjectRule.class.isAssignableFrom(type)
+                    || type.isInterface()
+                    || Modifier.isAbstract(type.getModifiers())) {
+                continue;
+            }
+            ProjectRule rule = (ProjectRule) type.getDeclaredConstructor().newInstance();
+            implementations++;
+            if (!registered.contains(rule.id())) {
+                missing.add(type.getSimpleName() + " (" + rule.id() + ")");
+            }
+        }
+
+        assertFalse(implementations == 0, "no project rule implementations found to check");
+        assertTrue(missing.isEmpty(), () -> "project rules missing from Rules.projectRules(): " + missing);
+    }
+
+    @Test
+    void rejectsAMalformedDynamicSqlAllowList() {
+        LinterConfig notAList = config(Map.of("allowedRoutines", "app.foo"));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(notAList));
+
+        LinterConfig nonString = config(Map.of("allowedRoutines", List.of(1)));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(nonString));
+
+        LinterConfig blank = config(Map.of("allowedRoutines", List.of(" ")));
+        assertThrows(IllegalArgumentException.class, () -> Rules.all(blank));
     }
 }

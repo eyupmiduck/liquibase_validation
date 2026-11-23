@@ -34,12 +34,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * transactional changeset is reported and fails, a whitelist entry suppresses
  * that finding, and an entry that matches nothing is reported as stale.
  *
- * <p>A consumer extends this class, normally without overriding anything, and
- * keeps the Javadoc describing the module's changelog. Override
- * {@link #changelogRoot()}, {@link #master()}, {@link #configFile()} or
- * {@link #whitelistFile()} only for a non-default layout. The config and
- * whitelist paths are relative to the module directory, which is the surefire
- * working directory.
+ * <p>A consumer extends this class, returns its one {@link ProjectProfile} from
+ * {@link #projectProfile()}, and keeps the Javadoc describing the module's
+ * changelog. Override {@link #changelogRoot()}, {@link #master()},
+ * {@link #configFile()} or {@link #whitelistFile()} only for a one-off layout.
+ * The config and whitelist paths are relative to the module directory, which is
+ * the surefire working directory.
  *
  * <p>The linter rules combine the SQL tokens with Liquibase changeset semantics
  * (for example {@code runInTransaction}), which SQLFluff and plpgsql_check
@@ -68,12 +68,21 @@ public abstract class ChangelogLinterContract {
     }
 
     /**
+     * The project profile, used for the changelog locations.
+     *
+     * @return the project profile
+     */
+    protected ProjectProfile projectProfile() {
+        return ProjectProfile.DEFAULT;
+    }
+
+    /**
      * The changelog root directory.
      *
      * @return the changelog root
      */
     protected Path changelogRoot() {
-        return ChangelogTestSupport.changelogRoot();
+        return projectProfile().changelogRoot();
     }
 
     /**
@@ -82,7 +91,7 @@ public abstract class ChangelogLinterContract {
      * @return the master changelog
      */
     protected Path master() {
-        return ChangelogTestSupport.master();
+        return projectProfile().master();
     }
 
     /**
@@ -122,7 +131,7 @@ public abstract class ChangelogLinterContract {
     @Test
     void changelogPassesTheVerifyGate() throws IOException {
         LinterConfig config = LinterConfigLoader.load(configFile());
-        Linter linter = new Linter(Rules.all(config.postgresMajorVersion()), config);
+        Linter linter = new Linter(Rules.all(config), Rules.projectRules(), config);
 
         List<ChangeSet> changeSets = ChangelogModel.changesets(changelogRoot(), master());
         assertFalse(changeSets.isEmpty(), "the changelog graph should contain at least one changeset");
@@ -146,7 +155,7 @@ public abstract class ChangelogLinterContract {
      */
     @Test
     void transactionForbiddenStatementInATransactionalChangesetFails() throws IOException {
-        Linter linter = new Linter(Rules.all(null), LinterConfig.defaults());
+        Linter linter = new Linter(Rules.all((Integer) null), Rules.projectRules(), LinterConfig.defaults());
         List<Finding> findings = linter.lint(List.of(deliberatelyBadChangeSet()));
 
         assertEquals(List.of("changeset-run-in-transaction-required"),
@@ -198,7 +207,7 @@ public abstract class ChangelogLinterContract {
     }
 
     private List<Finding> deliberatelyBadFindings() throws IOException {
-        Linter linter = new Linter(Rules.all(null), LinterConfig.defaults());
+        Linter linter = new Linter(Rules.all((Integer) null), Rules.projectRules(), LinterConfig.defaults());
         return linter.lint(List.of(deliberatelyBadChangeSet()));
     }
 

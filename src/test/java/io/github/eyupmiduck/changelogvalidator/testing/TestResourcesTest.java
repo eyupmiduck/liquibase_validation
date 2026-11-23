@@ -32,9 +32,11 @@ class TestResourcesTest {
         assertEquals(List.of(
                 TestResources.read("testing/grants-forward-both.sql"),
                 TestResources.read("testing/grants-forward-extra.sql"),
+                TestResources.read("testing/grants-forward-stale.sql"),
                 TestResources.read("testing/grants-forward.sql"),
                 TestResources.read("testing/grants-rollback-one.sql"),
                 TestResources.read("testing/grants-rollback-public-missing.sql"),
+                TestResources.read("testing/grants-rollback-stale.sql"),
                 TestResources.read("testing/grants-rollback.sql"),
                 TestResources.read("testing/grants-variants-forward.sql"),
                 TestResources.read("testing/grants-variants-rollback.sql")), contents);
