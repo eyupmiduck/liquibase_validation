@@ -134,9 +134,9 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-file-name-matches-id`](#changeset-file-name-matches-id)               | error    | on      | a numbered changeset whose SQL or rollback path does not match its id                                      |
 | [`changeset-id-unique`](#changeset-id-unique)                                     | error    | on      | a duplicate changeset id/author/file identity (whole-graph rule)                                           |
 | [`project-duplicate-object`](#project-duplicate-object)                           | warning  | opt-in  | a table, index, column or constraint name declared twice                                                   |
-| [`project-foreign-key-target`](#project-foreign-key-target)                       | warning  | opt-in  | a foreign key whose referenced table is never created                                                     |
-| [`project-unvalidated-constraint`](#project-unvalidated-constraint)               | warning  | opt-in  | a `NOT VALID` constraint that is never validated                                                          |
-| [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                         |
+| [`project-foreign-key-target`](#project-foreign-key-target)                       | warning  | opt-in  | a foreign key whose referenced table is never created                                                      |
+| [`project-unvalidated-constraint`](#project-unvalidated-constraint)               | warning  | opt-in  | a `NOT VALID` constraint that is never validated                                                           |
+| [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                          |
 | [`project-conflicting-comment`](#project-conflicting-comment)                     | warning  | opt-in  | an object commented twice, with the same or different text                                                 |
 | [`project-unregistered-routine`](#project-unregistered-routine)                   | warning  | opt-in  | a routine SQL file no changeset references                                                                 |
 

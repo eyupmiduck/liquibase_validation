@@ -39,6 +39,24 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
             "procedures", "procedures-rollback",
             "triggers", "triggers-rollback");
 
+    private static void addPaths(Set<Path> paths, List<SqlSource> sources) {
+        for (SqlSource source : sources) {
+            if (source.path() != null) {
+                paths.add(source.path().toAbsolutePath().normalize());
+            }
+        }
+    }
+
+    private static boolean isRoutineFile(Path root, Path file) {
+        Path relative = root.relativize(file.toAbsolutePath().normalize());
+        for (Path segment : relative) {
+            if (ROUTINE_DIRECTORIES.contains(segment.toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public String id() {
         return ID;
@@ -75,23 +93,5 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
             }
         }
         return List.copyOf(violations);
-    }
-
-    private static void addPaths(Set<Path> paths, List<SqlSource> sources) {
-        for (SqlSource source : sources) {
-            if (source.path() != null) {
-                paths.add(source.path().toAbsolutePath().normalize());
-            }
-        }
-    }
-
-    private static boolean isRoutineFile(Path root, Path file) {
-        Path relative = root.relativize(file.toAbsolutePath().normalize());
-        for (Path segment : relative) {
-            if (ROUTINE_DIRECTORIES.contains(segment.toString())) {
-                return true;
-            }
-        }
-        return false;
     }
 }

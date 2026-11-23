@@ -39,8 +39,8 @@ Add two checks and their test-support contracts.
 - `SchemaLayeringCheck.Reference` is the allow-list entry. A `null`
   `toObject` matches any object. An entry that matches no reference is stale and
   reported, so a removed exception cannot hide a new reference.
-- `SchemaLayeringCheck.Report` also counts the routines and objects
-  (routines, relations and types) per schema. `SchemaLayeringContract` fails
+- `SchemaLayeringCheck.Report` also counts the routines and objects (routines, relations and types) per schema.
+  `SchemaLayeringContract` fails
   when a configured schema contains none of them, so a misspelled schema cannot
   pass.
 - `SchemaLayeringContract` extends `PostgresTestBase`. `schemaLayers()` defaults

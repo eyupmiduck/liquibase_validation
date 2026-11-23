@@ -58,6 +58,11 @@ class RulesTest {
                 Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null, options)));
     }
 
+    private static LinterConfig analysisConfig(String ruleId, Map<String, Object> options) {
+        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(ruleId),
+                Map.of(ruleId, new LinterConfig.RuleSettings(null, options)));
+    }
+
     @Test
     void registersEveryRuleImplementationInThePackage() throws Exception {
         Set<String> registered = Rules.all((Integer) null).stream()
@@ -150,11 +155,6 @@ class RulesTest {
                         Map.of("knownTables", List.of(" ")))));
         assertFalse(Rules.projectAnalysisRules(analysisConfig(ForeignKeyTargetRule.ID,
                 Map.of("knownTables", List.of(" app.t ")))).isEmpty());
-    }
-
-    private static LinterConfig analysisConfig(String ruleId, Map<String, Object> options) {
-        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(ruleId),
-                Map.of(ruleId, new LinterConfig.RuleSettings(null, options)));
     }
 
     @Test

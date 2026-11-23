@@ -4,11 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.SqlLexer;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 
-import java.sql.Array;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.*;
 
 /**
@@ -34,88 +30,6 @@ import java.util.*;
 public final class SchemaLayeringCheck {
 
     private SchemaLayeringCheck() {
-    }
-
-    /**
-     * A reference from a routine to an object in another schema. A {@code null}
-     * {@code toObject} in an allow-list entry matches any object.
-     *
-     * @param fromSchema  the referencing schema
-     * @param fromRoutine the referencing routine
-     * @param toSchema    the referenced schema
-     * @param toObject    the referenced object, or {@code null} to match any
-     */
-    public record Reference(String fromSchema, String fromRoutine, String toSchema, String toObject) {
-
-        /**
-         * Validates the required values; only {@code toObject} may be null.
-         */
-        public Reference {
-            fromSchema = requireNonBlank(fromSchema, "fromSchema");
-            fromRoutine = requireNonBlank(fromRoutine, "fromRoutine");
-            toSchema = requireNonBlank(toSchema, "toSchema");
-            if (toObject != null && toObject.isBlank()) {
-                throw new IllegalArgumentException("toObject must be null or non-blank");
-            }
-        }
-
-        /**
-         * Formats the reference for a test failure.
-         *
-         * @return a one-line description
-         */
-        public String describe() {
-            return fromSchema + "." + fromRoutine + " -> " + toSchema
-                    + (toObject == null ? "" : "." + toObject);
-        }
-    }
-
-    /**
-     * The layering report.
-     *
-     * @param unexpected       the references not covered by the allow-list
-     * @param staleAllowList   the allow-list entries that matched nothing
-     * @param routinesBySchema the routine count per configured schema
-     * @param objectsBySchema  the routine, relation and type count per configured
-     *                         schema, for the non-vacuity check
-     */
-    public record Report(List<Reference> unexpected, List<Reference> staleAllowList,
-                         Map<String, Integer> routinesBySchema,
-                         Map<String, Integer> objectsBySchema) {
-
-        /**
-         * Copies the collections and keeps the configured schema order.
-         */
-        public Report {
-            unexpected = List.copyOf(unexpected);
-            staleAllowList = List.copyOf(staleAllowList);
-            routinesBySchema = Collections.unmodifiableMap(new LinkedHashMap<>(routinesBySchema));
-            objectsBySchema = Collections.unmodifiableMap(new LinkedHashMap<>(objectsBySchema));
-        }
-
-        /**
-         * The total number of routines inspected.
-         *
-         * @return the routine count
-         */
-        public int routines() {
-            return routinesBySchema.values().stream().mapToInt(Integer::intValue).sum();
-        }
-
-        /**
-         * The configured schemas that contain no routine, relation or type.
-         *
-         * @return the empty schemas, in configured order
-         */
-        public Set<String> emptySchemas() {
-            Set<String> empty = new LinkedHashSet<>();
-            for (String schema : routinesBySchema.keySet()) {
-                if (objectsBySchema.getOrDefault(schema, 0) == 0) {
-                    empty.add(schema);
-                }
-            }
-            return empty;
-        }
     }
 
     /**
@@ -289,5 +203,87 @@ public final class SchemaLayeringCheck {
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value;
+    }
+
+    /**
+     * A reference from a routine to an object in another schema. A {@code null}
+     * {@code toObject} in an allow-list entry matches any object.
+     *
+     * @param fromSchema  the referencing schema
+     * @param fromRoutine the referencing routine
+     * @param toSchema    the referenced schema
+     * @param toObject    the referenced object, or {@code null} to match any
+     */
+    public record Reference(String fromSchema, String fromRoutine, String toSchema, String toObject) {
+
+        /**
+         * Validates the required values; only {@code toObject} may be null.
+         */
+        public Reference {
+            fromSchema = requireNonBlank(fromSchema, "fromSchema");
+            fromRoutine = requireNonBlank(fromRoutine, "fromRoutine");
+            toSchema = requireNonBlank(toSchema, "toSchema");
+            if (toObject != null && toObject.isBlank()) {
+                throw new IllegalArgumentException("toObject must be null or non-blank");
+            }
+        }
+
+        /**
+         * Formats the reference for a test failure.
+         *
+         * @return a one-line description
+         */
+        public String describe() {
+            return fromSchema + "." + fromRoutine + " -> " + toSchema
+                    + (toObject == null ? "" : "." + toObject);
+        }
+    }
+
+    /**
+     * The layering report.
+     *
+     * @param unexpected       the references not covered by the allow-list
+     * @param staleAllowList   the allow-list entries that matched nothing
+     * @param routinesBySchema the routine count per configured schema
+     * @param objectsBySchema  the routine, relation and type count per configured
+     *                         schema, for the non-vacuity check
+     */
+    public record Report(List<Reference> unexpected, List<Reference> staleAllowList,
+                         Map<String, Integer> routinesBySchema,
+                         Map<String, Integer> objectsBySchema) {
+
+        /**
+         * Copies the collections and keeps the configured schema order.
+         */
+        public Report {
+            unexpected = List.copyOf(unexpected);
+            staleAllowList = List.copyOf(staleAllowList);
+            routinesBySchema = Collections.unmodifiableMap(new LinkedHashMap<>(routinesBySchema));
+            objectsBySchema = Collections.unmodifiableMap(new LinkedHashMap<>(objectsBySchema));
+        }
+
+        /**
+         * The total number of routines inspected.
+         *
+         * @return the routine count
+         */
+        public int routines() {
+            return routinesBySchema.values().stream().mapToInt(Integer::intValue).sum();
+        }
+
+        /**
+         * The configured schemas that contain no routine, relation or type.
+         *
+         * @return the empty schemas, in configured order
+         */
+        public Set<String> emptySchemas() {
+            Set<String> empty = new LinkedHashSet<>();
+            for (String schema : routinesBySchema.keySet()) {
+                if (objectsBySchema.getOrDefault(schema, 0) == 0) {
+                    empty.add(schema);
+                }
+            }
+            return empty;
+        }
     }
 }

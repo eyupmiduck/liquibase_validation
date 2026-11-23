@@ -31,6 +31,10 @@ class ProjectAnalysisTest {
     @TempDir
     Path root;
 
+    private static String changeSet(String id, String sql) {
+        return "<changeSet id=\"" + id + "\" author=\"me\"><sql>" + sql + "</sql></changeSet>";
+    }
+
     private List<Finding> lint(ProjectAnalysisRule rule, String... files) throws IOException {
         Path master = root.resolve("master.xml");
         StringBuilder includes = new StringBuilder();
@@ -43,10 +47,6 @@ class ProjectAnalysisTest {
         ChangelogProject project = ChangelogModel.project(root, master);
         LinterConfig config = new LinterConfig(null, Severity.ERROR, List.of(), List.of(rule.id()), Map.of());
         return new Linter(List.of(), List.of(), List.of(rule), config).lint(project);
-    }
-
-    private static String changeSet(String id, String sql) {
-        return "<changeSet id=\"" + id + "\" author=\"me\"><sql>" + sql + "</sql></changeSet>";
     }
 
     @Test

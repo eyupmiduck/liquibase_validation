@@ -32,40 +32,6 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
      */
     public static final String ID = "project-duplicate-object";
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.WARNING;
-    }
-
-    @Override
-    public List<Violation> check(ProjectContext context) {
-        Map<String, Located> tables = new LinkedHashMap<>();
-        Map<String, Located> indexes = new LinkedHashMap<>();
-        Map<String, Located> columns = new LinkedHashMap<>();
-        Map<String, Located> constraints = new LinkedHashMap<>();
-        List<Violation> violations = new ArrayList<>();
-        for (ProjectStatements.Statement statement : ProjectStatements.forward(context)) {
-            List<Token> tokens = statement.tokens();
-            if (TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
-                createTable(statement, tokens, tables, columns, violations);
-            } else if (isCreateIndex(tokens)) {
-                createIndex(statement, tokens, indexes, violations);
-            } else if (TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
-                alterTable(statement, tokens, columns, constraints, violations);
-            } else if (TokenWords.startsWith(tokens, "DROP", "TABLE")) {
-                dropTable(statement, tokens, tables, columns, constraints);
-            } else if (TokenWords.startsWith(tokens, "DROP", "INDEX")) {
-                dropIndex(tokens, indexes);
-            }
-        }
-        return List.copyOf(violations);
-    }
-
     private static boolean isCreateIndex(List<Token> tokens) {
         return TokenWords.startsWith(tokens, "CREATE", "INDEX")
                 || TokenWords.startsWith(tokens, "CREATE", "UNIQUE", "INDEX");
@@ -326,6 +292,40 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
 
     private static boolean isPunctuation(Token token, String text) {
         return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.WARNING;
+    }
+
+    @Override
+    public List<Violation> check(ProjectContext context) {
+        Map<String, Located> tables = new LinkedHashMap<>();
+        Map<String, Located> indexes = new LinkedHashMap<>();
+        Map<String, Located> columns = new LinkedHashMap<>();
+        Map<String, Located> constraints = new LinkedHashMap<>();
+        List<Violation> violations = new ArrayList<>();
+        for (ProjectStatements.Statement statement : ProjectStatements.forward(context)) {
+            List<Token> tokens = statement.tokens();
+            if (TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
+                createTable(statement, tokens, tables, columns, violations);
+            } else if (isCreateIndex(tokens)) {
+                createIndex(statement, tokens, indexes, violations);
+            } else if (TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
+                alterTable(statement, tokens, columns, constraints, violations);
+            } else if (TokenWords.startsWith(tokens, "DROP", "TABLE")) {
+                dropTable(statement, tokens, tables, columns, constraints);
+            } else if (TokenWords.startsWith(tokens, "DROP", "INDEX")) {
+                dropIndex(tokens, indexes);
+            }
+        }
+        return List.copyOf(violations);
     }
 
     private record Located(ChangeSet changeSet, Path file, int line, int column) {

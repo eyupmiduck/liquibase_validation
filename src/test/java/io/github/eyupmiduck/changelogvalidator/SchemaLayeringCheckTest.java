@@ -10,7 +10,8 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Verifies {@link SchemaLayeringCheck} against a live catalog: a lower schema may
@@ -23,6 +24,10 @@ class SchemaLayeringCheckTest extends PostgresTestBase {
     private static final String MID = "layering_mid";
     private static final String BOTTOM = "layering_bottom";
     private static final String EMPTY = "layering_empty";
+
+    private static String quote(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
 
     /**
      * Recreates four schemas with a compliant three-layer dependency:
@@ -52,10 +57,6 @@ class SchemaLayeringCheckTest extends PostgresTestBase {
             statement.execute("CREATE FUNCTION " + TOP + ".top_fn() RETURNS integer"
                     + " LANGUAGE sql AS 'SELECT " + MID + ".mid_fn()'");
         }
-    }
-
-    private static String quote(String identifier) {
-        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
     private SchemaLayeringCheck.Report inspect(Set<SchemaLayeringCheck.Reference> allowed) throws SQLException {

@@ -21,27 +21,6 @@ final class ProjectStatements {
     }
 
     /**
-     * One forward statement.
-     *
-     * @param changeSet the changeset that declared it
-     * @param unit      the SQL unit
-     * @param tokens    the non-trivia tokens in the statement
-     * @param order     the global statement order
-     */
-    record Statement(ChangeSet changeSet, SqlUnit unit, List<Token> tokens, int order) {
-
-        /**
-         * Validates the required components.
-         */
-        Statement {
-            java.util.Objects.requireNonNull(changeSet, "changeSet");
-            java.util.Objects.requireNonNull(unit, "unit");
-            java.util.Objects.requireNonNull(tokens, "tokens");
-            tokens = List.copyOf(tokens);
-        }
-    }
-
-    /**
      * Returns every forward statement in execution order.
      *
      * @param context the project context
@@ -67,5 +46,26 @@ final class ProjectStatements {
             }
         }
         return List.copyOf(statements);
+    }
+
+    /**
+     * One forward statement.
+     *
+     * @param changeSet the changeset that declared it
+     * @param unit      the SQL unit
+     * @param tokens    the non-trivia tokens in the statement
+     * @param order     the global statement order
+     */
+    record Statement(ChangeSet changeSet, SqlUnit unit, List<Token> tokens, int order) {
+
+        /**
+         * Validates the required components.
+         */
+        Statement {
+            java.util.Objects.requireNonNull(changeSet, "changeSet");
+            java.util.Objects.requireNonNull(unit, "unit");
+            java.util.Objects.requireNonNull(tokens, "tokens");
+            tokens = List.copyOf(tokens);
+        }
     }
 }

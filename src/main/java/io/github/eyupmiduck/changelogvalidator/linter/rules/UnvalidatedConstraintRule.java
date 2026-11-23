@@ -30,6 +30,54 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
      */
     public static final String ID = "project-unvalidated-constraint";
 
+    private static void dropTable(List<Token> tokens, Map<String, Located> pending) {
+        int name = 2;
+        if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
+            name += 2;
+        }
+        String table = RuleSupport.qualifiedName(tokens, name);
+        if (table != null) {
+            pending.keySet().removeIf(key -> key.startsWith(table + "."));
+        }
+    }
+
+    private static int nextClause(List<Token> tokens, String keyword, int from) {
+        int depth = 0;
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword(keyword)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean notValid(List<Token> tokens, int add) {
+        int next = nextClause(tokens, "ADD", add + 1);
+        int end = next < 0 ? tokens.size() : next;
+        int depth = 0;
+        for (int i = add; i < end; i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword("NOT")
+                    && TokenWords.at(tokens, i + 1, "VALID")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -124,54 +172,6 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
                     "Run ALTER TABLE ... VALIDATE CONSTRAINT in a later changeset, or remove the NOT VALID."));
         }
         return List.copyOf(violations);
-    }
-
-    private static void dropTable(List<Token> tokens, Map<String, Located> pending) {
-        int name = 2;
-        if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
-            name += 2;
-        }
-        String table = RuleSupport.qualifiedName(tokens, name);
-        if (table != null) {
-            pending.keySet().removeIf(key -> key.startsWith(table + "."));
-        }
-    }
-
-    private static int nextClause(List<Token> tokens, String keyword, int from) {
-        int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static boolean notValid(List<Token> tokens, int add) {
-        int next = nextClause(tokens, "ADD", add + 1);
-        int end = next < 0 ? tokens.size() : next;
-        int depth = 0;
-        for (int i = add; i < end; i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword("NOT")
-                    && TokenWords.at(tokens, i + 1, "VALID")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isPunctuation(Token token, String text) {
-        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
     }
 
     private record Located(io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet changeSet,
