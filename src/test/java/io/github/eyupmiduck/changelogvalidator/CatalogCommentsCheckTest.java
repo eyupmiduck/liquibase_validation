@@ -165,6 +165,19 @@ class CatalogCommentsCheckTest extends PostgresTestBase {
     }
 
     /**
+     * An aggregate is a user-created {@code pg_proc} row and needs a comment too.
+     */
+    @Test
+    void reportsAnUncommentedAggregate() throws Exception {
+        execute("CREATE AGGREGATE " + SCHEMA + ".sum_int(integer) (SFUNC = int4pl, STYPE = integer)");
+
+        List<String> problems = problems(true);
+        assertTrue(problems.stream()
+                        .anyMatch(problem -> problem.startsWith("function " + SCHEMA + ".sum_int")),
+                () -> "expected the aggregate to be reported in " + problems);
+    }
+
+    /**
      * A blank comment is as invalid as a missing one.
      */
     @Test

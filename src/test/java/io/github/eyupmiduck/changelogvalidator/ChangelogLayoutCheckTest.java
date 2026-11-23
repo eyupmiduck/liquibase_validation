@@ -140,6 +140,23 @@ class ChangelogLayoutCheckTest {
     }
 
     /**
+     * A sibling directory whose name merely ends with the conventional one is
+     * not the conventional directory.
+     */
+    @Test
+    void reportsASiblingDirectoryThatOnlyEndsWithTheConventionalName() throws IOException {
+        project(sqlChangeSet("001-create", "legacy_sql_changes/001-create.sql",
+                "rollback/001-create-rollback.sql"));
+        write("changes/legacy_sql_changes/001-create.sql", "SELECT 1;\n");
+        write("changes/rollback/001-create-rollback.sql", "SELECT 1;\n");
+
+        List<ChangelogLayoutCheck.Violation> violations = violations();
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.getFirst().message().contains("does not match sql_changes/001-create.sql"),
+                violations.getFirst().message());
+    }
+
+    /**
      * A numbered changeset's rollback file must be named after the changeset.
      */
     @Test
@@ -312,6 +329,27 @@ class ChangelogLayoutCheckTest {
         assertEquals(1, violations.size(), violations.toString());
         assertTrue(violations.getFirst().message().contains("declares 2 stored objects"),
                 violations.getFirst().message());
+    }
+
+    /**
+     * A constraint trigger is a valid trigger form and declares the path's
+     * trigger.
+     */
+    @Test
+    void acceptsAConstraintTriggerDeclaration() throws IOException {
+        project(triggerChangeSet("trigger-app.foo_trg",
+                "triggers/app/foo_trg.sql", "triggers-rollback/app/foo_trg-rollback.sql"));
+        write("changes/triggers/app/foo_trg.sql", """
+                CREATE CONSTRAINT TRIGGER foo_trg
+                    AFTER UPDATE ON app.foo
+                    DEFERRABLE INITIALLY DEFERRED
+                    FOR EACH ROW
+                EXECUTE FUNCTION app.set_updated_at();
+                """);
+        write("changes/triggers-rollback/app/foo_trg-rollback.sql",
+                "DROP TRIGGER IF EXISTS foo_trg ON app.foo;\n");
+
+        assertEquals(List.of(), violations());
     }
 
     /**

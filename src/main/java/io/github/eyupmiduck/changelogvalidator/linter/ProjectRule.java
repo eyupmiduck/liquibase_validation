@@ -82,7 +82,7 @@ public interface ProjectRule {
          * @param help      how to fix it, or null
          */
         public Violation(ChangeSet changeSet, String statement, String message, String help) {
-            this(changeSet, changeSet.line(), 1, statement, message, help);
+            this(Objects.requireNonNull(changeSet, "changeSet"), changeSet.line(), 1, statement, message, help);
         }
     }
 }

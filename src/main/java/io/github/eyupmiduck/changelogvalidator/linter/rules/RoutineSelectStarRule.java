@@ -127,6 +127,17 @@ public final class RoutineSelectStarRule implements Rule {
         for (int i = cursor; i < tokens.size(); i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
+                // A nested subquery is scanned by its own SELECT iteration, so
+                // skip it here to avoid reporting the same qualified star twice.
+                if (word(tokens, i + 1, "SELECT")) {
+                    int close = matchingParen(tokens, i);
+                    if (close < 0) {
+                        return;
+                    }
+                    i = close;
+                    itemStart = false;
+                    continue;
+                }
                 depth++;
                 itemStart = false;
                 continue;
@@ -136,17 +147,26 @@ public final class RoutineSelectStarRule implements Rule {
                 itemStart = false;
                 continue;
             }
+            // A qualified star is a select-list star even inside a function call,
+            // e.g. json_agg(t.*); count(*) has no preceding dot.
+            if (isStar(token) && isDot(tokens.get(i - 1))) {
+                violations.add(new Violation(
+                        "SELECT *",
+                        "routine selects every column; a table change silently changes its result",
+                        "List the columns explicitly.",
+                        unit.file(), token.line(), token.column()));
+            }
             if (depth > 0) {
                 continue;
             }
-            if (token.matchesKeyword("FROM")) {
+            if (token.matchesKeyword("FROM") || isPunctuation(token, ";")) {
                 return;
             }
             if (isPunctuation(token, ",")) {
                 itemStart = true;
                 continue;
             }
-            if (isStar(token) && (itemStart || isDot(tokens.get(i - 1)))) {
+            if (isStar(token) && itemStart) {
                 violations.add(new Violation(
                         "SELECT *",
                         "routine selects every column; a table change silently changes its result",

@@ -57,6 +57,32 @@ class RequireNotValidConstraintRuleTest {
     }
 
     /**
+     * A validating constraint in a later ADD clause is still reported; an earlier
+     * clause that is not a CHECK/FOREIGN KEY must not abandon the statement.
+     */
+    @Test
+    void reportsAConstraintInALaterAddClause() {
+        assertEquals(1, check("ALTER TABLE t ADD COLUMN y integer,"
+                + " ADD CONSTRAINT c CHECK (y > 0)").size());
+        assertEquals(1, check("ALTER TABLE t ADD PRIMARY KEY (id),"
+                + " ADD CONSTRAINT c CHECK (y > 0)").size());
+        assertTrue(check("ALTER TABLE t ADD COLUMN y integer,"
+                + " ADD CONSTRAINT c CHECK (y > 0) NOT VALID").isEmpty());
+    }
+
+    /**
+     * A NOT VALID in a later clause must not exempt an earlier validating
+     * constraint, and an in-expression `NOT valid` pair is not the NOT VALID
+     * modifier.
+     */
+    @Test
+    void boundsNotValidToItsOwnAddClause() {
+        assertEquals(1, check("ALTER TABLE t ADD CONSTRAINT c1 CHECK (x > 0),"
+                + " ADD CONSTRAINT c2 CHECK (y > 0) NOT VALID").size());
+        assertEquals(1, check("ALTER TABLE t ADD CONSTRAINT c CHECK (NOT valid)").size());
+    }
+
+    /**
      * The rollback direction is checked against its own created tables.
      */
     @Test

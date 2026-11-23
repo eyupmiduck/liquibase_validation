@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
@@ -48,10 +49,6 @@ public final class TriggerCreateOrReplaceRule implements Rule {
         this.pgVersion = pgVersion;
     }
 
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
-    }
-
     @Override
     public String id() {
         return ID;
@@ -91,14 +88,14 @@ public final class TriggerCreateOrReplaceRule implements Rule {
                         continue;
                     }
                     int cursor = i + 1;
-                    boolean orReplace = word(tokens, cursor, "OR") && word(tokens, cursor + 1, "REPLACE");
+                    boolean orReplace = TokenWords.at(tokens, cursor, "OR") && TokenWords.at(tokens, cursor + 1, "REPLACE");
                     if (orReplace) {
                         cursor += 2;
                     }
-                    if (word(tokens, cursor, "CONSTRAINT")) {
+                    if (TokenWords.at(tokens, cursor, "CONSTRAINT")) {
                         cursor++;
                     }
-                    if (!word(tokens, cursor, "TRIGGER")) {
+                    if (!TokenWords.at(tokens, cursor, "TRIGGER")) {
                         continue;
                     }
                     if (!orReplace) {
@@ -109,7 +106,6 @@ public final class TriggerCreateOrReplaceRule implements Rule {
                                 "Use CREATE OR REPLACE TRIGGER (PostgreSQL 14+).",
                                 unit.file(), token.line(), token.column()));
                     }
-                    break;
                 }
             }
         }

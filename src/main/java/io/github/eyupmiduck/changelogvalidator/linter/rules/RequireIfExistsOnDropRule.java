@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
@@ -40,10 +41,6 @@ public final class RequireIfExistsOnDropRule implements Rule {
             }
         }
         return false;
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
     }
 
     @Override
@@ -86,10 +83,10 @@ public final class RequireIfExistsOnDropRule implements Rule {
                     }
                     String kind = tokens.get(cursor).text().toUpperCase(Locale.ROOT);
                     cursor++;
-                    if (kind.equals("INDEX") && word(tokens, cursor, "CONCURRENTLY")) {
+                    if (kind.equals("INDEX") && TokenWords.at(tokens, cursor, "CONCURRENTLY")) {
                         cursor++;
                     }
-                    if (word(tokens, cursor, "IF") && word(tokens, cursor + 1, "EXISTS")) {
+                    if (TokenWords.at(tokens, cursor, "IF") && TokenWords.at(tokens, cursor + 1, "EXISTS")) {
                         continue;
                     }
                     Token token = tokens.get(i);

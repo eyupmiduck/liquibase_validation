@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +47,21 @@ class TriggerCreateOrReplaceRuleTest {
                         "CREATE TRIGGER t BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f()")).size());
         assertTrue(new TriggerCreateOrReplaceRule()
                 .check(RuleTestSupport.context("DROP TRIGGER IF EXISTS t ON x")).isEmpty());
+    }
+
+    /**
+     * An unsplit statement can contain several commands; every plain trigger is
+     * checked, not only the first.
+     */
+    @Test
+    void reportsEveryPlainTriggerInAnUnsplitStatement() {
+        String sql = "CREATE OR REPLACE TRIGGER a BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f();"
+                + " CREATE TRIGGER b BEFORE UPDATE ON x FOR EACH ROW EXECUTE FUNCTION f();";
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unsplitUnit(sql));
+
+        assertEquals(1, new TriggerCreateOrReplaceRule().check(context).size());
     }
 
     /**

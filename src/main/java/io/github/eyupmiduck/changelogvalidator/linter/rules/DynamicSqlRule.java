@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.model.RoutineBodies;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
@@ -12,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Notes that a stored-routine body builds SQL dynamically, so the static rules
@@ -38,6 +41,10 @@ public final class DynamicSqlRule implements Rule {
      * The rule id.
      */
     public static final String ID = "routine-dynamic-sql";
+
+    // EXECUTE as a whole word, for legacy single-quoted bodies that the
+    // dollar-quote extractor does not re-lex.
+    private static final Pattern EXECUTE = Pattern.compile("(?i)(?<!\\w)execute(?!\\w)");
 
     private final Set<String> allowedRoutines;
 
@@ -104,6 +111,75 @@ public final class DynamicSqlRule implements Rule {
                     }
                 }
             }
+            collectSingleQuotedBodies(unit, violations);
         }
+    }
+
+    /**
+     * Keeps the rule's original coverage for a legacy single-quoted routine body.
+     * {@link RoutineBodies} deliberately extracts only dollar-quoted bodies; a
+     * body written as {@code AS 'BEGIN ... EXECUTE ...; END'} is a single string
+     * token, so this fallback scans its text for the keyword. It is
+     * informational and quote-unaware, which is acceptable for the reminder.
+     */
+    private void collectSingleQuotedBodies(SqlUnit unit, List<Violation> violations) {
+        List<Token> tokens = unit.tokens().stream().filter(token -> !token.isTrivia()).toList();
+        boolean declaration = tokens.stream()
+                .anyMatch(token -> token.matchesKeyword("FUNCTION") || token.matchesKeyword("PROCEDURE"));
+        if (!declaration) {
+            return;
+        }
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            Token body = tokens.get(i + 1);
+            if (!tokens.get(i).matchesKeyword("AS")
+                    || body.type() == TokenType.DOLLAR_STRING
+                    || !body.isStringLiteral()) {
+                continue;
+            }
+            Matcher matcher = EXECUTE.matcher(body.text());
+            while (matcher.find()) {
+                int[] position = position(unit, body.startOffset() + matcher.start());
+                violations.add(new Violation(
+                        "EXECUTE",
+                        "routine body builds SQL dynamically; static rules cannot see the statements it runs",
+                        "Inspect the dynamic SQL by hand (or with plpgsql_check) for the rules the linter cannot apply.",
+                        unit.file(), position[0], position[1]));
+            }
+        }
+    }
+
+    /**
+     * Returns the one-based line and column of {@code offset} in the unit's SQL.
+     * The walk uses the lexer's own rules: a bare CR is a line break, a CRLF is
+     * one break, and a surrogate pair counts as one column.
+     */
+    private static int[] position(SqlUnit unit, int offset) {
+        for (Token token : unit.tokens()) {
+            if (token.startOffset() <= offset && offset < token.endOffset()) {
+                String sql = unit.sql();
+                int line = token.line();
+                int column = token.column();
+                for (int i = token.startOffset(); i < offset; i++) {
+                    char consumed = sql.charAt(i);
+                    if (consumed == '\n') {
+                        line++;
+                        column = 1;
+                    } else if (consumed == '\r' && (i + 1 >= sql.length() || sql.charAt(i + 1) != '\n')) {
+                        line++;
+                        column = 1;
+                    } else {
+                        column++;
+                        if (Character.isHighSurrogate(consumed) && i + 1 < offset
+                                && Character.isLowSurrogate(sql.charAt(i + 1))) {
+                            i++;
+                        }
+                    }
+                }
+                return new int[]{line, column};
+            }
+        }
+        Token anchor = unit.tokens().stream().filter(token -> !token.isTrivia()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("routine body has no token to locate"));
+        return new int[]{anchor.line(), anchor.column()};
     }
 }

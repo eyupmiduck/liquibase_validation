@@ -49,6 +49,13 @@ public final class ChangesetIdUniqueRule implements ProjectRule {
             if (first == null) {
                 continue;
             }
+            if (first.line() == changeSet.line()
+                    && first.changelogFile().toAbsolutePath().normalize()
+                            .equals(changeSet.changelogFile().toAbsolutePath().normalize())) {
+                // The same declaration reached twice through a repeated include,
+                // not two distinct changeset elements (which cannot share a line).
+                continue;
+            }
             violations.add(new Violation(
                     changeSet,
                     "changeSet " + changeSet.id(),

@@ -13,6 +13,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.sql.TransactionForbiddenCl
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Shared helpers for the rules: token selection within a statement, qualified
@@ -112,7 +113,7 @@ final class RuleSupport {
      * @param table  the table to look for
      * @return {@code true} when the table is present
      */
-    static boolean containsTable(java.util.Set<String> tables, String table) {
+    static boolean containsTable(Set<String> tables, String table) {
         if (tables.contains(table)) {
             return true;
         }

@@ -36,7 +36,8 @@ public final class RoutineBodies {
      * Continuations of the multi-word type names in {@link #MULTI_WORD_TYPE_STARTS}.
      */
     private static final Set<String> TYPE_CONTINUATIONS = Set.of(
-            "precision", "varying", "with", "without");
+            "precision", "varying", "with", "without",
+            "year", "month", "day", "hour", "minute", "second", "to", "character");
 
     private RoutineBodies() {
     }
@@ -215,7 +216,7 @@ public final class RoutineBodies {
 
     private static String identifier(Token token) {
         return switch (token.type()) {
-            case WORD -> token.text();
+            case WORD -> token.text().toLowerCase(Locale.ROOT);
             case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1)
                     .replace("\"\"", "\"");
             default -> null;

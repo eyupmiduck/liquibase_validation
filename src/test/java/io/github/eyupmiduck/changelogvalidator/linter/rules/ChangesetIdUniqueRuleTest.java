@@ -49,6 +49,14 @@ class ChangesetIdUniqueRuleTest {
     }
 
     @Test
+    void acceptsTheSameDeclarationReachedThroughARepeatedInclude() {
+        ChangeSet first = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 3);
+        ChangeSet repeated = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 3);
+
+        assertTrue(new ChangesetIdUniqueRule().check(List.of(first, repeated)).isEmpty());
+    }
+
+    @Test
     void reportsEveryOccurrenceAfterTheFirstAndNormalizesThePath() {
         ChangeSet first = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 1);
         ChangeSet second = changeSet("001-create", "me", Path.of("/db/./changelog.xml"), 2);

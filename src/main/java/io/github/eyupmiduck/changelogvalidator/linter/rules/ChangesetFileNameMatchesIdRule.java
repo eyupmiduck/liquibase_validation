@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogNaming;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
@@ -9,7 +10,6 @@ import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Reports a numbered changeset whose SQL file does not match its id.
@@ -31,9 +31,6 @@ public final class ChangesetFileNameMatchesIdRule implements Rule {
      */
     public static final String ID = "changeset-file-name-matches-id";
 
-    private static final Pattern NUMBERED_ID =
-            Pattern.compile("\\d{3}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*");
-
     @Override
     public String id() {
         return ID;
@@ -47,17 +44,20 @@ public final class ChangesetFileNameMatchesIdRule implements Rule {
     @Override
     public List<Violation> check(RuleContext context) {
         String id = context.changeSet().id();
-        if (!NUMBERED_ID.matcher(id).matches()) {
+        if (!ChangelogNaming.isNumbered(id)) {
             return List.of();
         }
         List<Violation> violations = new ArrayList<>();
-        check(context, context.forward(), "sql_changes", id + ".sql", violations);
-        check(context, context.rollback(), "rollback", id + "-rollback.sql", violations);
+        check(context, context.forward(), ChangelogNaming.numberedForwardPath(id), violations);
+        check(context, context.rollback(), ChangelogNaming.numberedRollbackPath(id), violations);
         return List.copyOf(violations);
     }
 
-    private void check(RuleContext context, List<SqlUnit> units, String directory, String fileName,
+    private void check(RuleContext context, List<SqlUnit> units, String expectedPath,
                        List<Violation> violations) {
+        int slash = expectedPath.indexOf('/');
+        String directory = expectedPath.substring(0, slash);
+        String fileName = expectedPath.substring(slash + 1);
         for (SqlUnit unit : units) {
             SqlSource source = unit.source();
             if (source.path() == null) {
@@ -70,12 +70,12 @@ public final class ChangesetFileNameMatchesIdRule implements Rule {
             if (actualDirectory.equalsIgnoreCase(directory) && actualFileName.equalsIgnoreCase(fileName)) {
                 continue;
             }
-            int line = source.line() > 0 ? source.line() : context.changeSet().line();
+            int line = source.line();
             violations.add(new Violation(
                     "sqlFile",
                     "SQL file " + actualDirectory + "/" + actualFileName
                             + " does not match changeset id " + context.changeSet().id(),
-                    "Use " + directory + "/" + fileName + " (or rename the changeset id).",
+                    "Use " + expectedPath + " (or rename the changeset id).",
                     context.changeSet().changelogFile(), line, 1));
         }
     }

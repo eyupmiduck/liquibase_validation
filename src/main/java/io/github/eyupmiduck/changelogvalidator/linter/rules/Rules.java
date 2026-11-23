@@ -76,7 +76,8 @@ public final class Rules {
     /**
      * Reads the {@code routine-dynamic-sql} allow-list: a list of
      * {@code schema.name} routines whose dynamic SQL is a known boundary and is
-     * not reported.
+     * not reported. Entries are stripped; an unquoted routine name is folded to
+     * lower case by the lexer, so use the lower-case spelling for it.
      *
      * @param config the configuration
      * @return the allowed routine names, or an empty set
@@ -100,7 +101,7 @@ public final class Rules {
                 throw new IllegalArgumentException(
                         "allowedRoutines for " + DynamicSqlRule.ID + " must contain non-blank strings");
             }
-            names.add(name);
+            names.add(name.strip());
         }
         return Set.copyOf(names);
     }

@@ -94,7 +94,7 @@ public final class CatalogCommentsCheck {
             FROM pg_catalog.pg_proc AS p
             JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
             WHERE n.nspname = ANY (?)
-              AND p.prokind IN ('f', 'p')
+              AND p.prokind IN ('f', 'p', 'a', 'w')
               AND NOT EXISTS (
                   SELECT 1
                   FROM pg_catalog.pg_depend AS d
@@ -186,10 +186,10 @@ public final class CatalogCommentsCheck {
     public static Report check(Connection connection, Collection<String> schemas,
                                Collection<AllowedObject> allowed, Options options) throws SQLException {
         Objects.requireNonNull(allowed, "allowed");
-        List<AllowedObject> entries = List.copyOf(allowed);
-        for (AllowedObject entry : entries) {
+        for (AllowedObject entry : allowed) {
             Objects.requireNonNull(entry, "allowed element");
         }
+        List<AllowedObject> entries = List.copyOf(allowed);
         List<ObjectComment> objects = inspect(connection, schemas, options);
         List<Violation> missing = missing(objects);
 

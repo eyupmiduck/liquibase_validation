@@ -5,6 +5,8 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
 
 import java.util.ArrayList;
@@ -33,28 +35,6 @@ public final class RequireNotValidConstraintRule implements Rule {
      * The rule id.
      */
     public static final String ID = "require-not-valid-constraint";
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
-    }
-
-    private static int indexOf(List<Token> tokens, String keyword, int from) {
-        for (int i = from; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static boolean hasSequence(List<Token> tokens, int from, String first, String second) {
-        for (int i = from; i + 1 < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(first) && tokens.get(i + 1).matchesKeyword(second)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     @Override
     public String id() {
@@ -89,50 +69,93 @@ public final class RequireNotValidConstraintRule implements Rule {
             for (SqlStatement statement : unit.statements()) {
                 List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
                 for (int i = 0; i < tokens.size(); i++) {
-                    if (!tokens.get(i).matchesKeyword("ALTER") || !word(tokens, i + 1, "TABLE")) {
+                    if (!tokens.get(i).matchesKeyword("ALTER") || !TokenWords.at(tokens, i + 1, "TABLE")) {
                         continue;
                     }
                     int cursor = i + 2;
-                    if (word(tokens, cursor, "IF") && word(tokens, cursor + 1, "EXISTS")) {
+                    if (TokenWords.at(tokens, cursor, "IF") && TokenWords.at(tokens, cursor + 1, "EXISTS")) {
                         cursor += 2;
                     }
-                    if (word(tokens, cursor, "ONLY")) {
+                    if (TokenWords.at(tokens, cursor, "ONLY")) {
                         cursor++;
                     }
                     String table = RuleSupport.qualifiedName(tokens, cursor);
                     if (table == null) {
                         continue;
                     }
-                    int add = indexOf(tokens, "ADD", cursor);
-                    if (add < 0) {
-                        continue;
-                    }
-                    int constraint = add + 1;
-                    if (word(tokens, constraint, "CONSTRAINT")) {
-                        constraint++;
-                        if (constraint < tokens.size() && RuleSupport.identifier(tokens.get(constraint)) != null) {
+                    for (int add = nextAdd(tokens, cursor); add >= 0; add = nextAdd(tokens, add + 1)) {
+                        int constraint = add + 1;
+                        if (TokenWords.at(tokens, constraint, "CONSTRAINT")) {
                             constraint++;
+                            if (constraint < tokens.size()
+                                    && RuleSupport.identifier(tokens.get(constraint)) != null) {
+                                constraint++;
+                            }
                         }
+                        boolean check = TokenWords.at(tokens, constraint, "CHECK");
+                        boolean foreign = TokenWords.at(tokens, constraint, "FOREIGN");
+                        if ((!check && !foreign) || notValid(tokens, add)
+                                || RuleSupport.containsTable(createdTables, table)) {
+                            continue;
+                        }
+                        Token token = tokens.get(add);
+                        violations.add(new Violation(
+                                "ALTER TABLE ... ADD CONSTRAINT",
+                                "ADD CONSTRAINT on existing table " + table
+                                        + " scans the table while holding a blocking lock",
+                                "Add it NOT VALID, then VALIDATE CONSTRAINT separately"
+                                        + " (ddl_utils.add_check_constraint/add_foreign_key do this).",
+                                unit.file(), token.line(), token.column()));
                     }
-                    boolean check = word(tokens, constraint, "CHECK");
-                    boolean foreign = word(tokens, constraint, "FOREIGN");
-                    if (!check && !foreign) {
-                        continue;
-                    }
-                    if (hasSequence(tokens, add, "NOT", "VALID")
-                            || RuleSupport.containsTable(createdTables, table)) {
-                        continue;
-                    }
-                    Token token = tokens.get(add);
-                    violations.add(new Violation(
-                            "ALTER TABLE ... ADD CONSTRAINT",
-                            "ADD CONSTRAINT on existing table " + table
-                                    + " scans the table while holding a blocking lock",
-                            "Add it NOT VALID, then VALIDATE CONSTRAINT separately"
-                                    + " (ddl_utils.add_check_constraint/add_foreign_key do this).",
-                            unit.file(), token.line(), token.column()));
                 }
             }
         }
+    }
+
+    /**
+     * Returns the next top-level {@code ADD} at or after {@code from}, or -1.
+     * Skipping a nested one keeps an {@code add} column inside a CHECK expression
+     * from being mistaken for a new clause.
+     */
+    private static int nextAdd(List<Token> tokens, int from) {
+        int depth = 0;
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword("ADD")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns whether the current {@code ADD} clause has a top-level {@code NOT
+     * VALID}. The scan stops at the next top-level {@code ADD} and ignores a
+     * {@code NOT valid} pair inside a CHECK expression.
+     */
+    private static boolean notValid(List<Token> tokens, int add) {
+        int next = nextAdd(tokens, add + 1);
+        int end = next < 0 ? tokens.size() : next;
+        int depth = 0;
+        for (int i = add; i < end; i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                depth--;
+            } else if (depth == 0 && token.matchesKeyword("NOT")
+                    && TokenWords.at(tokens, i + 1, "VALID")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
     }
 }

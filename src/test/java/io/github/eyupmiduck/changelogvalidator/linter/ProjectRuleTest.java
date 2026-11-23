@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter;
 import io.github.eyupmiduck.changelogvalidator.linter.config.LinterConfig;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 import io.github.eyupmiduck.changelogvalidator.linter.model.Normalisation;
+import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -41,6 +42,25 @@ class ProjectRuleTest {
         assertEquals(1, finding.column());
         assertEquals("project message", finding.message());
         assertEquals("project help", finding.help());
+    }
+
+    @Test
+    void aProjectRulesOnlyRunDoesNotReadSqlFiles() throws Exception {
+        ChangeSet changeSet = new ChangeSet("001-create", "me", Path.of("/db/changelog.xml"), true, false,
+                null, null, null,
+                List.of(new SqlSource(SqlSource.Kind.SQL_FILE, Path.of("/not/read.sql"),
+                        null, true, ";", true, null)),
+                false, List.of(), Normalisation.none(), 4);
+        Linter linter = new Linter(List.of(), List.of(new ProbeProjectRule(true)), LinterConfig.defaults());
+
+        assertEquals(1, linter.lint(List.of(changeSet)).size());
+    }
+
+    @Test
+    void namesTheChangeSetWhenAProjectRuleViolationHasNoChangeSet() {
+        NullPointerException error = assertThrows(NullPointerException.class,
+                () -> new ProjectRule.Violation(null, null, "message", null));
+        assertTrue(error.getMessage().contains("changeSet"), error.getMessage());
     }
 
     @Test

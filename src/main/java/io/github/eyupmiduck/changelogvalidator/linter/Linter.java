@@ -115,25 +115,28 @@ public final class Linter {
      *                               safety bound
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
-        boolean anyRule = rules.stream().anyMatch(config::isEnabled)
-                || projectRules.stream().anyMatch(rule -> config.isEnabled(rule.id(), rule.enabledByDefault()));
-        if (!anyRule) {
+        boolean anyChangesetRule = rules.stream().anyMatch(config::isEnabled);
+        boolean anyProjectRule = projectRules.stream()
+                .anyMatch(rule -> config.isEnabled(rule.id(), rule.enabledByDefault()));
+        if (!anyChangesetRule && !anyProjectRule) {
             return List.of();
         }
         List<Finding> findings = new ArrayList<>();
-        for (ChangeSet changeSet : changeSets) {
-            RuleContext context = context(changeSet);
-            for (Rule rule : rules) {
-                if (!config.isEnabled(rule)) {
-                    continue;
-                }
-                Severity severity = config.severityFor(rule);
-                List<Rule.Violation> violations = Objects.requireNonNull(rule.check(context),
-                        () -> "rule " + rule.id() + " returned null from check()");
-                for (Rule.Violation violation : violations) {
-                    findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
-                            violation.file(), violation.line(), violation.column(),
-                            violation.statement(), violation.message(), violation.help()));
+        if (anyChangesetRule) {
+            for (ChangeSet changeSet : changeSets) {
+                RuleContext context = context(changeSet);
+                for (Rule rule : rules) {
+                    if (!config.isEnabled(rule)) {
+                        continue;
+                    }
+                    Severity severity = config.severityFor(rule);
+                    List<Rule.Violation> violations = Objects.requireNonNull(rule.check(context),
+                            () -> "rule " + rule.id() + " returned null from check()");
+                    for (Rule.Violation violation : violations) {
+                        findings.add(new Finding(rule.id(), severity, changeSet.id(), changeSet.author(),
+                                violation.file(), violation.line(), violation.column(),
+                                violation.statement(), violation.message(), violation.help()));
+                    }
                 }
             }
         }

@@ -25,7 +25,9 @@ import java.util.List;
  *
  * <p>It uses the extracted body tokens, so a name in a comment or a string is not
  * checked. Unnamed parameters and SQL-language bodies (which have no
- * declarations) contribute nothing.
+ * declarations) contribute nothing. {@code RETURNS TABLE} result columns are
+ * not declared parameters; they are left to the project's result-shape
+ * convention.
  *
  * <p>The rule is an error and on by default; it checks forward and rollback
  * routine bodies.
@@ -51,7 +53,8 @@ public final class RoutineArgumentNamingRule implements Rule {
         for (int i = 0; i < triviaFree.size(); i++) {
             if (triviaFree.get(i).matchesKeyword("DECLARE")) {
                 collectDeclarations(triviaFree, i + 1, locals);
-            } else if (triviaFree.get(i).matchesKeyword("FOR")) {
+            } else if (triviaFree.get(i).matchesKeyword("FOR")
+                    || triviaFree.get(i).matchesKeyword("FOREACH")) {
                 Token target = loopTarget(triviaFree, i);
                 if (target != null) {
                     locals.add(target);
@@ -121,10 +124,7 @@ public final class RoutineArgumentNamingRule implements Rule {
         }
         int next = name + 1;
         if (next < tokens.size() && tokens.get(next).matchesKeyword("IN")) {
-            return target;
-        }
-        if (next + 1 < tokens.size() && tokens.get(next).matchesKeyword("REVERSE")
-                && tokens.get(next + 1).matchesKeyword("IN")) {
+            // Covers both `FOR var IN ...` and `FOR var IN REVERSE ...`.
             return target;
         }
         return null;

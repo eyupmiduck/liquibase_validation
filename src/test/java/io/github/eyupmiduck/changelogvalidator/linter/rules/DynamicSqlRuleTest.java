@@ -104,6 +104,21 @@ class DynamicSqlRuleTest {
     }
 
     /**
+     * A legacy single-quoted body is still scanned, even though the body
+     * extractor only re-lexes dollar-quoted bodies.
+     */
+    @Test
+    void reportsDynamicSqlInALegacySingleQuotedBody() {
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION app.f() RETURNS void AS 'BEGIN EXECUTE ''DROP TABLE t''; END'"
+                        + " LANGUAGE plpgsql;")));
+
+        assertEquals(1, violations.size());
+        assertEquals("EXECUTE", violations.getFirst().statement());
+    }
+
+    /**
      * A routine or parameter named execute in the declaration header is not
      * dynamic SQL; only the body after AS is scanned.
      */
@@ -181,7 +196,7 @@ class DynamicSqlRuleTest {
     void readsTheAllowListFromTheConfiguration() throws IOException {
         LinterConfig config = new LinterConfig(null, Severity.ERROR, List.of(), List.of(DynamicSqlRule.ID),
                 Map.of(DynamicSqlRule.ID, new LinterConfig.RuleSettings(null,
-                        Map.of("allowedRoutines", List.of("app.foo")))));
+                        Map.of("allowedRoutines", List.of(" app.foo ")))));
         String sql = "CREATE FUNCTION app.foo() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE t'; END;"
                 + " $$ LANGUAGE plpgsql;";
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true, null, null, null,

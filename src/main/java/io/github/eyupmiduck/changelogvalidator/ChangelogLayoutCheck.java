@@ -55,9 +55,6 @@ import java.util.regex.Pattern;
  */
 public final class ChangelogLayoutCheck {
 
-    private static final Pattern NUMBERED_ID =
-            Pattern.compile("\\d{3}[-_][A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*");
-
     private static final Pattern OBJECT_ID =
             Pattern.compile("^(function|procedure|trigger)-([A-Za-z_][A-Za-z0-9_]*)\\."
                     + "([A-Za-z_][A-Za-z0-9_]*)$");
@@ -99,7 +96,7 @@ public final class ChangelogLayoutCheck {
         for (ChangeSet changeSet : changeSets) {
             String id = changeSet.id();
             Matcher objectId = OBJECT_ID.matcher(id);
-            boolean numbered = NUMBERED_ID.matcher(id).matches();
+            boolean numbered = ChangelogNaming.isNumbered(id);
             if (!numbered && !objectId.matches()) {
                 // The naming check owns an unrecognised id.
                 continue;
@@ -160,13 +157,13 @@ public final class ChangelogLayoutCheck {
 
     private static void checkNumberedForward(Path root, ChangeSet changeSet, SqlSource source,
                                              List<Violation> violations) {
-        String expected = "sql_changes/" + changeSet.id() + ".sql";
+        String expected = ChangelogNaming.numberedForwardPath(changeSet.id());
         checkSuffix(root, changeSet, source, expected, "forward SQL file", violations);
     }
 
     private static void checkNumberedRollback(Path root, ChangeSet changeSet, SqlSource source,
                                               List<Violation> violations) {
-        String expected = "rollback/" + changeSet.id() + "-rollback.sql";
+        String expected = ChangelogNaming.numberedRollbackPath(changeSet.id());
         checkSuffix(root, changeSet, source, expected, "rollback SQL file", violations);
     }
 
@@ -200,7 +197,11 @@ public final class ChangelogLayoutCheck {
                                        String expectedSuffix, String description,
                                        List<Violation> violations) {
         String relative = relative(root, source.path());
-        if (!relative.toLowerCase(Locale.ROOT).endsWith(expectedSuffix.toLowerCase(Locale.ROOT))) {
+        String actual = relative.toLowerCase(Locale.ROOT);
+        String expected = expectedSuffix.toLowerCase(Locale.ROOT);
+        // Anchor the suffix at a directory boundary: a sibling directory whose
+        // name merely ends with the conventional one must not pass.
+        if (!actual.equals(expected) && !actual.endsWith("/" + expected)) {
             violations.add(violation(root, changeSet, source.path(), source.line(),
                     description + " path " + relative + " does not match " + expectedSuffix));
             return false;
@@ -278,6 +279,9 @@ public final class ChangelogLayoutCheck {
             int cursor = i + 1;
             if (word(tokens, cursor, "or") && word(tokens, cursor + 1, "replace")) {
                 cursor += 2;
+            }
+            if (word(tokens, cursor, "constraint") && word(tokens, cursor + 1, "trigger")) {
+                cursor++;
             }
             String kind = word(tokens, cursor, "function") ? "function"
                     : word(tokens, cursor, "procedure") ? "procedure"

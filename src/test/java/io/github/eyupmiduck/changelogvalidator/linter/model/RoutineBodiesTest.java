@@ -172,6 +172,34 @@ class RoutineBodiesTest {
     }
 
     @Test
+    void skipsIntervalAndNationalCharacterTypes() {
+        RoutineBodies.Body body = RoutineBodies.find(List.of(unit(
+                        "CREATE FUNCTION app.f(interval hour to minute, national character varying, i_real text)"
+                                + " RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
+                .getFirst();
+
+        assertEquals(List.of("i_real"),
+                body.parameters().stream().map(RoutineBodies.Parameter::name).toList());
+    }
+
+    @Test
+    void foldsUnquotedNamesAndKeepsQuotedNames() {
+        RoutineBodies.Body unquoted = RoutineBodies.find(List.of(unit(
+                        "CREATE FUNCTION App.Foo(I_X integer) RETURNS void AS $$ BEGIN NULL; END;"
+                                + " $$ LANGUAGE plpgsql;")))
+                .getFirst();
+        assertEquals("app.foo", unquoted.name());
+        assertEquals("i_x", unquoted.parameters().getFirst().name());
+
+        RoutineBodies.Body quoted = RoutineBodies.find(List.of(unit(
+                        "CREATE FUNCTION \"App\".\"Foo\"(\"I_X\" integer) RETURNS void AS $$ BEGIN NULL; END;"
+                                + " $$ LANGUAGE plpgsql;")))
+                .getFirst();
+        assertEquals("App.Foo", quoted.name());
+        assertEquals("I_X", quoted.parameters().getFirst().name());
+    }
+
+    @Test
     void capturesTheParameterNameTokenPosition() {
         RoutineBodies.Parameter parameter = RoutineBodies.find(List.of(unit("""
                 CREATE FUNCTION app.f(

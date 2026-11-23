@@ -47,6 +47,19 @@ class RoutineSelectStarRuleTest {
     }
 
     @Test
+    void reportsQualifiedStarsInsideFunctionCalls() {
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT json_agg(t.*) FROM app.t t; END;").size());
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT array_agg(t.*) FROM app.t t; END;").size());
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT (t.*) FROM app.t t; END;").size());
+    }
+
+    @Test
+    void stopsAFramlessSelectAtTheStatementEnd() {
+        assertEquals(1, check("BEGIN SELECT current_setting('x') INTO l_v;"
+                + " SELECT t.* FROM app.t t; END;").size());
+    }
+
+    @Test
     void ignoresStarsThatAreNotASelectListStar() {
         assertTrue(check("BEGIN RETURN QUERY SELECT count(*) FROM app.t; END;").isEmpty());
         assertTrue(check("BEGIN RETURN QUERY SELECT 'a * b' AS x; END;").isEmpty());

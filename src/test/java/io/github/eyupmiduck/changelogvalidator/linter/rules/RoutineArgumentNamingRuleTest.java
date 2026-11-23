@@ -69,6 +69,8 @@ class RoutineArgumentNamingRuleTest {
         assertEquals(1, check("", "BEGIN FOR i IN 1..10 LOOP NULL; END LOOP; END;").size());
         assertEquals(1, check("", "BEGIN FOR i IN REVERSE 10..1 LOOP NULL; END LOOP; END;").size());
         assertEquals(1, check("", "BEGIN FOR r IN SELECT 1 LOOP NULL; END LOOP; END;").size());
+        assertTrue(check("", "BEGIN FOREACH l_x IN ARRAY ARRAY[1] LOOP NULL; END LOOP; END;").isEmpty());
+        assertEquals(1, check("", "BEGIN FOREACH x IN ARRAY ARRAY[1] LOOP NULL; END LOOP; END;").size());
     }
 
     @Test
