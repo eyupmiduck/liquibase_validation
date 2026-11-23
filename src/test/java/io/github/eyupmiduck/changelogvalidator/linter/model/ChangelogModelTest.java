@@ -331,18 +331,210 @@ class ChangelogModelTest {
     }
 
     /**
-     * {@code <includeAll>} is rejected rather than silently contributing no
-     * changesets and making a lint run pass.
+     * {@code <includeAll>} includes XML changelogs in alphabetical path order,
+     * recursing into subdirectories.
      */
     @Test
-    void rejectsIncludeAll() throws IOException {
+    void includesAllXmlChangelogsInAlphabeticalOrder() throws IOException {
         write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
-                <includeAll path="changes/"/>
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+        write("included/002-second.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="002-second" author="a"><sql>SELECT 2;</sql></changeSet>
+                """));
+        write("included/001-first.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-first" author="a"><sql>SELECT 1;</sql></changeSet>
+                """));
+        write("included/sub/003-third.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="003-third" author="a"><sql>SELECT 3;</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(List.of("001-first", "002-second", "003-third"),
+                changesets.stream().map(ChangeSet::id).toList());
+    }
+
+    /**
+     * An unformatted SQL file found by {@code <includeAll>} is one raw change,
+     * matching Liquibase.
+     */
+    @Test
+    void includesAllUnformattedSqlFilesAsIndividualChanges() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+        write("included/001-raw.sql", "SELECT 1;\n");
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(1, changesets.size());
+        ChangeSet changeSet = changesets.getFirst();
+        assertEquals("included/001-raw.sql", changeSet.id());
+        assertEquals("includeAll", changeSet.author());
+        assertEquals(SqlSource.Kind.SQL_FILE, changeSet.sqlSources().getFirst().kind());
+        assertEquals(changelogRoot.resolve("included/001-raw.sql").toAbsolutePath().normalize(),
+                changeSet.sqlSources().getFirst().path());
+    }
+
+    /**
+     * A formatted SQL changelog found by {@code <includeAll>} is parsed by
+     * content, matching Liquibase's parser selection.
+     */
+    @Test
+    void includesFormattedSqlChangelogThroughIncludeAll() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+        write("included/changelog.sql", """
+                --liquibase formatted sql
+                --changeset alice:001-create
+                CREATE TABLE t (id int);
+                --changeset alice:002-index
+                CREATE INDEX idx ON t (id);
+                """);
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(List.of("001-create", "002-index"),
+                changesets.stream().map(ChangeSet::id).toList());
+        assertEquals("alice", changesets.getFirst().author());
+        assertTrue(changesets.getFirst().sqlSources().getFirst().text().contains("CREATE TABLE t"));
+    }
+
+    /**
+     * {@code endsWithFilter} and {@code maxDepth} restrict the included files.
+     */
+    @Test
+    void honoursIncludeAllFilterAndDepth() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"
+                            endsWithFilter=".xml" minDepth="1" maxDepth="1"/>
+                """));
+        write("included/001-first.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="001-first" author="a"><sql>SELECT 1;</sql></changeSet>
+                """));
+        write("included/002-skip.txt", "not a changelog\n");
+        write("included/sub/003-nested.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="003-nested" author="a"><sql>SELECT 3;</sql></changeSet>
+                """));
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(List.of("001-first"), changesets.stream().map(ChangeSet::id).toList());
+    }
+
+    /**
+     * A missing includeAll directory fails when it is required.
+     */
+    @Test
+    void rejectsMissingIncludeAllDirectoryWhenRequired() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="missing/" relativeToChangelogFile="true"/>
                 """));
 
         IOException failure = assertThrows(IOException.class,
-                () -> ChangelogModel.changesets(changelogRoot, master));
-        assertTrue(failure.getMessage().contains("includeAll is not supported"));
+                () -> ChangelogModel.changesets(changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+        assertTrue(failure.getMessage().contains("includeAll directory not found"), failure.getMessage());
+    }
+
+    /**
+     * A missing includeAll directory is allowed when the element says so.
+     */
+    @Test
+    void acceptsMissingIncludeAllDirectoryWhenNotRequired() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="missing/" relativeToChangelogFile="true"
+                            errorIfMissingOrEmpty="false"/>
+                """));
+
+        assertEquals(List.of(), ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+    }
+
+    /**
+     * A YAML changelog found by includeAll fails closed instead of being skipped.
+     */
+    @Test
+    void rejectsUnsupportedIncludeAllChangelogFormat() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+        write("included/001-first.yaml", "databaseChangeLog: []\n");
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+        assertTrue(failure.getMessage().contains("unsupported changelog format"), failure.getMessage());
+    }
+
+    /**
+     * An includeAll attribute that needs a caller-supplied class fails closed.
+     */
+    @Test
+    void rejectsUnsupportedIncludeAllAttribute() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"
+                            filter="com.example.Filter"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+        assertTrue(failure.getMessage().contains("filter"), failure.getMessage());
+    }
+
+    /**
+     * An includeAll path that escapes the changelog root is rejected.
+     */
+    @Test
+    void rejectsIncludeAllEscapingTheRoot() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="../outside/" relativeToChangelogFile="true"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogModel.changesets(changelogRoot, changelogRoot.resolve("db.changelog-master.xml")));
+        assertTrue(failure.getMessage().contains("escapes the changelog root"), failure.getMessage());
+    }
+
+    /**
+     * A formatted SQL changelog included through {@code <include>} is parsed into
+     * its {@code --changeset} entries, including rollbacks and attributes.
+     */
+    @Test
+    void includesFormattedSqlChangelogThroughInclude() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <include file="included/changelog.sql" relativeToChangelogFile="true"/>
+                """));
+        write("included/changelog.sql", """
+                --liquibase formatted sql
+                --changeset alice:001-create
+                CREATE TABLE t (id int);
+                --rollback DROP TABLE t;
+                --changeset alice:002-index runInTransaction:false endDelimiter:$$
+                CREATE INDEX CONCURRENTLY idx ON t (id)
+                $$
+                --rollback DROP INDEX CONCURRENTLY idx;
+                """);
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(2, changesets.size());
+        ChangeSet create = changesets.get(0);
+        assertEquals("001-create", create.id());
+        assertEquals("alice", create.author());
+        assertTrue(create.sqlSources().getFirst().text().contains("CREATE TABLE t"));
+        assertTrue(create.rollbackDefined());
+        assertTrue(create.rollbackSources().getFirst().text().contains("DROP TABLE t"));
+        ChangeSet index = changesets.get(1);
+        assertEquals("002-index", index.id());
+        assertFalse(index.runInTransaction());
+        assertEquals("$$", index.sqlSources().getFirst().endDelimiter());
+        assertTrue(index.rollbackDefined());
     }
 
     /**

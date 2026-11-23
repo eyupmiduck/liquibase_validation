@@ -192,8 +192,7 @@ public final class SchemaLayeringCheck {
     private static String identifier(Token token) {
         return switch (token.type()) {
             case WORD -> token.text();
-            case QUOTED_IDENTIFIER -> token.text().substring(1, token.text().length() - 1)
-                    .replace("\"\"", "\"");
+            case QUOTED_IDENTIFIER -> token.identifier();
             default -> "";
         };
     }

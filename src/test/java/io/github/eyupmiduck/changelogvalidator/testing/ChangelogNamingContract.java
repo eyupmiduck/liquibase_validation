@@ -13,6 +13,11 @@ import java.util.regex.Pattern;
  * schema/table changesets, or {@code function-}/{@code procedure-}/
  * {@code trigger-<schema>.<name>} for a stored object).
  *
+ * <p>A formatted SQL changelog (first non-blank line
+ * {@code --liquibase formatted sql}) is a changelog rather than a numbered SQL
+ * change, so its file name is exempt from the {@code NNN-} rule; its changeset
+ * ids are still checked.
+ *
  * <p>A consumer extends this class and returns its one {@link ProjectProfile}
  * from {@link #projectProfile()}; the changelog root, changes root and master
  * come from that profile. Override {@link #changelogRoot()},

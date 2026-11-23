@@ -103,7 +103,7 @@ public final class RoutineArgumentNamingRule implements Rule {
      */
     private static String name(Token token) {
         if (token.type() == TokenType.QUOTED_IDENTIFIER) {
-            return token.text().substring(1, token.text().length() - 1).replace("\"\"", "\"");
+            return token.identifier();
         }
         return token.text();
     }

@@ -71,4 +71,21 @@ public record Token(TokenType type, String text, int startOffset, int endOffset,
         Objects.requireNonNull(keyword, "keyword");
         return type == TokenType.WORD && text.equalsIgnoreCase(keyword);
     }
+
+    /**
+     * Returns the identifier text of a word or quoted identifier. A quoted
+     * identifier loses its surrounding quotes and has doubled quotes unescaped;
+     * a Unicode-escape identifier ({@code U&"..."}) also loses the {@code U&}
+     * prefix, but its escape sequences are not decoded. Any other token returns
+     * its raw text.
+     *
+     * @return the identifier text
+     */
+    public String identifier() {
+        if (type != TokenType.QUOTED_IDENTIFIER) {
+            return text;
+        }
+        int start = text.startsWith("U&\"") || text.startsWith("u&\"") ? 2 : 0;
+        return text.substring(start + 1, text.length() - 1).replace("\"\"", "\"");
+    }
 }

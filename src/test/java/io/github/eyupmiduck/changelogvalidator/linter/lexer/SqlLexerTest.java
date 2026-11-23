@@ -455,18 +455,26 @@ class SqlLexerTest {
     }
 
     /**
-     * Unicode-escape strings and identifiers are unsupported and fail closed as
-     * one ERROR token.
+     * Unicode-escape strings and identifiers are tokenized as their plain forms;
+     * the optional UESCAPE clause is separate and the escapes stay literal.
      */
     @Test
-    void reportsUnicodeEscapeFormsAsError() {
+    void recognisesUnicodeEscapeForms() {
         List<Token> string = SqlLexer.tokenize("U&'abc'");
         assertEquals(1, string.size());
-        assertEquals(TokenType.ERROR, string.get(0).type());
+        assertEquals(TokenType.STRING, string.get(0).type());
+        assertEquals("U&'abc'", string.get(0).text());
 
         List<Token> identifier = SqlLexer.tokenize("U&\"col\"");
         assertEquals(1, identifier.size());
-        assertEquals(TokenType.ERROR, identifier.get(0).type());
+        assertEquals(TokenType.QUOTED_IDENTIFIER, identifier.get(0).type());
+        assertEquals("col", identifier.get(0).identifier());
+
+        List<Token> withEscape = SqlLexer.tokenize("U&\"d\\0061t\" UESCAPE '\\'");
+        assertEquals(TokenType.QUOTED_IDENTIFIER, withEscape.get(0).type());
+        assertEquals("d\\0061t", withEscape.get(0).identifier());
+        assertEquals(TokenType.WORD, withEscape.get(2).type());
+        assertEquals("UESCAPE", withEscape.get(2).text());
     }
 
     /**

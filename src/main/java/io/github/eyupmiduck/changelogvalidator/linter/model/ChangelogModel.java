@@ -1,13 +1,14 @@
 package io.github.eyupmiduck.changelogvalidator.linter.model;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogIncludes;
 import io.github.eyupmiduck.changelogvalidator.ChangelogValidator;
 import io.github.eyupmiduck.changelogvalidator.XmlDocuments;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
+import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -18,8 +19,9 @@ import java.util.regex.Pattern;
  *
  * <p>The graph is walked in Liquibase parse order: a file's children (its
  * properties, changesets and includes) are processed in document order, and an
- * include is followed immediately before the next sibling. Relative paths are
- * resolved against the declaring changelog file; paths without
+ * include is followed immediately before the next sibling. An {@code <includeAll>}
+ * is expanded in alphabetical path order at the point where it appears. Relative
+ * paths are resolved against the declaring changelog file; paths without
  * {@code relativeToChangelogFile} are resolved against the changelog root. A
  * reference that escapes the root is rejected, matching the validator.
  *
@@ -31,9 +33,12 @@ import java.util.regex.Pattern;
  * Context and label filters remain unapplied because the linter has no run
  * context (see ADR 0003).
  *
- * <p>Formatted-SQL changelogs are not parsed here: a {@code <sqlFile>} that
- * points at a formatted SQL file is exposed as a {@link SqlSource.Kind#SQL_FILE}
- * source, and the caller decides how to read it.
+ * <p>Formatted-SQL changelogs are parsed: a {@code .sql} file included through
+ * {@code <include>} (or used as the master) is read as a Liquibase formatted SQL
+ * changelog, with its {@code --changeset} and {@code --rollback} directives. A
+ * {@code .sql} file found by {@code <includeAll>} is parsed the same way when it
+ * carries the marker; an unformatted file is a single raw change, matching
+ * Liquibase's content-based parser selection.
  *
  * <p>The model also captures what the rules need beyond the raw SQL: the
  * changelog {@code <property>} values, each changeset's {@code <modifySql>}
@@ -108,35 +113,51 @@ public final class ChangelogModel {
         FileBuilder file = new FileBuilder(normalized, snapshot(globals, inheritedLocals));
         accumulator.files.add(file);
         try {
-            Document document = parse(normalized);
-            Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
-            for (Element child : childElements(document.getDocumentElement())) {
-                switch (tagName(child)) {
-                    case "property" -> addProperty(globals, locals, child);
-                    case "include" -> {
-                        String included = child.getAttribute("file");
-                        if (included.isBlank()) {
-                            throw new IOException("include without a file attribute: " + normalized);
+            if (ChangelogIncludes.isSqlFile(normalized)) {
+                for (ChangeSet changeSet : FormattedSqlChangelog.parse(normalized,
+                        snapshot(globals, locals))) {
+                    accumulator.changesets.add(changeSet);
+                    file.changesets.add(changeSet);
+                }
+            } else {
+                Document document = parse(normalized);
+                Map<Element, Integer> lines = elementLines(document, XmlDocuments.startTagLines(normalized));
+                for (Element child : childElements(document.getDocumentElement())) {
+                    switch (tagName(child)) {
+                        case "property" -> addProperty(globals, locals, child);
+                        case "include" -> {
+                            String included = child.getAttribute("file");
+                            if (included.isBlank()) {
+                                throw new IOException("include without a file attribute: " + normalized);
+                            }
+                            boolean relativeToChangelogFile =
+                                    "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
+                            Path base = relativeToChangelogFile ? normalized.getParent() : root;
+                            Path resolved = resolveWithin(root, base, included, "include");
+                            file.includes.add(resolved);
+                            visit(root, resolved, globals, locals, accumulator, active);
                         }
-                        boolean relativeToChangelogFile =
-                                "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
-                        Path base = relativeToChangelogFile ? normalized.getParent() : root;
-                        Path resolved = resolveWithin(root, base, included, "include");
-                        file.includes.add(resolved);
-                        visit(root, resolved, globals, locals, accumulator, active);
-                    }
-                    case "changeSet" -> {
-                        ChangeSet changeSet = changeSet(root, normalized, child,
-                                snapshot(globals, locals), lines);
-                        accumulator.changesets.add(changeSet);
-                        file.changesets.add(changeSet);
-                    }
-                    case "includeAll" -> throw new IOException(
-                            "includeAll is not supported by the linter; list the included changelogs explicitly: "
-                                    + child.getAttribute("path"));
-                    default -> {
-                        // Other databaseChangeLog children (preConditions, ...) carry no
-                        // changeset or property this model needs.
+                        case "changeSet" -> {
+                            ChangeSet changeSet = changeSet(root, normalized, child,
+                                    snapshot(globals, locals), lines);
+                            accumulator.changesets.add(changeSet);
+                            file.changesets.add(changeSet);
+                        }
+                        case "includeAll" -> {
+                            for (Path included : ChangelogIncludes.includeAll(root, normalized, child)) {
+                                file.includes.add(included);
+                                if (ChangelogIncludes.isSqlFile(included)
+                                        && !ChangelogIncludes.isFormattedSql(included)) {
+                                    addIncludeAllSql(root, included, globals, locals, accumulator);
+                                } else {
+                                    visit(root, included, globals, locals, accumulator, active);
+                                }
+                            }
+                        }
+                        default -> {
+                            // Other databaseChangeLog children (preConditions, ...) carry no
+                            // changeset or property this model needs.
+                        }
                     }
                 }
             }
@@ -144,6 +165,30 @@ public final class ChangelogModel {
             file.properties = snapshot(globals, locals);
             active.remove(normalized);
         }
+    }
+
+    /**
+     * Adds one unformatted SQL file found by {@code <includeAll>}. Liquibase
+     * treats such a file as a single raw change rather than a formatted SQL
+     * changelog, so its changeset id is the file path relative to the changelog
+     * root and its author is {@code includeAll}. The SQL file's own content is
+     * read by the linter. A file with the formatted-SQL marker is parsed as a
+     * changelog instead.
+     */
+    private static void addIncludeAllSql(Path root, Path file, Map<String, String> globals,
+                                         Map<String, String> locals, ProjectAccumulator accumulator) {
+        Path normalized = file.toAbsolutePath().normalize();
+        Map<String, String> properties = snapshot(globals, locals);
+        FileBuilder sqlFile = new FileBuilder(normalized, properties);
+        accumulator.files.add(sqlFile);
+        String id = root.relativize(normalized).toString().replace(File.separatorChar, '/');
+        SqlSource source = new SqlSource(SqlSource.Kind.SQL_FILE, normalized, null,
+                true, DEFAULT_END_DELIMITER, false, null, 1);
+        ChangeSet changeSet = new ChangeSet(id, "includeAll", normalized, true, false,
+                null, null, null, List.of(source), false, List.of(),
+                new Normalisation(properties, List.of()), 1);
+        accumulator.changesets.add(changeSet);
+        sqlFile.changesets.add(changeSet);
     }
 
     /**
@@ -778,18 +823,7 @@ public final class ChangelogModel {
      * @throws IOException if the reference escapes the changelog root
      */
     private static Path resolveWithin(Path root, Path base, String reference, String kind) throws IOException {
-        Path resolved = base.resolve(reference).normalize();
-        if (!resolved.startsWith(root)) {
-            throw new IOException(kind + " escapes the changelog root: " + reference);
-        }
-        if (Files.exists(resolved)) {
-            Path realRoot = root.toRealPath();
-            Path realResolved = resolved.toRealPath();
-            if (!realResolved.startsWith(realRoot)) {
-                throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
-            }
-        }
-        return resolved;
+        return ChangelogIncludes.resolveWithin(root, base, reference, kind);
     }
 
     private static boolean booleanAttribute(Element element, String name, boolean defaultValue) {

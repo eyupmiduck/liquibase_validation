@@ -1,5 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator;
 
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
+import io.github.eyupmiduck.changelogvalidator.linter.model.FormattedSqlChangelog;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -15,10 +17,11 @@ import java.util.stream.Stream;
 /**
  * Validates a Liquibase changelog that is rooted at a master changelog file.
  *
- * <p>The master file and the XML files it reaches through nested
- * {@code <include>} elements form the changelog graph. Only changesets and SQL
- * files referenced by that graph are considered valid; SQL files no XML in the
- * graph references are reported as orphaned.
+ * <p>The master file and the changelog files it reaches through nested
+ * {@code <include>} and {@code <includeAll>} elements form the changelog graph.
+ * An included file may be XML or a Liquibase formatted SQL changelog. Only
+ * changesets and SQL files referenced by that graph are considered valid; SQL
+ * files that no changelog references are reported as orphaned.
  *
  * <p>SQL files are referenced either by a {@code <sqlFile>} element or as the
  * external body of a {@code <createProcedure>} (or {@code <createFunction>})
@@ -69,7 +72,9 @@ public final class ChangelogValidator {
      * not start with a three-digit, zero-padded integer followed by {@code -}
      * or {@code _} (for example {@code 001-create.sql}). Files under an exempt
      * directory (see {@link #EXEMPT_DIRECTORIES}) are named after a stored
-     * routine or trigger and are exempt.
+     * routine or trigger and are exempt, and a formatted SQL changelog (a file
+     * whose first non-blank line is {@code --liquibase formatted sql}) is a
+     * changelog rather than a numbered SQL change, so it is exempt too.
      *
      * @param changelogRoot the changelog directory to scan
      * @return the invalidly named SQL files, relative to {@code changelogRoot}
@@ -82,6 +87,7 @@ public final class ChangelogValidator {
             paths.filter(Files::isRegularFile)
                     .filter(ChangelogValidator::hasSqlExtension)
                     .filter(p -> !isExemptSqlFile(root, p))
+                    .filter(p -> !isFormattedSqlChangelog(p))
                     .filter(p -> !SQL_FILE_NAME.matcher(p.getFileName().toString()).matches())
                     .map(root::relativize)
                     .forEach(invalid::add);
@@ -90,6 +96,14 @@ public final class ChangelogValidator {
         }
         invalid.sort(Path::compareTo);
         return invalid;
+    }
+
+    private static boolean isFormattedSqlChangelog(Path file) {
+        try {
+            return ChangelogIncludes.isFormattedSql(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
@@ -148,7 +162,8 @@ public final class ChangelogValidator {
                                                                       Pattern changeSetIdPattern) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         List<InvalidChangeSet> invalid = new ArrayList<>();
-        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+        Reachable reachable = parsedReachableChangelogFiles(root, masterChangelog);
+        for (Map.Entry<Path, Document> changelog : reachable.xmlFiles().entrySet()) {
             NodeList changeSets = changelog.getValue().getElementsByTagNameNS("*", "changeSet");
             for (int i = 0; i < changeSets.getLength(); i++) {
                 String id = ((Element) changeSets.item(i)).getAttribute("id");
@@ -157,13 +172,26 @@ public final class ChangelogValidator {
                 }
             }
         }
+        for (Map.Entry<Path, Boolean> sqlFile : reachable.sqlFiles().entrySet()) {
+            if (!sqlFile.getValue()) {
+                // An unformatted SQL file found by includeAll is one raw change
+                // with a generated id, so its id is not the project's naming
+                // choice.
+                continue;
+            }
+            for (ChangeSet changeSet : reachable.parsedSql().getOrDefault(sqlFile.getKey(), List.of())) {
+                if (!changeSetIdPattern.matcher(changeSet.id()).matches()) {
+                    invalid.add(new InvalidChangeSet(sqlFile.getKey(), changeSet.id()));
+                }
+            }
+        }
         invalid.sort(Comparator.comparing(InvalidChangeSet::changelogFile).thenComparing(InvalidChangeSet::id));
         return invalid;
     }
 
     /**
-     * Finds {@code .sql} files under {@code changelogRoot} that no changelog XML
-     * reachable from {@code masterChangelog} references, either via a
+     * Finds {@code .sql} files under {@code changelogRoot} that no changelog
+     * file reachable from {@code masterChangelog} references, either via a
      * {@code <sqlFile>} element or as the external body of a
      * {@code <createProcedure>} or {@code <createFunction>} element.
      *
@@ -188,7 +216,8 @@ public final class ChangelogValidator {
 
     /**
      * Finds the {@code .sql} files referenced by the changelog graph rooted at
-     * {@code masterChangelog}, relative to {@code changelogRoot}. Callers can
+     * {@code masterChangelog}, relative to {@code changelogRoot}. A formatted SQL
+     * changelog included by the graph is itself a referenced SQL file. Callers can
      * use this to assert that the graph references content, so an orphan check
      * cannot pass while traversing nothing.
      *
@@ -203,8 +232,12 @@ public final class ChangelogValidator {
     public static List<Path> findReferencedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
         Set<Path> referenced = new HashSet<>();
-        for (Map.Entry<Path, Document> changelog : parsedReachableChangelogFiles(root, masterChangelog).entrySet()) {
+        Reachable reachable = parsedReachableChangelogFiles(root, masterChangelog);
+        for (Map.Entry<Path, Document> changelog : reachable.xmlFiles().entrySet()) {
             referenced.addAll(referencedSqlFiles(root, changelog.getKey(), changelog.getValue()));
+        }
+        for (Path sqlFile : reachable.sqlFiles().keySet()) {
+            referenced.add(root.relativize(sqlFile));
         }
         List<Path> result = new ArrayList<>(referenced);
         result.sort(Path::compareTo);
@@ -212,9 +245,10 @@ public final class ChangelogValidator {
     }
 
     /**
-     * Finds the changelog XML files reachable from {@code masterChangelog} by
-     * following nested {@code <include>} elements, starting with the master and
-     * guarding against cycles.
+     * Finds the changelog files reachable from {@code masterChangelog} by
+     * following nested {@code <include>} and {@code <includeAll>} elements,
+     * starting with the master and guarding against cycles. XML and formatted SQL
+     * changelogs are included.
      *
      * <p>Callers that need the changelog graph itself (for example the linter's
      * changelog model) can use this instead of walking the includes again. The
@@ -229,31 +263,52 @@ public final class ChangelogValidator {
     public static List<Path> findReachableChangelogFiles(Path changelogRoot, Path masterChangelog)
             throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
-        return List.copyOf(parsedReachableChangelogFiles(root, masterChangelog).keySet());
+        return parsedReachableChangelogFiles(root, masterChangelog).allFiles();
     }
 
     /**
      * Collects the changelog files reachable from {@code masterChangelog} by
-     * following nested {@code <include>} elements, guarding against cycles, and
-     * returns the document parsed for each so callers do not parse it again.
+     * following nested {@code <include>} and {@code <includeAll>} elements,
+     * guarding against cycles. XML documents are returned parsed so callers do
+     * not parse them again; SQL changelog files are recorded with whether they
+     * were reached through {@code <include>} (a formatted SQL changelog) or
+     * {@code <includeAll>} (one raw change).
      */
-    private static Map<Path, Document> parsedReachableChangelogFiles(Path root, Path masterChangelog)
+    private static Reachable parsedReachableChangelogFiles(Path root, Path masterChangelog)
             throws IOException {
         Set<Path> visited = new LinkedHashSet<>();
         Map<Path, Document> documents = new LinkedHashMap<>();
-        Deque<Path> pending = new ArrayDeque<>();
-        pending.add(masterChangelog.toAbsolutePath().normalize());
+        Map<Path, Boolean> sqlFiles = new LinkedHashMap<>();
+        Map<Path, List<ChangeSet>> parsedSql = new LinkedHashMap<>();
+        Deque<Pending> pending = new ArrayDeque<>();
+        pending.add(new Pending(masterChangelog.toAbsolutePath().normalize(),
+                ChangelogIncludes.isSqlFile(masterChangelog)));
         while (!pending.isEmpty()) {
-            Path changelogFile = pending.removeFirst();
+            Pending next = pending.removeFirst();
+            Path changelogFile = next.file();
+            if (ChangelogIncludes.isSqlFile(changelogFile)) {
+                sqlFiles.merge(changelogFile, next.formattedSql(), Boolean::logicalOr);
+                if (next.formattedSql() && !parsedSql.containsKey(changelogFile)) {
+                    // Parse once and keep the changesets for the naming check, so
+                    // a file reached through several includes is read only once.
+                    parsedSql.put(changelogFile, FormattedSqlChangelog.parse(changelogFile, Map.of()));
+                }
+                visited.add(changelogFile);
+                continue;
+            }
             if (!visited.add(changelogFile)) {
                 continue;
             }
             Document document = parse(changelogFile);
             // Match by local name so a prefixed Liquibase namespace (<db:include>)
             // is traversed like the default namespace, as Liquibase itself does.
-            if (document.getElementsByTagNameNS("*", "includeAll").getLength() > 0) {
-                throw new IOException("includeAll is not supported; list the included changelogs explicitly: "
-                        + changelogFile);
+            NodeList includeAlls = document.getElementsByTagNameNS("*", "includeAll");
+            for (int i = 0; i < includeAlls.getLength(); i++) {
+                Element includeAll = (Element) includeAlls.item(i);
+                for (Path included : ChangelogIncludes.includeAll(root, changelogFile, includeAll)) {
+                    pending.add(new Pending(included, ChangelogIncludes.isSqlFile(included)
+                            && ChangelogIncludes.isFormattedSql(included)));
+                }
             }
             NodeList includes = document.getElementsByTagNameNS("*", "include");
             for (int i = 0; i < includes.getLength(); i++) {
@@ -265,11 +320,12 @@ public final class ChangelogValidator {
                 boolean relativeToChangelogFile =
                         "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
-                pending.add(resolveWithin(root, base, file, "include"));
+                Path resolved = resolveWithin(root, base, file, "include");
+                pending.add(new Pending(resolved, ChangelogIncludes.isSqlFile(resolved)));
             }
             documents.put(changelogFile, document);
         }
-        return documents;
+        return new Reachable(documents, sqlFiles, parsedSql);
     }
 
     /**
@@ -340,22 +396,33 @@ public final class ChangelogValidator {
      * @throws IOException if the reference escapes the changelog root
      */
     private static Path resolveWithin(Path root, Path base, String reference, String kind) throws IOException {
-        Path resolved = base.resolve(reference).normalize();
-        if (!resolved.startsWith(root)) {
-            throw new IOException(kind + " escapes the changelog root: " + reference);
-        }
-        if (Files.exists(resolved)) {
-            Path realRoot = root.toRealPath();
-            Path realResolved = resolved.toRealPath();
-            if (!realResolved.startsWith(realRoot)) {
-                throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
-            }
-        }
-        return resolved;
+        return ChangelogIncludes.resolveWithin(root, base, reference, kind);
     }
 
     private static Document parse(Path changelogFile) throws IOException {
         return XmlDocuments.parse(changelogFile);
+    }
+
+    /**
+     * The reachable changelog graph: XML documents, SQL changelog files, and the
+     * parsed changesets of every formatted SQL file.
+     */
+    private record Reachable(Map<Path, Document> xmlFiles, Map<Path, Boolean> sqlFiles,
+                             Map<Path, List<ChangeSet>> parsedSql) {
+
+        private List<Path> allFiles() {
+            List<Path> files = new ArrayList<>(xmlFiles.keySet());
+            files.addAll(sqlFiles.keySet());
+            return List.copyOf(files);
+        }
+    }
+
+    /**
+     * A changelog file waiting to be visited. {@code formattedSql} is true when
+     * the file is a formatted SQL changelog: an included SQL file must carry the
+     * marker, and an {@code includeAll} SQL file is checked by content.
+     */
+    private record Pending(Path file, boolean formattedSql) {
     }
 
     /**

@@ -50,6 +50,8 @@ public final class LinterCli {
                   --                 end of options; no operands are accepted
               -h, --help                 print this help
             
+            The master may be XML or a Liquibase formatted SQL changelog. The graph
+            follows <include>, <includeAll> and formatted SQL changesets.
             """;
 
     private LinterCli() {

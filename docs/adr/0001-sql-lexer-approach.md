@@ -94,6 +94,26 @@ The lexer gained an overload that starts at a known offset, line and column. The
 existing single-argument `tokenize` keeps its behaviour, so the change is
 additive.
 
+## Update (1.14.0): formatted SQL, includeAll and wider delimiters
+
+- Unicode-escape strings and identifiers (`U&'...'` / `U&"..."`) are tokenized
+  as a `STRING` and a `QUOTED_IDENTIFIER`; the escape sequences are left literal
+  and an optional `UESCAPE` clause is tokenized separately.
+- The changelog reader parses a Liquibase formatted SQL changelog included
+  through `<include>` (or used as the master): `--changeset` and `--rollback`
+  become changesets and the supported attributes are read. An unformatted SQL
+  file found by `<includeAll>` is one raw change; a formatted SQL file found the
+  same way is parsed as a changelog, matching Liquibase's content-based parser
+  selection.
+- `<includeAll>` is supported with alphabetical path order, `endsWithFilter`,
+  `minDepth`, `maxDepth` and `errorIfMissingOrEmpty`. A custom `filter`,
+  `resourceComparator`, `logicalFilePath` or `ignore` is rejected.
+- Statement splitting supports an operator delimiter (`/`) alone on its line and
+  a dollar-quote delimiter (`$$`, `$body$`) on its own line. A line inside a
+  multi-line string, quoted identifier or comment is never a delimiter.
+- Unsupported formatted-SQL directives (`--ignoreLines`, `--include`,
+  `--includeAll`, `--rollbackSqlFile`) and changeset attributes fail closed.
+
 ## Revisit triggers
 
 - A rule needs identifier resolution, type/expression validation, or another
