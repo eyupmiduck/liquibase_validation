@@ -379,6 +379,57 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * A formatted SQL changelog found by {@code <includeAll>} is parsed by
+     * content: its changeset ids are checked and its file is referenced.
+     */
+    @Test
+    void formattedSqlChangelogIncludedThroughIncludeAll() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path included = Files.createDirectories(changes.resolve("included"));
+        Path changelog = included.resolve("changelog.sql");
+        Files.writeString(changelog, """
+                --liquibase formatted sql
+                --changeset alice:001-create
+                CREATE TABLE t (id int);
+                --changeset alice:002-index
+                CREATE INDEX idx ON t (id);
+                """);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+        assertEquals(List.of(Path.of("included/changelog.sql")),
+                ChangelogValidator.findReferencedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
+        assertEquals(List.of(), ChangelogValidator.findInvalidlyNamedSqlFiles(changes));
+    }
+
+    /**
+     * A formatted SQL changelog found by {@code <includeAll>} has its changeset
+     * ids checked like any other changelog.
+     */
+    @Test
+    void formattedSqlChangelogNamingIsCheckedThroughIncludeAll() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path included = Files.createDirectories(changes.resolve("included"));
+        Path changelog = included.resolve("changelog.sql");
+        Files.writeString(changelog, """
+                --liquibase formatted sql
+                --changeset alice:create-table
+                CREATE TABLE t (id int);
+                """);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(changelog, "create-table")),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+    }
+
+    /**
      * A formatted SQL changelog included through {@code <include>} is referenced,
      * not orphaned, exempt from the SQL naming rule, and its changeset ids are
      * checked.

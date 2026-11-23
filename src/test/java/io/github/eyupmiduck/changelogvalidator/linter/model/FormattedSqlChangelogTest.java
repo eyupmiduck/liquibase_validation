@@ -162,6 +162,61 @@ class FormattedSqlChangelogTest {
     }
 
     /**
+     * A graph-changing directive before the first changeset is rejected.
+     */
+    @Test
+    void rejectsIncludeAllBeforeFirstChangeset() {
+        IOException failure = assertThrows(IOException.class, () -> parse("""
+                --liquibase formatted sql
+                --includeAll path:included/
+                --changeset a:1
+                SELECT 1;
+                """));
+        assertTrue(failure.getMessage().contains("before the first --changeset"),
+                failure.getMessage());
+    }
+
+    /**
+     * A bare {@code --rollback} is an ordinary comment, matching Liquibase: plain
+     * SQL after it is forward SQL and each rollback line must carry its own
+     * {@code --rollback} prefix.
+     */
+    @Test
+    void treatsPlainSqlAfterABareRollbackAsForwardSql() throws IOException {
+        ChangeSet changeSet = parse("""
+                --liquibase formatted sql
+                --changeset a:1
+                CREATE TABLE t (id int);
+                --rollback
+                DROP TABLE t;
+                """).getFirst();
+
+        String forward = changeSet.sqlSources().getFirst().text();
+        assertTrue(forward.contains("--rollback"), forward);
+        assertTrue(forward.contains("DROP TABLE t"), forward);
+        assertFalse(changeSet.rollbackDefined());
+        assertEquals(List.of(), changeSet.rollbackSources());
+    }
+
+    /**
+     * The block-comment rollback form is rejected with a diagnostic rather than
+     * being treated as forward SQL.
+     */
+    @Test
+    void rejectsTheBlockCommentRollbackForm() {
+        IOException failure = assertThrows(IOException.class, () -> parse("""
+                --liquibase formatted sql
+                --changeset a:1
+                CREATE TABLE t (id int);
+                /* liquibase rollback
+                DROP TABLE t;
+                */
+                """));
+        assertTrue(failure.getMessage().contains("block form is not supported"),
+                failure.getMessage());
+    }
+
+    /**
      * A changeset without a usable author:id is rejected.
      */
     @Test

@@ -107,8 +107,9 @@ A formatted SQL changelog's `--changeset` body is an inline `SqlSource` with the
 changeset's own `splitStatements`, `endDelimiter` and `stripComments` (and the
 `rollback*` variants for the rollback source). Property substitution applies to
 it like any inline source; formatted SQL has no `<modifySql>` equivalent, so the
-`modifySql` list is empty. A SQL file found by `<includeAll>` is a `SQL_FILE`
-source and is read lazily like an XML `sqlFile`.
+`modifySql` list is empty. An unformatted SQL file found by `<includeAll>` is a
+`SQL_FILE` source and is read lazily like an XML `sqlFile`; a formatted SQL file
+found the same way is parsed into its changesets.
 
 ## References
 

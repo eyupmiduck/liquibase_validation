@@ -28,17 +28,21 @@ import java.util.*;
  * <p>Supported directives are {@code --liquibase}, {@code --changeset},
  * {@code --rollback}, {@code --comment}, {@code --preconditions},
  * {@code --precondition-sql-check}, {@code --property} and
- * {@code --validCheckSum}. {@code --ignoreLines}, {@code --include},
+ * {@code --validCheckSum}. Each rollback line must begin with
+ * {@code --rollback}; a bare {@code --rollback} does not start a multi-line
+ * block, matching Liquibase, so plain SQL after it is forward SQL. The
+ * block-comment {@code liquibase rollback} form is rejected.
+ * {@code --ignoreLines}, {@code --include},
  * {@code --includeAll} and {@code --rollbackSqlFile} are rejected with a clear
  * diagnostic because they change the SQL text, the changelog graph or the
  * rollback file set. Any other {@code --} line is an ordinary SQL comment.
  * {@code --property} is accepted but does not contribute to SQL substitution;
  * only XML {@code <property>} values are captured (see ADR 0003).
  *
- * <p>This parser is for a SQL file reached through {@code <include>} or used as
- * the master. A SQL file found by {@code <includeAll>} is one raw change in
- * Liquibase, not a formatted SQL changelog, so the model does not call this
- * parser for it.
+ * <p>This parser is for a SQL file reached through {@code <include>}, used as
+ * the master, or found by {@code <includeAll>} and carrying the formatted-SQL
+ * marker. An unformatted SQL file found by {@code <includeAll>} is one raw
+ * change in Liquibase, so the model does not call this parser for it.
  *
  * <p>Directive lines are replaced by blank lines in the forward SQL, so a
  * diagnostic's line number still matches the changelog file.
@@ -90,8 +94,9 @@ public final class FormattedSqlChangelog {
                 continue;
             }
             if (current == null) {
-                if (startsWith(trimmed, ROLLBACK_SQL_FILE) || startsWith(trimmed, ROLLBACK)
-                        || startsWith(trimmed, "--ignoreLines") || startsWith(trimmed, "--include")) {
+                if (startsWith(trimmed, ROLLBACK_SQL_FILE) || isRollbackDirective(trimmed)
+                        || startsWith(trimmed, "--ignoreLines") || startsWith(trimmed, "--includeAll")
+                        || startsWith(trimmed, "--include")) {
                     throw new IOException("formatted SQL directive before the first --changeset at "
                             + file + ":" + lineNumber + ": " + trimmed);
                 }
@@ -108,9 +113,13 @@ public final class FormattedSqlChangelog {
                 throw new IOException("--rollbackSqlFile is not supported by the linter at "
                         + file + ":" + lineNumber);
             }
-            if (startsWith(trimmed, ROLLBACK)) {
+            if (isRollbackDirective(trimmed)) {
                 current.rollback(lineNumber, trimmed);
                 continue;
+            }
+            if (isMultiLineRollbackStart(trimmed)) {
+                throw new IOException("the /* liquibase rollback */ block form is not supported; "
+                        + "use --rollback on each line at " + file + ":" + lineNumber);
             }
             if (startsWith(trimmed, "--ignoreLines")
                     || startsWith(trimmed, "--includeAll")
@@ -140,6 +149,26 @@ public final class FormattedSqlChangelog {
                 || startsWith(trimmed, "--precondition-sql-check")
                 || startsWith(trimmed, "--property")
                 || startsWith(trimmed, "--validCheckSum");
+    }
+
+    /**
+     * Returns whether the line is a {@code --rollback <SQL>} directive. A bare
+     * {@code --rollback} is an ordinary SQL comment in Liquibase, because its
+     * regex requires the space and captures the text after it.
+     */
+    private static boolean isRollbackDirective(String trimmed) {
+        return trimmed.regionMatches(true, 0, ROLLBACK, 0, ROLLBACK.length())
+                && trimmed.length() > ROLLBACK.length()
+                && Character.isWhitespace(trimmed.charAt(ROLLBACK.length()));
+    }
+
+    /**
+     * Returns whether the line starts the block-comment rollback form
+     * ({@code liquibase rollback} inside a block comment). The linter does not
+     * support that form.
+     */
+    private static boolean isMultiLineRollbackStart(String trimmed) {
+        return trimmed.matches("(?i)^/\\*\\s*liquibase\\s*rollback\\s*$");
     }
 
     private static boolean startsWith(String text, String directive) {

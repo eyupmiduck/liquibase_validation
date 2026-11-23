@@ -16,10 +16,12 @@ import java.util.*;
  * {@code <includeAll>} element to the changelog files it includes. It supports
  * the attributes that affect which files are selected and how they are ordered:
  * {@code path}, {@code relativeToChangelogFile}, {@code errorIfMissingOrEmpty},
- * {@code endsWithFilter}, {@code minDepth} and {@code maxDepth}. Files are
- * sorted by their path relative to the include directory, so the order is
- * deterministic. Every file is checked to stay under the changelog root, and a
- * symlink that escapes the root is rejected, matching {@code <include>}.
+ * {@code endsWithFilter}, {@code minDepth} and {@code maxDepth}. An absent
+ * {@code endsWithFilter} means no filter, matching Liquibase's empty-string
+ * default; every supported changelog file is selected. Files are sorted by their
+ * path relative to the include directory, so the order is deterministic. Every
+ * file is checked to stay under the changelog root, and a symlink that escapes
+ * the root is rejected, matching {@code <include>}.
  *
  * <p>Only XML and SQL files are supported. A YAML or JSON changelog found by
  * {@code includeAll} fails with a clear diagnostic instead of being skipped
@@ -73,9 +75,13 @@ public final class ChangelogIncludes {
         String endsWithFilter = includeAll.getAttribute("endsWithFilter").strip();
         int minDepth = intAttribute(includeAll, "minDepth", 1);
         int maxDepth = intAttribute(includeAll, "maxDepth", Integer.MAX_VALUE);
-        if (minDepth < 1) {
-            throw new IOException("includeAll minDepth must be at least 1: " + path);
+        if (minDepth < 0) {
+            throw new IOException("includeAll minDepth must not be negative: " + path);
         }
+        // Liquibase's internal default is 0, but a file directly in the include
+        // directory is depth 1 here (as the documentation describes), so an
+        // explicit 0 selects the same files as the default.
+        minDepth = Math.max(minDepth, 1);
         if (maxDepth < minDepth) {
             throw new IOException("includeAll maxDepth must not be less than minDepth: " + path);
         }

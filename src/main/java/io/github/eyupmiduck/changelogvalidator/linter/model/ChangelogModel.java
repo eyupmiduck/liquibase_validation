@@ -36,8 +36,9 @@ import java.util.regex.Pattern;
  * <p>Formatted-SQL changelogs are parsed: a {@code .sql} file included through
  * {@code <include>} (or used as the master) is read as a Liquibase formatted SQL
  * changelog, with its {@code --changeset} and {@code --rollback} directives. A
- * {@code .sql} file found by {@code <includeAll>} is instead a single raw change,
- * matching Liquibase's {@code includeAll} behaviour.
+ * {@code .sql} file found by {@code <includeAll>} is parsed the same way when it
+ * carries the marker; an unformatted file is a single raw change, matching
+ * Liquibase's content-based parser selection.
  *
  * <p>The model also captures what the rules need beyond the raw SQL: the
  * changelog {@code <property>} values, each changeset's {@code <modifySql>}
@@ -145,7 +146,8 @@ public final class ChangelogModel {
                         case "includeAll" -> {
                             for (Path included : ChangelogIncludes.includeAll(root, normalized, child)) {
                                 file.includes.add(included);
-                                if (ChangelogIncludes.isSqlFile(included)) {
+                                if (ChangelogIncludes.isSqlFile(included)
+                                        && !ChangelogIncludes.isFormattedSql(included)) {
                                     addIncludeAllSql(root, included, globals, locals, accumulator);
                                 } else {
                                     visit(root, included, globals, locals, accumulator, active);
@@ -166,10 +168,12 @@ public final class ChangelogModel {
     }
 
     /**
-     * Adds one raw SQL file found by {@code <includeAll>}. Liquibase treats such a
-     * file as a single change rather than a formatted SQL changelog, so its
-     * changeset id is the file path relative to the changelog root and its author
-     * is {@code includeAll}. The SQL file's own content is read by the linter.
+     * Adds one unformatted SQL file found by {@code <includeAll>}. Liquibase
+     * treats such a file as a single raw change rather than a formatted SQL
+     * changelog, so its changeset id is the file path relative to the changelog
+     * root and its author is {@code includeAll}. The SQL file's own content is
+     * read by the linter. A file with the formatted-SQL marker is parsed as a
+     * changelog instead.
      */
     private static void addIncludeAllSql(Path root, Path file, Map<String, String> globals,
                                          Map<String, String> locals, ProjectAccumulator accumulator) {
@@ -185,7 +189,6 @@ public final class ChangelogModel {
                 new Normalisation(properties, List.of()), 1);
         accumulator.changesets.add(changeSet);
         sqlFile.changesets.add(changeSet);
-        sqlFile.properties = properties;
     }
 
     /**

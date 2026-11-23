@@ -74,6 +74,21 @@ class ChangelogIncludesTest {
     }
 
     /**
+     * Liquibase's internal default minDepth is 0; an explicit 0 selects the same
+     * files as the default here, where a direct child is depth 1.
+     */
+    @Test
+    void acceptsZeroMinDepthAsTheDefault() throws IOException {
+        write("included/001-top.xml", "");
+        write("included/sub/002-nested.xml", "");
+
+        assertEquals(List.of(root.resolve("included/001-top.xml")),
+                include("path=\"included\" minDepth=\"0\" maxDepth=\"1\""));
+        assertTrue(assertThrows(IOException.class, () -> include("path=\"included\" minDepth=\"-1\""))
+                .getMessage().contains("must not be negative"));
+    }
+
+    /**
      * endsWithFilter is case-insensitive and trims whitespace.
      */
     @Test

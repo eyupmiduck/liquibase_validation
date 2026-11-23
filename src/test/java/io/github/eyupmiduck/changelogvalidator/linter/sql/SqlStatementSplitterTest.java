@@ -328,6 +328,21 @@ class SqlStatementSplitterTest {
     }
 
     /**
+     * A comment-only segment between dollar-quote delimiters is not a statement,
+     * even when comments are kept.
+     */
+    @Test
+    void skipsACommentOnlySegmentWithADollarQuoteDelimiter() {
+        String sql = "SELECT 1\n$$\n-- done\n$$\nSELECT 2\n$$";
+
+        List<SqlStatement> statements = SqlStatementSplitter.split(sql, true, "$$", false);
+
+        assertEquals(2, statements.size(), statements.toString());
+        assertEquals("SELECT 1", statements.get(0).text());
+        assertEquals("SELECT 2", statements.get(1).text());
+    }
+
+    /**
      * A delimiter the splitter cannot represent is rejected instead of being
      * ignored silently.
      */

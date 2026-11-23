@@ -101,8 +101,10 @@ additive.
   and an optional `UESCAPE` clause is tokenized separately.
 - The changelog reader parses a Liquibase formatted SQL changelog included
   through `<include>` (or used as the master): `--changeset` and `--rollback`
-  become changesets and the supported attributes are read. A SQL file found by
-  `<includeAll>` is one raw change, matching Liquibase.
+  become changesets and the supported attributes are read. An unformatted SQL
+  file found by `<includeAll>` is one raw change; a formatted SQL file found the
+  same way is parsed as a changelog, matching Liquibase's content-based parser
+  selection.
 - `<includeAll>` is supported with alphabetical path order, `endsWithFilter`,
   `minDepth`, `maxDepth` and `errorIfMissingOrEmpty`. A custom `filter`,
   `resourceComparator`, `logicalFilePath` or `ignore` is rejected.

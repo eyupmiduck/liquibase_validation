@@ -174,11 +174,12 @@ public final class ChangelogValidator {
         }
         for (Map.Entry<Path, Boolean> sqlFile : reachable.sqlFiles().entrySet()) {
             if (!sqlFile.getValue()) {
-                // A SQL file found by includeAll is one raw change with a generated
-                // id, so its id is not the project's naming choice.
+                // An unformatted SQL file found by includeAll is one raw change
+                // with a generated id, so its id is not the project's naming
+                // choice.
                 continue;
             }
-            for (ChangeSet changeSet : FormattedSqlChangelog.parse(sqlFile.getKey(), Map.of())) {
+            for (ChangeSet changeSet : reachable.parsedSql().getOrDefault(sqlFile.getKey(), List.of())) {
                 if (!changeSetIdPattern.matcher(changeSet.id()).matches()) {
                     invalid.add(new InvalidChangeSet(sqlFile.getKey(), changeSet.id()));
                 }
@@ -278,6 +279,7 @@ public final class ChangelogValidator {
         Set<Path> visited = new LinkedHashSet<>();
         Map<Path, Document> documents = new LinkedHashMap<>();
         Map<Path, Boolean> sqlFiles = new LinkedHashMap<>();
+        Map<Path, List<ChangeSet>> parsedSql = new LinkedHashMap<>();
         Deque<Pending> pending = new ArrayDeque<>();
         pending.add(new Pending(masterChangelog.toAbsolutePath().normalize(),
                 ChangelogIncludes.isSqlFile(masterChangelog)));
@@ -286,10 +288,10 @@ public final class ChangelogValidator {
             Path changelogFile = next.file();
             if (ChangelogIncludes.isSqlFile(changelogFile)) {
                 sqlFiles.merge(changelogFile, next.formattedSql(), Boolean::logicalOr);
-                if (next.formattedSql()) {
-                    // Validate the marker and directives even for a caller that
-                    // only asks for reachable files or references.
-                    FormattedSqlChangelog.parse(changelogFile, Map.of());
+                if (next.formattedSql() && !parsedSql.containsKey(changelogFile)) {
+                    // Parse once and keep the changesets for the naming check, so
+                    // a file reached through several includes is read only once.
+                    parsedSql.put(changelogFile, FormattedSqlChangelog.parse(changelogFile, Map.of()));
                 }
                 visited.add(changelogFile);
                 continue;
@@ -304,7 +306,8 @@ public final class ChangelogValidator {
             for (int i = 0; i < includeAlls.getLength(); i++) {
                 Element includeAll = (Element) includeAlls.item(i);
                 for (Path included : ChangelogIncludes.includeAll(root, changelogFile, includeAll)) {
-                    pending.add(new Pending(included, false));
+                    pending.add(new Pending(included, ChangelogIncludes.isSqlFile(included)
+                            && ChangelogIncludes.isFormattedSql(included)));
                 }
             }
             NodeList includes = document.getElementsByTagNameNS("*", "include");
@@ -322,13 +325,15 @@ public final class ChangelogValidator {
             }
             documents.put(changelogFile, document);
         }
-        return new Reachable(documents, sqlFiles);
+        return new Reachable(documents, sqlFiles, parsedSql);
     }
 
     /**
-     * The reachable changelog graph: XML documents and SQL changelog files.
+     * The reachable changelog graph: XML documents, SQL changelog files, and the
+     * parsed changesets of every formatted SQL file.
      */
-    private record Reachable(Map<Path, Document> xmlFiles, Map<Path, Boolean> sqlFiles) {
+    private record Reachable(Map<Path, Document> xmlFiles, Map<Path, Boolean> sqlFiles,
+                             Map<Path, List<ChangeSet>> parsedSql) {
 
         private List<Path> allFiles() {
             List<Path> files = new ArrayList<>(xmlFiles.keySet());
@@ -339,8 +344,8 @@ public final class ChangelogValidator {
 
     /**
      * A changelog file waiting to be visited. {@code formattedSql} is true when
-     * it was reached through {@code <include>} (or is the master), false when it
-     * was found by {@code <includeAll>}.
+     * the file is a formatted SQL changelog: an included SQL file must carry the
+     * marker, and an {@code includeAll} SQL file is checked by content.
      */
     private record Pending(Path file, boolean formattedSql) {
     }

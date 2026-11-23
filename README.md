@@ -85,8 +85,9 @@ attributes (`splitStatements`, `endDelimiter`, `stripComments`,
 `runInTransaction`, `runOnChange`, `dbms`, `context`, `labels`, the rollback
 variants and `ignore`). `<includeAll>` follows every XML changelog under a
 directory in alphabetical path order, with `endsWithFilter`,
-`minDepth`, `maxDepth` and `errorIfMissingOrEmpty`; a SQL file found by
-`includeAll` is one raw change, matching Liquibase. Unsupported directives
+`minDepth`, `maxDepth` and `errorIfMissingOrEmpty`; an unformatted SQL file
+found by `includeAll` is one raw change, while a file with the formatted-SQL
+marker is parsed as a changelog. Unsupported directives
 (`--ignoreLines`, `--include`, `--includeAll`, `--rollbackSqlFile`) and
 attributes fail with a diagnostic rather than being ignored.
 
@@ -115,8 +116,8 @@ liquibase-linter --changelog-root src/main/resources/db/changelog --reporter sar
 | `-h, --help`               |                                   | print usage and exit                 |
 
 The master may be an XML changelog or a Liquibase formatted SQL changelog. The
-graph follows `<include>`, `<includeAll>` and formatted SQL changesets; a SQL
-file found by `<includeAll>` is one raw change.
+graph follows `<include>`, `<includeAll>` and formatted SQL changesets; an
+unformatted SQL file found by `<includeAll>` is one raw change.
 
 The exit code is `0` when the run passes, `1` when findings reach the `failOn`
 threshold or a whitelist entry is stale (`0` under `--fail-on none`), and `2`

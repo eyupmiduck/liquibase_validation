@@ -357,11 +357,11 @@ class ChangelogModelTest {
     }
 
     /**
-     * A SQL file found by {@code <includeAll>} is one raw change, not a formatted
-     * SQL changelog, matching Liquibase.
+     * An unformatted SQL file found by {@code <includeAll>} is one raw change,
+     * matching Liquibase.
      */
     @Test
-    void includesAllSqlFilesAsIndividualChanges() throws IOException {
+    void includesAllUnformattedSqlFilesAsIndividualChanges() throws IOException {
         write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
                 <includeAll path="included/" relativeToChangelogFile="true"/>
                 """));
@@ -377,6 +377,32 @@ class ChangelogModelTest {
         assertEquals(SqlSource.Kind.SQL_FILE, changeSet.sqlSources().getFirst().kind());
         assertEquals(changelogRoot.resolve("included/001-raw.sql").toAbsolutePath().normalize(),
                 changeSet.sqlSources().getFirst().path());
+    }
+
+    /**
+     * A formatted SQL changelog found by {@code <includeAll>} is parsed by
+     * content, matching Liquibase's parser selection.
+     */
+    @Test
+    void includesFormattedSqlChangelogThroughIncludeAll() throws IOException {
+        write("db.changelog-master.xml", ChangelogTestSupport.changelog("""
+                <includeAll path="included/" relativeToChangelogFile="true"/>
+                """));
+        write("included/changelog.sql", """
+                --liquibase formatted sql
+                --changeset alice:001-create
+                CREATE TABLE t (id int);
+                --changeset alice:002-index
+                CREATE INDEX idx ON t (id);
+                """);
+
+        List<ChangeSet> changesets = ChangelogModel.changesets(
+                changelogRoot, changelogRoot.resolve("db.changelog-master.xml"));
+
+        assertEquals(List.of("001-create", "002-index"),
+                changesets.stream().map(ChangeSet::id).toList());
+        assertEquals("alice", changesets.getFirst().author());
+        assertTrue(changesets.getFirst().sqlSources().getFirst().text().contains("CREATE TABLE t"));
     }
 
     /**
