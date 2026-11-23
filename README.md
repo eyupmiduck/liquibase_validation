@@ -126,10 +126,23 @@ lists the built-in rules in registration (reporting) order.
 | [`changeset-author-required`](#changeset-author-required)                         | error    | on      | a changeset without a non-blank `author`                                                                   |
 | [`changeset-file-name-matches-id`](#changeset-file-name-matches-id)               | error    | on      | a numbered changeset whose SQL or rollback path does not match its id                                      |
 | [`changeset-id-unique`](#changeset-id-unique)                                     | error    | on      | a duplicate changeset id/author/file identity (whole-graph rule)                                           |
+| [`project-duplicate-object`](#project-duplicate-object)                           | warning  | opt-in  | a table, index, column or constraint name declared twice                                                   |
+| [`project-foreign-key-target`](#project-foreign-key-target)                       | warning  | opt-in  | a foreign key whose referenced table is never created                                                     |
+| [`project-unvalidated-constraint`](#project-unvalidated-constraint)               | warning  | opt-in  | a `NOT VALID` constraint that is never validated                                                          |
+| [`project-ordering`](#project-ordering)                                           | warning  | opt-in  | a table used in a changeset that creates it later                                                         |
+| [`project-conflicting-comment`](#project-conflicting-comment)                     | warning  | opt-in  | an object commented twice, with the same or different text                                                 |
+| [`project-unregistered-routine`](#project-unregistered-routine)                   | warning  | opt-in  | a routine SQL file no changeset references                                                                 |
 
 `changeset-id-unique` is a project rule: it runs once over the whole graph after
 the per-changeset rules. `trigger-create-or-replace` is on for PostgreSQL 14+;
 when `pgVersion` is below 14 it is opt-in and reports nothing.
+
+The `project-*` rules run after `changeset-id-unique` over a `ChangelogProject`
+(the visited files and includes, effective properties, changeset order and each
+changeset's loaded SQL). They are opt-in warnings because they encode
+project-level conventions and can depend on objects installed outside the
+changelog. Enable them under `include`; `project-foreign-key-target` and
+`project-ordering` accept a `knownTables` option for those external tables.
 
 Every rule is suppressed the same way: an `exclude` entry turns it off for the
 module, a `rules` severity override downgrades it (for example to `info`, which
@@ -517,6 +530,61 @@ default.
 <changeSet id="001-create" author="me">...</changeSet>
 <changeSet id="001-create" author="me">...</changeSet>
 ```
+
+#### project-duplicate-object
+
+Reports a table, index, column or constraint name declared more than once in the
+forward graph. It tracks `CREATE TABLE`, `CREATE [UNIQUE] INDEX`, `ALTER TABLE
+... ADD [COLUMN]` and `ALTER TABLE ... ADD [CONSTRAINT]`, removes an object on
+the matching `DROP` (including `DROP TABLE`, `DROP COLUMN` and `DROP
+CONSTRAINT`), and skips `IF NOT EXISTS`. It does not model a rename or resolve
+`search_path`. It is a warning and opt-in.
+
+#### project-foreign-key-target
+
+Reports a `REFERENCES` to a table no `CREATE TABLE` in the graph creates. A table
+installed outside the changelog is listed under the rule's `knownTables`
+option, which accepts `schema.table` or `table` entries. A table created later
+is not reported here (that is `project-ordering`). It is a warning and opt-in.
+
+```yaml
+rules:
+  project-foreign-key-target:
+    options:
+      knownTables:
+        - ddl_utils.database_lock_settings
+```
+
+#### project-unvalidated-constraint
+
+Reports a named `ALTER TABLE ... ADD CONSTRAINT ... NOT VALID` that no later
+`VALIDATE CONSTRAINT` covers. `DROP CONSTRAINT` and `DROP TABLE` clear the
+pending entry. An unnamed constraint cannot be matched to a later validate and
+is skipped. It is a warning and opt-in.
+
+#### project-ordering
+
+Reports a table used before the changeset that creates it. It checks the table
+of `ALTER TABLE`, `CREATE INDEX ... ON`, `INSERT`, `UPDATE`, `DELETE`,
+`TRUNCATE` and a foreign key's `REFERENCES`; a table that is never created is
+left to `project-foreign-key-target`, and `knownTables` suppresses an external
+table. Column-level ordering and `SELECT` references are not modelled. It is a
+warning and opt-in.
+
+#### project-conflicting-comment
+
+Reports an object with more than one `COMMENT ON` in the forward graph: the
+second comment either repeats the first text or conflicts with it. `IS NULL`
+removes the comment. Comments in routine bodies and rollbacks are not examined.
+It is a warning and opt-in.
+
+#### project-unregistered-routine
+
+Reports a `.sql` file under `functions/`, `procedures/` or `triggers/` (or their
+`-rollback` directories) that no changeset's `createProcedure`,
+`createFunction` or `sqlFile` source references. It overlaps with
+`ChangelogSqlFilesContract` and keeps the check available to a project that does
+not adopt the contracts. It is a warning and opt-in.
 
 ### Configuration
 

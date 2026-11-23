@@ -1,0 +1,174 @@
+package io.github.eyupmiduck.changelogvalidator.linter.rules;
+
+import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
+import io.github.eyupmiduck.changelogvalidator.linter.Severity;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
+import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Reports a table referenced in a changeset that creates it later in the graph.
+ *
+ * <p>The rule tracks the first {@code CREATE TABLE} order and checks the table
+ * of an {@code ALTER TABLE}, a {@code CREATE INDEX ... ON}, an
+ * {@code INSERT}/{@code UPDATE}/{@code DELETE}/{@code TRUNCATE}, and a foreign
+ * key's {@code REFERENCES}. A table that is never created in the graph is left
+ * to {@code project-foreign-key-target}; a table installed outside the project
+ * is declared through the {@code knownTables} option. Column-level ordering,
+ * {@code SELECT} references, and a rename are not modelled. It is an opt-in
+ * warning.
+ */
+public final class OrderingDependencyRule implements ProjectAnalysisRule {
+
+    /**
+     * The rule id.
+     */
+    public static final String ID = "project-ordering";
+
+    private final Set<String> knownTables;
+
+    /**
+     * Creates a rule with no known external tables.
+     */
+    public OrderingDependencyRule() {
+        this(Set.of());
+    }
+
+    /**
+     * Creates a rule with an allow-list of tables installed outside the project.
+     *
+     * @param knownTables the known {@code schema.name} or {@code name} tables
+     */
+    public OrderingDependencyRule(Set<String> knownTables) {
+        Objects.requireNonNull(knownTables, "knownTables");
+        this.knownTables = Set.copyOf(knownTables);
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.WARNING;
+    }
+
+    @Override
+    public List<Violation> check(ProjectContext context) {
+        List<ProjectStatements.Statement> statements = ProjectStatements.forward(context);
+        Map<String, Located> created = new LinkedHashMap<>();
+        for (ProjectStatements.Statement statement : statements) {
+            List<Token> tokens = statement.tokens();
+            if (!TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
+                continue;
+            }
+            int name = 2;
+            if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
+                    && TokenWords.at(tokens, name + 2, "EXISTS")) {
+                name += 3;
+            }
+            String table = RuleSupport.qualifiedName(tokens, name);
+            if (table != null) {
+                created.putIfAbsent(table, new Located(statement.changeSet(), statement.unit().file(),
+                        tokens.get(name).line(), tokens.get(name).column(), statement.order()));
+            }
+        }
+        List<Violation> violations = new ArrayList<>();
+        for (ProjectStatements.Statement statement : statements) {
+            List<Token> tokens = statement.tokens();
+            Map<String, Token> references = references(tokens);
+            for (Map.Entry<String, Token> reference : references.entrySet()) {
+                String table = reference.getKey();
+                if (RuleSupport.containsTable(knownTables, table)) {
+                    continue;
+                }
+                Located creation = creation(created, table);
+                if (creation == null || creation.order() <= statement.order()) {
+                    continue;
+                }
+                Token token = reference.getValue();
+                violations.add(new Violation(statement.changeSet(), statement.unit().file(),
+                        token.line(), token.column(), "table reference",
+                        "table '" + table + "' is referenced before it is created; it is created later at "
+                                + creation.file().getFileName() + ":" + creation.line(),
+                        "Move the creating changeset before the changeset that uses the table."));
+            }
+        }
+        return List.copyOf(violations);
+    }
+
+    private static Map<String, Token> references(List<Token> tokens) {
+        Map<String, Token> references = new LinkedHashMap<>();
+        if (TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
+            int cursor = 2;
+            if (TokenWords.at(tokens, cursor, "IF") && TokenWords.at(tokens, cursor + 1, "EXISTS")) {
+                cursor += 2;
+            }
+            if (TokenWords.at(tokens, cursor, "ONLY")) {
+                cursor++;
+            }
+            add(references, RuleSupport.qualifiedName(tokens, cursor), tokens, cursor);
+        } else if (TokenWords.startsWith(tokens, "CREATE", "INDEX")
+                || TokenWords.startsWith(tokens, "CREATE", "UNIQUE", "INDEX")) {
+            int on = TokenWords.indexOf(tokens, "ON", 2);
+            if (on >= 0) {
+                add(references, RuleSupport.qualifiedName(tokens, on + 1), tokens, on + 1);
+            }
+        } else if (TokenWords.startsWith(tokens, "INSERT", "INTO")) {
+            add(references, RuleSupport.qualifiedName(tokens, 2), tokens, 2);
+        } else if (TokenWords.at(tokens, 0, "UPDATE")) {
+            int cursor = TokenWords.at(tokens, 1, "ONLY") ? 2 : 1;
+            add(references, RuleSupport.qualifiedName(tokens, cursor), tokens, cursor);
+        } else if (TokenWords.startsWith(tokens, "DELETE", "FROM")) {
+            add(references, RuleSupport.qualifiedName(tokens, 2), tokens, 2);
+        } else if (TokenWords.at(tokens, 0, "TRUNCATE")) {
+            int cursor = TokenWords.at(tokens, 1, "TABLE") ? 2 : 1;
+            add(references, RuleSupport.qualifiedName(tokens, cursor), tokens, cursor);
+        }
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("REFERENCES")) {
+                add(references, RuleSupport.qualifiedName(tokens, i + 1), tokens, i + 1);
+            }
+        }
+        return references;
+    }
+
+    private static void add(Map<String, Token> references, String table, List<Token> tokens, int index) {
+        if (table != null && index < tokens.size()) {
+            references.putIfAbsent(table, tokens.get(index));
+        }
+    }
+
+    private static Located creation(Map<String, Located> created, String table) {
+        Located exact = created.get(table);
+        if (exact != null) {
+            return exact;
+        }
+        String simple = simpleName(table);
+        Located earliest = null;
+        for (Map.Entry<String, Located> entry : created.entrySet()) {
+            if (simpleName(entry.getKey()).equals(simple)
+                    && (earliest == null || entry.getValue().order() < earliest.order())) {
+                earliest = entry.getValue();
+            }
+        }
+        return earliest;
+    }
+
+    private static String simpleName(String table) {
+        int dot = table.lastIndexOf('.');
+        return dot < 0 ? table : table.substring(dot + 1);
+    }
+
+    private record Located(ChangeSet changeSet, Path file, int line, int column, int order) {
+    }
+}

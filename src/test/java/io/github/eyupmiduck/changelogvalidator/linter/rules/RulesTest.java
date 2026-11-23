@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
@@ -107,6 +108,53 @@ class RulesTest {
 
         assertFalse(implementations == 0, "no project rule implementations found to check");
         assertTrue(missing.isEmpty(), () -> "project rules missing from Rules.projectRules(): " + missing);
+    }
+
+    @Test
+    void registersEveryProjectAnalysisRuleImplementationInThePackage() throws Exception {
+        Set<String> registered = Rules.projectAnalysisRules().stream()
+                .map(ProjectAnalysisRule::id)
+                .collect(Collectors.toSet());
+        assertFalse(registered.isEmpty());
+
+        List<String> missing = new ArrayList<>();
+        int implementations = 0;
+        for (Class<?> type : classesInPackage()) {
+            if (!ProjectAnalysisRule.class.isAssignableFrom(type)
+                    || type.isInterface()
+                    || Modifier.isAbstract(type.getModifiers())) {
+                continue;
+            }
+            ProjectAnalysisRule rule = (ProjectAnalysisRule) type.getDeclaredConstructor().newInstance();
+            implementations++;
+            if (!registered.contains(rule.id())) {
+                missing.add(type.getSimpleName() + " (" + rule.id() + ")");
+            }
+        }
+
+        assertFalse(implementations == 0, "no project analysis rule implementations found to check");
+        assertTrue(missing.isEmpty(),
+                () -> "project analysis rules missing from Rules.projectAnalysisRules(): " + missing);
+    }
+
+    @Test
+    void rejectsAMalformedKnownTablesOption() {
+        assertThrows(IllegalArgumentException.class,
+                () -> Rules.projectAnalysisRules(analysisConfig(ForeignKeyTargetRule.ID,
+                        Map.of("knownTables", "t"))));
+        assertThrows(IllegalArgumentException.class,
+                () -> Rules.projectAnalysisRules(analysisConfig(OrderingDependencyRule.ID,
+                        Map.of("knownTables", List.of(1)))));
+        assertThrows(IllegalArgumentException.class,
+                () -> Rules.projectAnalysisRules(analysisConfig(OrderingDependencyRule.ID,
+                        Map.of("knownTables", List.of(" ")))));
+        assertFalse(Rules.projectAnalysisRules(analysisConfig(ForeignKeyTargetRule.ID,
+                Map.of("knownTables", List.of(" app.t ")))).isEmpty());
+    }
+
+    private static LinterConfig analysisConfig(String ruleId, Map<String, Object> options) {
+        return new LinterConfig(null, Severity.ERROR, List.of(), List.of(ruleId),
+                Map.of(ruleId, new LinterConfig.RuleSettings(null, options)));
     }
 
     @Test
