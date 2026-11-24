@@ -232,12 +232,17 @@ public final class LinterCli {
         }
     }
 
-    private static String baselineFile(Path file, Path root) {
+    static String baselineFile(Path file, Path root) {
         Path normalized = file.toAbsolutePath().normalize();
         if (normalized.startsWith(root)) {
             return root.relativize(normalized).toString().replace(File.separatorChar, '/');
         }
-        return normalized.getFileName().toString();
+        // Keep the parent directory so two external files with the same name do
+        // not collapse into one over-broad suffix-matching whitelist entry.
+        Path parent = normalized.getParent();
+        Path parentName = parent == null ? null : parent.getFileName();
+        return parentName == null ? normalized.getFileName().toString()
+                : parentName + "/" + normalized.getFileName();
     }
 
     private static String nullable(String value) {
@@ -381,7 +386,7 @@ public final class LinterCli {
                 throw new IllegalArgumentException("missing value for " + option);
             }
             String value = args[index];
-            if (OPTION_NAMES.contains(value)) {
+            if ("--".equals(value) || OPTION_NAMES.contains(value)) {
                 throw new IllegalArgumentException("missing value for " + option + ": " + value + " is an option");
             }
             return value;

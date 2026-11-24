@@ -12,10 +12,13 @@ public final class Json {
     }
 
     /**
-     * Returns {@code value} as a JSON string literal, or {@code null}.
+     * Returns {@code value} as a JSON string literal. A {@code null} input yields
+     * the JSON literal {@code null}; this method never returns a Java {@code null}
+     * reference.
      *
      * @param value the value, possibly null
-     * @return the JSON literal
+     * @return the quoted JSON string literal, or the JSON literal {@code null} for
+     *         a null input
      */
     public static String quote(String value) {
         if (value == null) {

@@ -153,4 +153,19 @@ class ReporterTest {
 
         assertTrue(out.toString().contains("/db/a%20b%23c.sql"), out.toString());
     }
+
+    /**
+     * A colon in the first segment of a relative path is not a URI scheme, so
+     * the reporter prefixes the RFC 3986 dot-segment and keeps the path.
+     */
+    @Test
+    void prefixesADotSegmentWhenTheFirstUriSegmentContainsAColon() throws IOException {
+        Finding finding = new Finding("rule-a", Severity.WARNING, "cs-1", "me",
+                Path.of("db:changelog/changes.xml"), 1, 1, "m", null);
+        StringBuilder out = new StringBuilder();
+
+        new SarifReporter().report(List.of(finding), out);
+
+        assertTrue(out.toString().contains("\"uri\":\"./db:changelog/changes.xml\""), out.toString());
+    }
 }
