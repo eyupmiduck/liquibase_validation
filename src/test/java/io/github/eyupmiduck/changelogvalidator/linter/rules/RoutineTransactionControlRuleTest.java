@@ -61,6 +61,8 @@ class RoutineTransactionControlRuleTest {
         assertEquals(1, checkFunction("BEGIN COMMIT TRANSACTION; END;").size());
         assertEquals(1, checkFunction("BEGIN ROLLBACK TO SAVEPOINT s; END;").size());
         assertEquals(1, checkFunction("BEGIN COMMIT AND CHAIN; END;").size());
+        assertEquals(1, checkFunction("BEGIN COMMIT PREPARED 'gid'; END;").size());
+        assertEquals(1, checkFunction("BEGIN ROLLBACK PREPARED 'gid'; END;").size());
     }
 
     @Test

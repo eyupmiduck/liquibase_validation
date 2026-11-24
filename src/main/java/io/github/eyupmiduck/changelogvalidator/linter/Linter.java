@@ -185,7 +185,7 @@ public final class Linter {
             if (character == '\n' || character == '\r') {
                 return true;
             }
-            if (character != ' ' && character != '\t' && character != '\f' && character != '\u000B') {
+            if (character != ' ' && character != '\t') {
                 return false;
             }
         }

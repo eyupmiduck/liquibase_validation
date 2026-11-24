@@ -153,20 +153,14 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
         if (exact != null) {
             return exact;
         }
-        String simple = simpleName(table);
         Located earliest = null;
         for (Map.Entry<String, Located> entry : created.entrySet()) {
-            if (simpleName(entry.getKey()).equals(simple)
+            if (RuleSupport.sameTable(entry.getKey(), table)
                     && (earliest == null || entry.getValue().order() < earliest.order())) {
                 earliest = entry.getValue();
             }
         }
         return earliest;
-    }
-
-    private static String simpleName(String table) {
-        int dot = table.lastIndexOf('.');
-        return dot < 0 ? table : table.substring(dot + 1);
     }
 
     @Override

@@ -82,7 +82,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             if (isPunctuation(token, "(")) {
                 depth++;
             } else if (isPunctuation(token, ")")) {
-                depth--;
+                if (depth > 0) {
+                    depth--;
+                }
             } else if (depth == 0 && token.matchesKeyword(keyword)) {
                 return i;
             }
@@ -90,13 +92,32 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return -1;
     }
 
+    private static int alterTablePhraseAt(List<Token> tokens, int from) {
+        for (int i = from; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int dropTablePhraseAt(List<Token> tokens, int from) {
+        for (int i = from; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("DROP") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /**
-     * Returns the end of the current {@code ALTER TABLE} command: the next
-     * top-level {@code ;} or {@code ALTER TABLE}, or the end of the tokens.
+     * Returns the end of the command that starts at {@code start}: the next
+     * top-level {@code ;}, {@code ALTER TABLE} or {@code DROP TABLE}, or the end
+     * of the tokens.
      */
     private static int commandEnd(List<Token> tokens, int start) {
         int depth = 0;
-        for (int i = start; i < tokens.size(); i++) {
+        for (int i = start + 1; i < tokens.size(); i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
                 depth++;
@@ -107,6 +128,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             } else if (depth == 0 && isPunctuation(token, ";")) {
                 return i;
             } else if (depth == 0 && token.matchesKeyword("ALTER")
+                    && TokenWords.at(tokens, i + 1, "TABLE")) {
+                return i;
+            } else if (depth == 0 && token.matchesKeyword("DROP")
                     && TokenWords.at(tokens, i + 1, "TABLE")) {
                 return i;
             }
@@ -123,7 +147,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             if (isPunctuation(token, "(")) {
                 depth++;
             } else if (isPunctuation(token, ")")) {
-                depth--;
+                if (depth > 0) {
+                    depth--;
+                }
             } else if (depth == 0 && token.matchesKeyword("NOT")
                     && TokenWords.at(tokens, i + 1, "VALID")) {
                 return true;
@@ -146,93 +172,111 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return Severity.WARNING;
     }
 
+    /**
+     * Processes one {@code ALTER TABLE} command and returns its end offset.
+     */
+    private static int processAlterTable(ProjectStatements.Statement statement, List<Token> tokens,
+                                         int alter, Map<PendingKey, Located> pending) {
+        int cursor = alter + 2;
+        if (TokenWords.at(tokens, cursor, "IF") && TokenWords.at(tokens, cursor + 1, "EXISTS")) {
+            cursor += 2;
+        }
+        if (TokenWords.at(tokens, cursor, "ONLY")) {
+            cursor++;
+        }
+        String table = RuleSupport.qualifiedName(tokens, cursor);
+        int end = commandEnd(tokens, alter);
+        if (table == null) {
+            return end;
+        }
+        // PostgreSQL runs DROP CONSTRAINT before ADD CONSTRAINT in a single
+        // ALTER TABLE, and VALIDATE afterwards. A drop-and-re-add therefore
+        // leaves the new constraint pending, not removed by the drop.
+        for (int drop = nextClause(tokens, "DROP", cursor + 1, end); drop >= 0;
+             drop = nextClause(tokens, "DROP", drop + 1, end)) {
+            int name = drop + 1;
+            if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
+                continue;
+            }
+            name++;
+            if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
+                name += 2;
+            }
+            if (name >= end) {
+                continue;
+            }
+            String constraint = RuleSupport.identifier(tokens.get(name));
+            if (constraint != null) {
+                pending.keySet().removeIf(key -> key.constraint().equals(constraint)
+                        && tablesMatch(key.table(), table));
+            }
+        }
+        for (int add = nextClause(tokens, "ADD", cursor + 1, end); add >= 0;
+             add = nextClause(tokens, "ADD", add + 1, end)) {
+            int name = add + 1;
+            if (TokenWords.at(tokens, name, "CONSTRAINT")) {
+                name++;
+            } else if (!TokenWords.at(tokens, name, "COLUMN")
+                    && name + 1 < end
+                    && RuleSupport.identifier(tokens.get(name)) != null
+                    && (TokenWords.at(tokens, name + 1, "CHECK")
+                    || TokenWords.at(tokens, name + 1, "FOREIGN")
+                    || TokenWords.at(tokens, name + 1, "UNIQUE")
+                    || TokenWords.at(tokens, name + 1, "PRIMARY")
+                    || TokenWords.at(tokens, name + 1, "EXCLUDE"))) {
+                // The CONSTRAINT keyword is optional: the name is already
+                // at `name`, followed by the constraint kind.
+            } else {
+                continue;
+            }
+            if (name >= end) {
+                continue;
+            }
+            String constraint = RuleSupport.identifier(tokens.get(name));
+            if (constraint == null || !notValid(tokens, add, end)) {
+                continue;
+            }
+            pending.putIfAbsent(key(table, constraint), new Located(statement.changeSet(),
+                    statement.unit().file(), tokens.get(name).line(), tokens.get(name).column()));
+        }
+        for (int validate = nextClause(tokens, "VALIDATE", cursor + 1, end); validate >= 0;
+             validate = nextClause(tokens, "VALIDATE", validate + 1, end)) {
+            int name = validate + 1;
+            if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
+                continue;
+            }
+            name++;
+            if (name >= end) {
+                continue;
+            }
+            String constraint = RuleSupport.identifier(tokens.get(name));
+            if (constraint != null) {
+                pending.keySet().removeIf(key -> key.constraint().equals(constraint)
+                        && tablesMatch(key.table(), table));
+            }
+        }
+        return end;
+    }
+
     @Override
     public List<Violation> check(ProjectContext context) {
         Map<PendingKey, Located> pending = new LinkedHashMap<>();
         for (ProjectStatements.Statement statement : ProjectStatements.forward(context)) {
             List<Token> tokens = statement.tokens();
-            if (TokenWords.startsWith(tokens, "DROP", "TABLE")) {
-                dropTable(tokens, pending);
-                continue;
-            }
-            if (!TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
-                continue;
-            }
-            int cursor = 2;
-            if (TokenWords.at(tokens, cursor, "IF") && TokenWords.at(tokens, cursor + 1, "EXISTS")) {
-                cursor += 2;
-            }
-            if (TokenWords.at(tokens, cursor, "ONLY")) {
-                cursor++;
-            }
-            String table = RuleSupport.qualifiedName(tokens, cursor);
-            if (table == null) {
-                continue;
-            }
-            int end = commandEnd(tokens, cursor);
-            // PostgreSQL runs DROP CONSTRAINT before ADD CONSTRAINT in a single
-            // ALTER TABLE, and VALIDATE afterwards. A drop-and-re-add therefore
-            // leaves the new constraint pending, not removed by the drop.
-            for (int drop = nextClause(tokens, "DROP", cursor + 1, end); drop >= 0;
-                 drop = nextClause(tokens, "DROP", drop + 1, end)) {
-                int name = drop + 1;
-                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
-                    continue;
+            int from = 0;
+            while (from < tokens.size()) {
+                int alter = alterTablePhraseAt(tokens, from);
+                int drop = dropTablePhraseAt(tokens, from);
+                if (alter < 0 && drop < 0) {
+                    break;
                 }
-                name++;
-                if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
-                    name += 2;
-                }
-                if (name >= end) {
-                    continue;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint != null) {
-                    pending.keySet().removeIf(key -> key.constraint().equals(constraint)
-                            && tablesMatch(key.table(), table));
-                }
-            }
-            for (int add = nextClause(tokens, "ADD", cursor + 1, end); add >= 0;
-                 add = nextClause(tokens, "ADD", add + 1, end)) {
-                int name = add + 1;
-                if (TokenWords.at(tokens, name, "CONSTRAINT")) {
-                    name++;
-                } else if (name + 1 < end
-                        && RuleSupport.identifier(tokens.get(name)) != null
-                        && (TokenWords.at(tokens, name + 1, "CHECK")
-                        || TokenWords.at(tokens, name + 1, "FOREIGN")
-                        || TokenWords.at(tokens, name + 1, "UNIQUE")
-                        || TokenWords.at(tokens, name + 1, "PRIMARY")
-                        || TokenWords.at(tokens, name + 1, "EXCLUDE"))) {
-                    // The CONSTRAINT keyword is optional: the name is already
-                    // at `name`, followed by the constraint kind.
+                if (drop >= 0 && (alter < 0 || drop < alter)) {
+                    int end = commandEnd(tokens, drop);
+                    dropTable(tokens.subList(drop, end), pending);
+                    from = Math.max(end, drop + 1);
                 } else {
-                    continue;
-                }
-                if (name >= end) {
-                    continue;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint == null || !notValid(tokens, add, end)) {
-                    continue;
-                }
-                pending.putIfAbsent(key(table, constraint), new Located(statement.changeSet(),
-                        statement.unit().file(), tokens.get(name).line(), tokens.get(name).column()));
-            }
-            for (int validate = nextClause(tokens, "VALIDATE", cursor + 1, end); validate >= 0;
-                 validate = nextClause(tokens, "VALIDATE", validate + 1, end)) {
-                int name = validate + 1;
-                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
-                    continue;
-                }
-                name++;
-                if (name >= end) {
-                    continue;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint != null) {
-                    pending.keySet().removeIf(key -> key.constraint().equals(constraint)
-                            && tablesMatch(key.table(), table));
+                    int end = processAlterTable(statement, tokens, alter, pending);
+                    from = Math.max(end, alter + 1);
                 }
             }
         }

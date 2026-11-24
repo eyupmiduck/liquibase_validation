@@ -276,6 +276,19 @@ class LinterTest {
     }
 
     /**
+     * A form feed is a vertical separator, not horizontal whitespace, so a
+     * suppression after SQL code separated by one does not start its line.
+     */
+    @Test
+    void doesNotTreatFormFeedAsHorizontalWhitespace() throws IOException {
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule()))
+                .lint(List.of(inlineChangeSet("""
+                        SELECT bad\f-- liquibase-linter:ignore reason=oops""")));
+
+        assertEquals(1, findings.size(), findings.toString());
+    }
+
+    /**
      * A suppression indented with horizontal whitespace still starts its line.
      */
     @Test

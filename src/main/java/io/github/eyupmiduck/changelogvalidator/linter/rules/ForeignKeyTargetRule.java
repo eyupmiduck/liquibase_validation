@@ -3,7 +3,6 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 
 import java.util.*;
 
@@ -54,16 +53,28 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         return Severity.WARNING;
     }
 
+    private static boolean containsCreateTable(List<Token> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("CREATE")
+                    && RuleSupport.createdTableAt(tokens, i) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public List<Violation> check(ProjectContext context) {
         List<ProjectStatements.Statement> statements = ProjectStatements.forward(context);
         Set<String> created = new LinkedHashSet<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
-            if (TokenWords.at(tokens, 0, "CREATE")) {
-                String table = RuleSupport.createdTableAt(tokens, 0);
-                if (table != null) {
-                    created.add(table);
+            for (int i = 0; i < tokens.size(); i++) {
+                if (tokens.get(i).matchesKeyword("CREATE")) {
+                    String table = RuleSupport.createdTableAt(tokens, i);
+                    if (table != null) {
+                        created.add(table);
+                    }
                 }
             }
         }
@@ -74,7 +85,7 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
             // REFERENCES in a SELECT can be an attribute name, and an identifier
             // preceded by a dot is not the keyword.
             boolean canDeclareForeignKey = RuleSupport.containsAlterTablePhrase(tokens)
-                    || (TokenWords.at(tokens, 0, "CREATE") && RuleSupport.createdTableAt(tokens, 0) != null);
+                    || containsCreateTable(tokens);
             if (!canDeclareForeignKey) {
                 continue;
             }

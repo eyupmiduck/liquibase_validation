@@ -78,6 +78,22 @@ class RequireNotValidConstraintRuleTest {
     }
 
     /**
+     * A stray top-level {@code )} must not drive the depth negative and hide the
+     * command boundary; both commands are on existing tables and are reported.
+     */
+    @Test
+    void keepsTheCommandBoundAfterAnUnbalancedParen() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("ALTER TABLE a ADD CONSTRAINT c CHECK (x > 0));"
+                        + " ALTER TABLE b ADD CONSTRAINT d CHECK (y > 0)", true, ""));
+
+        List<Rule.Violation> violations = new RequireNotValidConstraintRule().check(context);
+
+        assertEquals(2, violations.size());
+    }
+
+    /**
      * A table created in the same direction is fresh and needs no NOT VALID.
      */
     @Test

@@ -255,6 +255,45 @@ class ProjectAnalysisTest {
     }
 
     @Test
+    void findsCreateTableMidCommandInAnUnsplitSource() throws IOException {
+        assertTrue(lint(new ForeignKeyTargetRule(),
+                unsplitChangeSet("a", "SELECT 1; CREATE TABLE parent (id int);"),
+                changeSet("b", "ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (pid) REFERENCES parent (id);"))
+                .isEmpty());
+        assertEquals(1, lint(new ForeignKeyTargetRule(),
+                unsplitChangeSet("a", "SELECT 1; CREATE TABLE child (pid int,"
+                        + " FOREIGN KEY (pid) REFERENCES missing (id));")).size());
+    }
+
+    @Test
+    void doesNotEquateDifferentQualifiedTables() throws IOException {
+        assertTrue(lint(new OrderingDependencyRule(),
+                changeSet("a", "ALTER TABLE app.events ADD COLUMN c int;"),
+                changeSet("b", "CREATE TABLE analytics.events (id int);")).isEmpty());
+    }
+
+    @Test
+    void tracksEveryAlterTableCommandInAnUnsplitSource() throws IOException {
+        assertEquals(2, lint(new UnvalidatedConstraintRule(),
+                unsplitChangeSet("a", "ALTER TABLE t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"
+                        + " ALTER TABLE u ADD CONSTRAINT d CHECK (id > 0) NOT VALID;")).size());
+    }
+
+    @Test
+    void handlesMidStatementDropTable() throws IOException {
+        assertTrue(lint(new UnvalidatedConstraintRule(),
+                unsplitChangeSet("a", "ALTER TABLE t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"
+                        + " DROP TABLE t;")).isEmpty());
+    }
+
+    @Test
+    void ignoresAddColumnWithAConstraintKindName() throws IOException {
+        assertTrue(lint(new UnvalidatedConstraintRule(),
+                changeSet("a", "ALTER TABLE t ADD COLUMN exclude int CHECK (exclude > 0) NOT VALID;"))
+                .isEmpty());
+    }
+
+    @Test
     void handlesPerItemOnlyAndInheritanceStarsInTruncate() throws IOException {
         assertEquals(1, lint(new OrderingDependencyRule(),
                 changeSet("a", "TRUNCATE ONLY t1, ONLY t2;"),

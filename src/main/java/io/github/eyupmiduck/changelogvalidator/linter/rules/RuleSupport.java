@@ -119,6 +119,25 @@ final class RuleSupport {
     }
 
     /**
+     * Returns whether {@code candidate} and {@code table} denote the same table
+     * under the shared policy: an exact match, or equal simple names when at
+     * least one side is unqualified.
+     *
+     * @param candidate a known or created table name
+     * @param table     the table to compare
+     * @return {@code true} when they denote the same table
+     */
+    static boolean sameTable(String candidate, String table) {
+        if (candidate.equals(table)) {
+            return true;
+        }
+        if (isQualified(table) && isQualified(candidate)) {
+            return false;
+        }
+        return simpleName(candidate).equals(simpleName(table));
+    }
+
+    /**
      * Returns whether {@code table} is one of {@code tables}, comparing the final
      * name segment so a schema-qualified and an unqualified reference to the same
      * table match. Two different schema-qualified names never match, even when
@@ -129,16 +148,8 @@ final class RuleSupport {
      * @return {@code true} when the table is present
      */
     static boolean containsTable(Set<String> tables, String table) {
-        if (tables.contains(table)) {
-            return true;
-        }
-        String simple = simpleName(table);
-        boolean qualified = isQualified(table);
         for (String candidate : tables) {
-            if (qualified && isQualified(candidate)) {
-                continue;
-            }
-            if (simpleName(candidate).equals(simple)) {
+            if (sameTable(candidate, table)) {
                 return true;
             }
         }

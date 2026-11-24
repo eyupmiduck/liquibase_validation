@@ -256,6 +256,10 @@ public final class Whitelist {
                 throw new IllegalArgumentException(
                         "whitelist entry must set at least one of rule, file, changeset or statement");
             }
+            if (isBlank(rule) || isBlank(changeset) || isBlank(statement) || isBlank(file)) {
+                throw new IllegalArgumentException(
+                        "whitelist entry selectors must not be blank; omit the field to match any value");
+            }
             if (file != null) {
                 String normalized = normalizePath(file);
                 List<String> segments = List.of(normalized.split("/"));
@@ -276,6 +280,10 @@ public final class Whitelist {
 
         private static boolean matches(String expected, String actual) {
             return expected == null || expected.equals(actual);
+        }
+
+        private static boolean isBlank(String value) {
+            return value != null && value.isBlank();
         }
 
         private static String orAny(String value) {

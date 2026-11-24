@@ -45,7 +45,8 @@ public final class RoutineTransactionControlRule implements Rule {
                     || next.matchesKeyword("WORK")
                     || next.matchesKeyword("TRANSACTION")
                     || next.matchesKeyword("TO")
-                    || next.matchesKeyword("AND");
+                    || next.matchesKeyword("AND")
+                    || next.matchesKeyword("PREPARED");
         }
         return true;
     }

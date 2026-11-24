@@ -49,7 +49,9 @@ public final class RequireNotValidConstraintRule implements Rule {
             if (isPunctuation(token, "(")) {
                 depth++;
             } else if (isPunctuation(token, ")")) {
-                depth--;
+                if (depth > 0) {
+                    depth--;
+                }
             } else if (depth == 0) {
                 if (isPunctuation(token, ";")) {
                     return i;

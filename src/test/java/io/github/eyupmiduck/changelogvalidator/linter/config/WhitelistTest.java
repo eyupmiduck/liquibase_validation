@@ -246,6 +246,20 @@ class WhitelistTest {
     }
 
     /**
+     * The programmatic construction path rejects blank selectors, matching
+     * {@code load}, so a written whitelist cannot be rejected on the next run.
+     */
+    @Test
+    void rejectsBlankProgrammaticSelectors() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(" ", null, null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, "   ", null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, null, "", null, "reason"));
+    }
+
+    /**
      * The programmatic construction paths share the load-time invariants: a
      * non-blank reason, at least one selector, and a valid file selector.
      */
