@@ -262,6 +262,58 @@ class LinterTest {
     }
 
     /**
+     * A suppression must start its line: the same marker after SQL code on the
+     * same line is an ordinary trailing comment and does not suppress.
+     */
+    @Test
+    void ignoresASuppressionMarkerAfterSqlOnTheSameLine() throws IOException {
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule()))
+                .lint(List.of(inlineChangeSet("""
+                        SELECT bad -- liquibase-linter:ignore reason=oops""")));
+
+        assertEquals(1, findings.size(), findings.toString());
+        assertEquals(RULE_ID, findings.getFirst().ruleId());
+    }
+
+    /**
+     * A suppression indented with horizontal whitespace still starts its line.
+     */
+    @Test
+    void acceptsAnIndentedSuppression() throws IOException {
+        List<Finding> findings = Linter.withRules(List.of(new ForbiddenWordRule()))
+                .lint(List.of(inlineChangeSet("""
+                        \t-- liquibase-linter:ignore reason=accepted
+                        SELECT bad""")));
+
+        assertTrue(findings.isEmpty(), findings.toString());
+    }
+
+    /**
+     * A rules part made only of separators names no rule, so it fails closed like
+     * an unknown rule id instead of suppressing nothing silently.
+     */
+    @Test
+    void rejectsASuppressionThatNamesNoRule() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> Linter.withRules(List.of(new ForbiddenWordRule()))
+                        .lint(List.of(inlineChangeSet("""
+                                -- liquibase-linter:ignore , , reason=oops
+                                SELECT bad"""))));
+
+        assertTrue(failure.getMessage().contains("names no rule ids"), failure.getMessage());
+    }
+
+    /**
+     * The case-insensitive search returns an index into the original text even
+     * when lowercasing would change the string's length.
+     */
+    @Test
+    void indexOfIgnoreCaseKeepsTheOriginalOffsets() {
+        assertEquals(3, Linter.indexOfIgnoreCase("\u0130\u0130xreason=", "reason="));
+        assertEquals(-1, Linter.indexOfIgnoreCase("no marker", "reason="));
+    }
+
+    /**
      * A suppression inside a routine body is found by re-lexing the body.
      */
     @Test

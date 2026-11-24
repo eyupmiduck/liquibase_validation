@@ -217,6 +217,72 @@ class FormattedSqlChangelogTest {
     }
 
     /**
+     * Every spelling of the block-comment rollback form is rejected, including a
+     * closed comment and a closed comment followed by SQL on the same line.
+     */
+    @Test
+    void rejectsEveryBlockCommentRollbackVariant() {
+        for (String rollback : List.of(
+                "/* liquibase rollback */",
+                "/* liquibase rollback */ DROP TABLE t;",
+                "/*liquibase  rollback*/")) {
+            IOException failure = assertThrows(IOException.class, () -> parse("""
+                    --liquibase formatted sql
+                    --changeset a:1
+                    CREATE TABLE t (id int);
+                    %s
+                    """.formatted(rollback)), rollback);
+            assertTrue(failure.getMessage().contains("block form is not supported"),
+                    rollback + ": " + failure.getMessage());
+        }
+    }
+
+    /**
+     * Liquibase's header check tolerates flexible whitespace between the marker
+     * words, so a file it accepts is not rejected here.
+     */
+    @Test
+    void acceptsAFlexibleMarkerLine() throws IOException {
+        assertEquals(1, parse("""
+                --liquibase  formatted  sql
+                --changeset a:1
+                SELECT 1;
+                """).size());
+    }
+
+    /**
+     * Liquibase-style boolean spellings are honoured for the changeset
+     * attributes, rather than every non-"true" value silently meaning false.
+     */
+    @Test
+    void parsesLiquibaseBooleanSpellings() throws IOException {
+        ChangeSet changeSet = parse("""
+                --liquibase formatted sql
+                --changeset a:1 runInTransaction:yes splitStatements:1 stripComments:on
+                SELECT 1;
+                """).getFirst();
+
+        assertTrue(changeSet.runInTransaction());
+        assertTrue(changeSet.sqlSources().getFirst().splitStatements());
+        assertTrue(changeSet.sqlSources().getFirst().stripComments());
+    }
+
+    /**
+     * A malformed boolean attribute fails closed instead of silently becoming
+     * false and changing what SQL the linter analyses.
+     */
+    @Test
+    void rejectsAMalformedBooleanAttribute() {
+        IOException failure = assertThrows(IOException.class, () -> parse("""
+                --liquibase formatted sql
+                --changeset a:1 splitStatements:flase
+                SELECT 1;
+                """));
+        assertTrue(failure.getMessage().contains("malformed boolean changeset attribute 'splitStatements:flase'"),
+                failure.getMessage());
+    }
+
+    /**
      * A changeset without a usable author:id is rejected.
      */
     @Test

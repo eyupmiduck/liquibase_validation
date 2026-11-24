@@ -38,7 +38,7 @@ public record SqlUnit(SqlSource source, Path file, String sql, List<Token> token
         if (commands == null) {
             commands = source.splitStatements()
                     ? statements
-                    : SqlStatementSplitter.split(sql, true, source.endDelimiter(), source.stripComments());
+                    : SqlStatementSplitter.split(sql, tokens, true, source.endDelimiter(), source.stripComments());
         }
         tokens = List.copyOf(tokens);
         statements = List.copyOf(statements);

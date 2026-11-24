@@ -30,7 +30,7 @@ class RoutineRunOnChangeRuleTest {
         SqlSource source = new SqlSource(kind,
                 kind == SqlSource.Kind.INLINE_SQL ? null : RuleTestSupport.FILE,
                 kind == SqlSource.Kind.INLINE_SQL ? sql : null,
-                true, ";", true, dbms);
+                kind != SqlSource.Kind.ROUTINE_BODY, ";", true, dbms);
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, runOnChange,
                 null, null, null, List.of(source), false, List.of());
         SqlUnit unit = new SqlUnit(source, RuleTestSupport.FILE, sql, SqlLexer.tokenize(sql),

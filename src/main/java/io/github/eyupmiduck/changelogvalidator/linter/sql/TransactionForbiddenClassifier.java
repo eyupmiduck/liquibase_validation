@@ -56,12 +56,14 @@ public final class TransactionForbiddenClassifier {
     /**
      * Classifies a single statement's tokens.
      *
-     * @param statementTokens the statement's tokens
+     * @param statementTokens the statement's tokens; trivia is ignored, so raw
+     *                        lexer output may be passed
      * @param pgVersion       the PostgreSQL major version, or null when unknown
      * @return the family, or empty when the statement is allowed in a transaction
      */
     public static Optional<Family> familyOf(List<Token> statementTokens, Integer pgVersion) {
-        List<Token> words = statementTokens.stream()
+        List<Token> tokens = statementTokens.stream().filter(token -> !token.isTrivia()).toList();
+        List<Token> words = tokens.stream()
                 .filter(token -> token.type() == TokenType.WORD)
                 .toList();
         if (words.isEmpty()) {
@@ -91,15 +93,18 @@ public final class TransactionForbiddenClassifier {
         if (isIndexConcurrently(words, "DROP")) {
             return Optional.of(Family.DROP_INDEX_CONCURRENTLY);
         }
-        Optional<Family> reindex = reindexFamily(words);
+        if (isRefreshMaterializedViewConcurrently(tokens)) {
+            return Optional.of(Family.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY);
+        }
+        Optional<Family> reindex = reindexFamily(tokens);
         if (reindex.isPresent()) {
             return reindex;
         }
-        Optional<Family> detach = detachPartitionFamily(statementTokens);
+        Optional<Family> detach = detachPartitionFamily(tokens);
         if (detach.isPresent()) {
             return detach;
         }
-        if (isAlterTypeAddValue(words) && pgVersion != null && pgVersion < ALTER_TYPE_ADD_VALUE_ALLOWED_FROM) {
+        if (isAlterTypeAddValue(tokens) && pgVersion != null && pgVersion < ALTER_TYPE_ADD_VALUE_ALLOWED_FROM) {
             return Optional.of(Family.ALTER_TYPE_ADD_VALUE);
         }
         return Optional.empty();
@@ -122,22 +127,48 @@ public final class TransactionForbiddenClassifier {
     }
 
     /**
-     * Classifies {@code REINDEX} by the object kind immediately before the
-     * optional {@code CONCURRENTLY}. A bare object named {@code concurrently} is
-     * not the option.
+     * Classifies {@code REFRESH MATERIALIZED VIEW CONCURRENTLY name}. The option
+     * is positional and the required name follows it, so a materialized view
+     * merely named {@code concurrently} is not the option.
      */
-    private static Optional<Family> reindexFamily(List<Token> words) {
-        if (!TokenWords.startsWith(words, "REINDEX")) {
+    private static boolean isRefreshMaterializedViewConcurrently(List<Token> tokens) {
+        return TokenWords.startsWith(tokens, "REFRESH", "MATERIALIZED", "VIEW")
+                && tokens.size() > 4
+                && tokens.get(3).matchesKeyword("CONCURRENTLY")
+                && isName(tokens.get(4));
+    }
+
+    /**
+     * Classifies {@code REINDEX} by the object kind after an optional option list
+     * (for example {@code REINDEX (CONCURRENTLY) TABLE t}). A bare object named
+     * {@code concurrently} is not the option: the option always precedes the
+     * required object name.
+     */
+    private static Optional<Family> reindexFamily(List<Token> tokens) {
+        if (!TokenWords.startsWith(tokens, "REINDEX")) {
             return Optional.empty();
         }
+        int kindStart = 1;
+        if (kindStart < tokens.size() && isPunctuation(tokens.get(kindStart), "(")) {
+            int close = matchingParen(tokens, kindStart);
+            if (close < 0) {
+                return Optional.empty();
+            }
+            for (int i = kindStart + 1; i < close; i++) {
+                if (tokens.get(i).matchesKeyword("CONCURRENTLY")) {
+                    return Optional.of(Family.REINDEX_CONCURRENTLY);
+                }
+            }
+            kindStart = close + 1;
+        }
         int kind = -1;
-        for (int i = 1; i < words.size(); i++) {
-            Token word = words.get(i);
-            if (word.matchesKeyword("INDEX")
-                    || word.matchesKeyword("TABLE")
-                    || word.matchesKeyword("SCHEMA")
-                    || word.matchesKeyword("DATABASE")
-                    || word.matchesKeyword("SYSTEM")) {
+        for (int i = kindStart; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.matchesKeyword("INDEX")
+                    || token.matchesKeyword("TABLE")
+                    || token.matchesKeyword("SCHEMA")
+                    || token.matchesKeyword("DATABASE")
+                    || token.matchesKeyword("SYSTEM")) {
                 kind = i;
                 break;
             }
@@ -145,10 +176,14 @@ public final class TransactionForbiddenClassifier {
         if (kind < 0) {
             return Optional.empty();
         }
-        if (kind + 1 < words.size() && words.get(kind + 1).matchesKeyword("CONCURRENTLY")) {
+        // The option precedes the required object name, so a trailing token named
+        // concurrently is the object, not the option.
+        if (kind + 2 < tokens.size()
+                && tokens.get(kind + 1).matchesKeyword("CONCURRENTLY")
+                && isName(tokens.get(kind + 2))) {
             return Optional.of(Family.REINDEX_CONCURRENTLY);
         }
-        return switch (words.get(kind).text().toUpperCase(java.util.Locale.ROOT)) {
+        return switch (tokens.get(kind).text().toUpperCase(java.util.Locale.ROOT)) {
             case "SCHEMA", "DATABASE", "SYSTEM" -> Optional.of(Family.REINDEX);
             default -> Optional.empty();
         };
@@ -187,8 +222,60 @@ public final class TransactionForbiddenClassifier {
         return Optional.empty();
     }
 
-    private static boolean isAlterTypeAddValue(List<Token> words) {
-        return TokenWords.startsWith(words, "ALTER", "TYPE") && TokenWords.adjacent(words, "ADD", "VALUE");
+    /**
+     * Recognises {@code ALTER TYPE ... ADD VALUE [IF NOT EXISTS] 'label'}. The
+     * new enum value must be a string literal, so an adjacent {@code add value}
+     * inside a composite attribute definition or a function call is not the
+     * grammar form.
+     */
+    private static boolean isAlterTypeAddValue(List<Token> tokens) {
+        if (!TokenWords.startsWith(tokens, "ALTER", "TYPE")) {
+            return false;
+        }
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (!tokens.get(i).matchesKeyword("ADD") || !tokens.get(i + 1).matchesKeyword("VALUE")) {
+                continue;
+            }
+            int next = i + 2;
+            if (next < tokens.size() && tokens.get(next).matchesKeyword("IF")) {
+                if (next + 2 >= tokens.size()
+                        || !tokens.get(next + 1).matchesKeyword("NOT")
+                        || !tokens.get(next + 2).matchesKeyword("EXISTS")) {
+                    return false;
+                }
+                next += 3;
+            }
+            if (next < tokens.size()) {
+                TokenType type = tokens.get(next).type();
+                if (type == TokenType.STRING || type == TokenType.E_STRING || type == TokenType.DOLLAR_STRING) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPunctuation(Token token, String punctuation) {
+        return token.type() == TokenType.PUNCTUATION && punctuation.equals(token.text());
+    }
+
+    private static boolean isName(Token token) {
+        return token.type() == TokenType.WORD || token.type() == TokenType.QUOTED_IDENTIFIER;
+    }
+
+    private static int matchingParen(List<Token> tokens, int open) {
+        int depth = 0;
+        for (int i = open; i < tokens.size(); i++) {
+            if (isPunctuation(tokens.get(i), "(")) {
+                depth++;
+            } else if (isPunctuation(tokens.get(i), ")")) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
 
@@ -206,6 +293,11 @@ public final class TransactionForbiddenClassifier {
          * {@code DROP INDEX CONCURRENTLY}.
          */
         DROP_INDEX_CONCURRENTLY,
+
+        /**
+         * {@code REFRESH MATERIALIZED VIEW CONCURRENTLY}.
+         */
+        REFRESH_MATERIALIZED_VIEW_CONCURRENTLY,
 
         /**
          * {@code REINDEX ... CONCURRENTLY}.

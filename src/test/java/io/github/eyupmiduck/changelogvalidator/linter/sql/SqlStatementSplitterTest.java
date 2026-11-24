@@ -343,6 +343,38 @@ class SqlStatementSplitterTest {
     }
 
     /**
+     * A comment inside a dollar-quote-delimited segment is stripped from the
+     * statement text, because the segment is re-lexed rather than read through
+     * the full token stream's phantom dollar-quoted string.
+     */
+    @Test
+    void stripsCommentsInsideADollarQuoteDelimitedSegment() {
+        String sql = "SELECT 1\n$$\n-- DROP TABLE x\nSELECT 2\n$$";
+
+        List<SqlStatement> statements = SqlStatementSplitter.split(sql, true, "$$", true);
+
+        assertEquals(2, statements.size(), statements.toString());
+        assertEquals("SELECT 2", statements.get(1).text());
+        assertFalse(statements.get(1).text().contains("DROP TABLE"));
+    }
+
+    /**
+     * A dollar-quote-delimited statement's offsets start at its first non-trivia
+     * token and end at its last, not at a leading or trailing comment.
+     */
+    @Test
+    void trimsDollarQuoteDelimitedOffsetsToTheTokens() {
+        String sql = "$$\n-- note\nSELECT 2 -- trailing\n$$";
+
+        SqlStatement statement = SqlStatementSplitter.split(sql, true, "$$", false).get(0);
+
+        assertEquals(sql.indexOf("SELECT 2"), statement.startOffset());
+        assertEquals(sql.indexOf("SELECT 2") + "SELECT 2".length(), statement.endOffset());
+        assertFalse(statement.text().startsWith("--"));
+        assertFalse(statement.text().endsWith("-- trailing"));
+    }
+
+    /**
      * A delimiter the splitter cannot represent is rejected instead of being
      * ignored silently.
      */
