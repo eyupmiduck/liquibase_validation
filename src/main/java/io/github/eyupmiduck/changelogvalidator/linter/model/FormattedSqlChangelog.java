@@ -314,6 +314,17 @@ public final class FormattedSqlChangelog {
             this.header = header;
         }
 
+        private static String stringAttribute(Map<String, String> attributes, String name,
+                                              String defaultValue) {
+            String value = attributes.get(name);
+            return value == null ? defaultValue : value;
+        }
+
+        private static String nullableAttribute(Map<String, String> attributes, String name) {
+            String value = attributes.get(name);
+            return value == null || value.isBlank() ? null : value;
+        }
+
         private boolean booleanAttribute(Map<String, String> attributes, String name,
                                          boolean defaultValue, Path file) throws IOException {
             String value = attributes.get(name);
@@ -326,17 +337,6 @@ public final class FormattedSqlChangelog {
                         + "' at " + file + ":" + line);
             }
             return parsed;
-        }
-
-        private static String stringAttribute(Map<String, String> attributes, String name,
-                                              String defaultValue) {
-            String value = attributes.get(name);
-            return value == null ? defaultValue : value;
-        }
-
-        private static String nullableAttribute(Map<String, String> attributes, String name) {
-            String value = attributes.get(name);
-            return value == null || value.isBlank() ? null : value;
         }
 
         private void forwardLine(int lineNumber, String text) {

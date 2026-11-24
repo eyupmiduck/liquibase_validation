@@ -394,6 +394,10 @@ public final class ChangelogLayoutCheck {
         return Path.of(relative(root, file));
     }
 
+    private static boolean identifierMatches(String actual, boolean quoted, String expected) {
+        return quoted ? actual.equals(expected) : actual.equalsIgnoreCase(expected);
+    }
+
     /**
      * A layout violation.
      *
@@ -453,9 +457,5 @@ public final class ChangelogLayoutCheck {
         boolean tableSchemaMatches(String expected) {
             return tableSchema != null && identifierMatches(tableSchema, tableSchemaQuoted, expected);
         }
-    }
-
-    private static boolean identifierMatches(String actual, boolean quoted, String expected) {
-        return quoted ? actual.equals(expected) : actual.equalsIgnoreCase(expected);
     }
 }

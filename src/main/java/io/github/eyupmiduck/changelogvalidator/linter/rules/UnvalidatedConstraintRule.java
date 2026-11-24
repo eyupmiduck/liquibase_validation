@@ -7,11 +7,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Reports a constraint added {@code NOT VALID} in the forward changelog graph
@@ -64,9 +60,6 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
      */
     private static boolean tablesMatch(String a, String b) {
         return RuleSupport.containsTable(Set.of(a), b);
-    }
-
-    private record PendingKey(String table, String constraint) {
     }
 
     private static int qualifiedNameEnd(List<Token> tokens, int start) {
@@ -263,6 +256,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
     @Override
     public String help() {
         return "Add a later `VALIDATE CONSTRAINT` changeset.";
+    }
+
+    private record PendingKey(String table, String constraint) {
     }
 
     private record Located(io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet changeSet,

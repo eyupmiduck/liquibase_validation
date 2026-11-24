@@ -103,6 +103,45 @@ public final class DynamicSqlRule implements Rule {
         return new int[]{anchor.line(), anchor.column()};
     }
 
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index >= 0 && index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
+    private static int indexOf(List<Token> tokens, String keyword, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword(keyword)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int indexOfPunctuation(List<Token> tokens, String punctuation, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.type() == TokenType.PUNCTUATION && token.text().equals(punctuation)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int matchingParen(List<Token> tokens, int open) {
+        int depth = 0;
+        for (int i = open; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.type() == TokenType.PUNCTUATION && token.text().equals("(")) {
+                depth++;
+            } else if (token.type() == TokenType.PUNCTUATION && token.text().equals(")")) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
     @Override
     public String id() {
         return ID;
@@ -204,45 +243,6 @@ public final class DynamicSqlRule implements Rule {
                         unit.file(), position[0], position[1]));
             }
         }
-    }
-
-    private static boolean word(List<Token> tokens, int index, String keyword) {
-        return index >= 0 && index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
-    }
-
-    private static int indexOf(List<Token> tokens, String keyword, int from) {
-        for (int i = from; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int indexOfPunctuation(List<Token> tokens, String punctuation, int from) {
-        for (int i = from; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (token.type() == TokenType.PUNCTUATION && token.text().equals(punctuation)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int matchingParen(List<Token> tokens, int open) {
-        int depth = 0;
-        for (int i = open; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (token.type() == TokenType.PUNCTUATION && token.text().equals("(")) {
-                depth++;
-            } else if (token.type() == TokenType.PUNCTUATION && token.text().equals(")")) {
-                depth--;
-                if (depth == 0) {
-                    return i;
-                }
-            }
-        }
-        return -1;
     }
 
     @Override

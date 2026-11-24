@@ -98,19 +98,6 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
     }
 
     /**
-     * Returns a copy of this modification with substituted attribute values, so
-     * a {@code ${property}} placeholder inside {@code value} or {@code with} is
-     * expanded before the transformation is applied.
-     *
-     * @param value the effective {@code value}/{@code replace} attribute
-     * @param with  the effective {@code with} attribute, or null
-     * @return the modification to apply
-     */
-    public SqlModification withValues(String value, String with) {
-        return new SqlModification(kind, value, with, applyToRollback, dbms);
-    }
-
-    /**
      * Returns whether a Liquibase {@code dbms} filter includes PostgreSQL: unset
      * or blank applies everywhere; a plain name or {@code all} includes it;
      * {@code none} excludes everything; a {@code !name} excludes that database; a
@@ -145,6 +132,19 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             }
         }
         return included || !hasInclusion;
+    }
+
+    /**
+     * Returns a copy of this modification with substituted attribute values, so
+     * a {@code ${property}} placeholder inside {@code value} or {@code with} is
+     * expanded before the transformation is applied.
+     *
+     * @param value the effective {@code value}/{@code replace} attribute
+     * @param with  the effective {@code with} attribute, or null
+     * @return the modification to apply
+     */
+    public SqlModification withValues(String value, String with) {
+        return new SqlModification(kind, value, with, applyToRollback, dbms);
     }
 
     /**

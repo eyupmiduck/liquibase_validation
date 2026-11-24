@@ -18,7 +18,7 @@ public final class Json {
      *
      * @param value the value, possibly null
      * @return the quoted JSON string literal, or the JSON literal {@code null} for
-     *         a null input
+     * a null input
      */
     public static String quote(String value) {
         if (value == null) {

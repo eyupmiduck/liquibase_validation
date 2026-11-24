@@ -29,27 +29,6 @@ public final class RoutineTransactionControlRule implements Rule {
      */
     public static final String ID = "routine-transaction-control";
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.ERROR;
-    }
-
-    @Override
-    public List<Violation> check(RuleContext context) {
-        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
-            return List.of();
-        }
-        List<Violation> violations = new ArrayList<>();
-        collect(context.forward(), violations);
-        collect(context.rollback(), violations);
-        return List.copyOf(violations);
-    }
-
     /**
      * Returns whether the {@code COMMIT}/{@code ROLLBACK} at {@code index} is a
      * transaction-control statement rather than an identifier. The next
@@ -69,6 +48,27 @@ public final class RoutineTransactionControlRule implements Rule {
                     || next.matchesKeyword("AND");
         }
         return true;
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.ERROR;
+    }
+
+    @Override
+    public List<Violation> check(RuleContext context) {
+        if (!RuleSupport.appliesToPostgres(context.changeSet())) {
+            return List.of();
+        }
+        List<Violation> violations = new ArrayList<>();
+        collect(context.forward(), violations);
+        collect(context.rollback(), violations);
+        return List.copyOf(violations);
     }
 
     private void collect(List<SqlUnit> units, List<Violation> violations) {

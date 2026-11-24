@@ -21,7 +21,7 @@ final class LiquibaseBoolean {
      *
      * @param value the attribute value, or null
      * @return the parsed value, or null when the value is missing or not a
-     *         recognised boolean spelling
+     * recognised boolean spelling
      */
     static Boolean parse(String value) {
         if (value == null) {
