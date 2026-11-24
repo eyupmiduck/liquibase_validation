@@ -21,8 +21,10 @@ import java.util.*;
  * <p>A unit with no routine declaration is treated as a bare body and its own
  * tokens are returned, so a hand-written body fragment can still be checked. A
  * declaration is only recognised through its {@code AS $$...$$}/{@code AS
- * $tag$...$tag$} body form; a single-quoted body or an unsupported declaration
- * shape falls back to the bare-body treatment instead of being dropped.
+ * $tag$...$tag$} body form. If a unit contains no recognised declaration, the
+ * whole unit falls back to the bare-body treatment. A unit that mixes a
+ * recognised declaration with an unsupported one is not re-scanned as a whole,
+ * so the unsupported declaration's tokens are not checked.
  */
 public final class RoutineBodies {
 
@@ -94,8 +96,9 @@ public final class RoutineBodies {
             Body parsed = body(unit, body, name, kind, parameters(tokens, open, close));
             if (parsed != null) {
                 // Only a declaration recognised through its AS + dollar-string
-                // body is treated as a declaration; an unsupported or malformed
-                // form falls back to the bare-body treatment below.
+                // body is treated as a declaration. A unit with no recognised
+                // declaration falls back to the bare-body treatment below; a
+                // mixed unit is not re-scanned as a whole.
                 declaration = true;
                 bodies.add(parsed);
                 i = as + 1;

@@ -174,6 +174,46 @@ class BlockRawAlterTableRuleTest {
     }
 
     /**
+     * The hint is bounded at the end of the {@code ALTER TABLE} command, so a
+     * later command's {@code FOREIGN KEY} does not change the suggestion.
+     */
+    @Test
+    void boundsTheHintAtTheEndOfTheAlterTableCommand() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("ALTER TABLE t ADD COLUMN c int;\n"
+                        + "CREATE TABLE u (id int, FOREIGN KEY (id) REFERENCES v (id));", true, ""));
+
+        List<Rule.Violation> violations = new BlockRawAlterTableRule().check(context);
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.getFirst().message().contains("ddl_utils.add_column"),
+                violations.getFirst().message());
+        assertFalse(violations.getFirst().message().contains("add_foreign_key"),
+                violations.getFirst().message());
+    }
+
+    /**
+     * Every {@code ALTER TABLE} in an unsplit source is reported, not only the
+     * first phrase in the blob.
+     */
+    @Test
+    void reportsEveryAlterTableInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("ALTER TABLE a ADD COLUMN c int;\n"
+                        + "ALTER TABLE b ALTER COLUMN d DROP NOT NULL;", true, ""));
+
+        List<Rule.Violation> violations = new BlockRawAlterTableRule().check(context);
+
+        assertEquals(2, violations.size());
+        assertTrue(violations.get(0).message().contains("on a"), violations.get(0).message());
+        assertTrue(violations.get(0).message().contains("ddl_utils.add_column"), violations.get(0).message());
+        assertTrue(violations.get(1).message().contains("on b"), violations.get(1).message());
+        assertTrue(violations.get(1).message().contains("ddl_utils.drop_not_null"), violations.get(1).message());
+    }
+
+    /**
      * RENAME is unreserved in PostgreSQL, so an object named {@code rename} must
      * fall through to the clause that actually follows it.
      */

@@ -90,6 +90,11 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         if (TokenWords.at(tokens, name, "CONCURRENTLY")) {
             name++;
         }
+        if (TokenWords.at(tokens, name, "ON")) {
+            // Unnamed index: PostgreSQL generates the name, so there is no
+            // declared name to track for duplicates.
+            return;
+        }
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
                 && TokenWords.at(tokens, name + 2, "EXISTS")) {
             return;
@@ -353,6 +358,11 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         if (isPunctuation(previous, ",")) {
             return true;
         }
+        if (previous.type() == TokenType.OPERATOR && previous.text().equals("*")
+                && (index - 2 == cursor || (index >= 3 && isDot(tokens.get(index - 3))))) {
+            // ALTER TABLE [ONLY] name * action also covers descendants.
+            return true;
+        }
         return RuleSupport.identifier(previous) != null
                 && (index - 1 == cursor || (index >= 2 && isDot(tokens.get(index - 2))));
     }
@@ -372,8 +382,13 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         if (TokenWords.at(tokens, index, "FOREIGN") && TokenWords.at(tokens, index + 1, "KEY")) {
             return true;
         }
-        if (TokenWords.at(tokens, index, "UNIQUE") || TokenWords.at(tokens, index, "CHECK")) {
+        if (TokenWords.at(tokens, index, "CHECK")) {
             return isPunctuation(tokens, index + 1, "(");
+        }
+        if (TokenWords.at(tokens, index, "UNIQUE")) {
+            // PostgreSQL 15+ allows UNIQUE NULLS [NOT] DISTINCT before the list.
+            return isPunctuation(tokens, index + 1, "(")
+                    || TokenWords.at(tokens, index + 1, "NULLS");
         }
         if (TokenWords.at(tokens, index, "EXCLUDE")) {
             return TokenWords.at(tokens, index + 1, "USING") || isPunctuation(tokens, index + 1, "(");

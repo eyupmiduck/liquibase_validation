@@ -257,6 +257,27 @@ class ChangelogModelTest {
     }
 
     /**
+     * An unrecognised boolean spelling falls back to the attribute's default,
+     * matching Liquibase's BooleanParser, instead of silently flipping a
+     * default-true attribute to false.
+     */
+    @Test
+    void usesTheDefaultForAnUnrecognisedBooleanSpelling() throws IOException {
+        Path dir = Files.createDirectories(changelogRoot.resolve("malformed"));
+        Path master = dir.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <changeSet id="001-bad" author="a" runInTransaction="flase">
+                    <sql splitStatements="flase">SELECT 1;</sql>
+                </changeSet>
+                """));
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(ChangelogModel.changesets(dir, master), "001-bad");
+
+        assertTrue(changeSet.runInTransaction());
+        assertTrue(changeSet.sqlSources().getFirst().splitStatements());
+    }
+
+    /**
      * A structured addColumn is rendered into the ALTER TABLE the rules inspect.
      */
     @Test

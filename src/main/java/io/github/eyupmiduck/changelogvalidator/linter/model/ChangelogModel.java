@@ -833,7 +833,10 @@ public final class ChangelogModel {
             return defaultValue;
         }
         Boolean parsed = LiquibaseBoolean.parse(element.getAttribute(name));
-        return parsed == null ? false : parsed;
+        // Liquibase's BooleanParser falls back to the caller's default for an
+        // unrecognised spelling; do the same so a malformed value does not
+        // silently flip a default-true attribute to false.
+        return parsed == null ? defaultValue : parsed;
     }
 
     private static String delimiterAttribute(Element element) {

@@ -259,11 +259,15 @@ public final class Whitelist {
             if (file != null) {
                 String normalized = normalizePath(file);
                 List<String> segments = List.of(normalized.split("/"));
+                String first = segments.getFirst();
                 // Reject a selector that can never match a finding path: an
-                // absolute path, a directory, or one carrying "."/".." segments.
+                // absolute path (POSIX or a Windows drive), a directory, an
+                // empty segment, or one carrying "."/".." segments.
                 if (normalized.isEmpty() || normalized.startsWith("/")
+                        || first.matches("[a-z]:")
                         || file.endsWith("/") || file.endsWith("\\")
-                        || segments.contains(".") || segments.contains("..")) {
+                        || segments.contains("") || segments.contains(".")
+                        || segments.contains("..")) {
                     throw new IllegalArgumentException(
                             "whitelist entry field file must name a file path, got: " + file);
                 }

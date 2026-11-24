@@ -63,6 +63,7 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
                             "a ROUTINE_BODY is never split; splitStatements must be false");
                 }
             }
+            default -> throw new IllegalArgumentException("unsupported kind: " + kind);
         }
     }
 

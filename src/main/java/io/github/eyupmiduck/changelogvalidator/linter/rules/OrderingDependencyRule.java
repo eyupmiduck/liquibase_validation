@@ -88,7 +88,7 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
         // A REFERENCES token in a SELECT is not a foreign-key clause (it can be
         // an attribute name), and an identifier preceded by a dot is not the
         // keyword.
-        boolean canDeclareForeignKey = TokenWords.startsWith(tokens, "ALTER", "TABLE")
+        boolean canDeclareForeignKey = RuleSupport.containsAlterTablePhrase(tokens)
                 || (TokenWords.at(tokens, 0, "CREATE") && RuleSupport.createdTableAt(tokens, 0) != null);
         if (canDeclareForeignKey) {
             for (int i = 0; i + 1 < tokens.size(); i++) {
@@ -104,17 +104,28 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
     private static void addTableList(Map<String, Token> references, List<Token> tokens, int start) {
         int index = start;
         while (index < tokens.size()) {
+            if (TokenWords.at(tokens, index, "ONLY")) {
+                index++;
+            }
             String table = RuleSupport.qualifiedName(tokens, index);
             if (table == null) {
                 return;
             }
             references.putIfAbsent(table, tokens.get(index));
             index = qualifiedNameEnd(tokens, index);
+            if (index < tokens.size() && isStar(tokens.get(index))) {
+                index++;
+            }
             if (index >= tokens.size() || !isPunctuation(tokens.get(index), ",")) {
                 return;
             }
             index++;
         }
+    }
+
+    private static boolean isStar(Token token) {
+        return token.type() == io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType.OPERATOR
+                && token.text().equals("*");
     }
 
     private static int qualifiedNameEnd(List<Token> tokens, int start) {

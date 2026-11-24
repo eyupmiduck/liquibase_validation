@@ -36,6 +36,11 @@ class ProjectAnalysisTest {
         return "<changeSet id=\"" + id + "\" author=\"me\"><sql>" + sql + "</sql></changeSet>";
     }
 
+    private static String unsplitChangeSet(String id, String sql) {
+        return "<changeSet id=\"" + id + "\" author=\"me\"><sql splitStatements=\"false\">"
+                + sql + "</sql></changeSet>";
+    }
+
     private List<Finding> lint(ProjectAnalysisRule rule, String... files) throws IOException {
         Path master = root.resolve("master.xml");
         StringBuilder includes = new StringBuilder();
@@ -94,6 +99,31 @@ class ProjectAnalysisTest {
         assertTrue(lint(new DuplicateObjectRule(),
                 changeSet("a", "ALTER TABLE t ADD PRIMARY KEY (id);"),
                 changeSet("b", "ALTER TABLE t ADD COLUMN primary int;")).isEmpty());
+    }
+
+    @Test
+    void skipsUnnamedIndexes() throws IOException {
+        assertTrue(lint(new DuplicateObjectRule(),
+                changeSet("a", "CREATE INDEX ON t (x);"),
+                changeSet("b", "CREATE INDEX ON t (y);")).isEmpty());
+    }
+
+    @Test
+    void tracksActionsAfterTheInheritanceMarker() throws IOException {
+        assertEquals(1, lint(new DuplicateObjectRule(),
+                changeSet("a", "ALTER TABLE t * ADD COLUMN b int;"),
+                changeSet("b", "ALTER TABLE t ADD COLUMN b int;")).size());
+        assertTrue(lint(new DuplicateObjectRule(),
+                changeSet("a", "ALTER TABLE t * ADD COLUMN b int;"),
+                changeSet("b", "ALTER TABLE t * DROP COLUMN b;"),
+                changeSet("c", "ALTER TABLE t ADD COLUMN b int;")).isEmpty());
+    }
+
+    @Test
+    void recognizesUniqueNullsNotDistinct() throws IOException {
+        assertTrue(lint(new DuplicateObjectRule(),
+                changeSet("a", "ALTER TABLE t ADD UNIQUE NULLS NOT DISTINCT (a);"),
+                changeSet("b", "ALTER TABLE t ADD UNIQUE NULLS DISTINCT (a);")).isEmpty());
     }
 
     @Test
@@ -186,6 +216,54 @@ class ProjectAnalysisTest {
         assertTrue(lint(new UnvalidatedConstraintRule(),
                 changeSet("a", "ALTER TABLE public.t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"),
                 changeSet("b", "ALTER TABLE t VALIDATE CONSTRAINT c;")).isEmpty());
+    }
+
+    @Test
+    void boundsConstraintClausesToTheAlterTableCommand() throws IOException {
+        assertEquals(1, lint(new UnvalidatedConstraintRule(),
+                unsplitChangeSet("a", "ALTER TABLE t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"
+                        + " ALTER TABLE u VALIDATE CONSTRAINT c;")).size());
+    }
+
+    @Test
+    void keepsSchemaQualifiedConstraintKeysDistinct() throws IOException {
+        assertEquals(1, lint(new UnvalidatedConstraintRule(),
+                changeSet("a", "ALTER TABLE audit.t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"),
+                changeSet("b", "DROP TABLE public.t;")).size());
+        assertTrue(lint(new UnvalidatedConstraintRule(),
+                changeSet("a", "ALTER TABLE public.t ADD CONSTRAINT c CHECK (id > 0) NOT VALID;"),
+                changeSet("b", "ALTER TABLE t VALIDATE CONSTRAINT c;")).isEmpty());
+    }
+
+    @Test
+    void supportsTheOptionalConstraintKeyword() throws IOException {
+        assertEquals(1, lint(new UnvalidatedConstraintRule(),
+                changeSet("a", "ALTER TABLE t ADD c CHECK (id > 0) NOT VALID;")).size());
+        assertTrue(lint(new UnvalidatedConstraintRule(),
+                changeSet("a", "ALTER TABLE t ADD c CHECK (id > 0) NOT VALID;"),
+                changeSet("b", "ALTER TABLE t VALIDATE CONSTRAINT c;")).isEmpty());
+    }
+
+    @Test
+    void findsMidCommandAlterTableInAnUnsplitSource() throws IOException {
+        assertEquals(1, lint(new ForeignKeyTargetRule(),
+                unsplitChangeSet("a", "CREATE TABLE child (pid int);"
+                        + " ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (pid) REFERENCES missing (id);"))
+                .size());
+        assertEquals(1, lint(new OrderingDependencyRule(),
+                unsplitChangeSet("a", "CREATE TABLE child (pid int);"
+                        + " ALTER TABLE child ADD CONSTRAINT fk FOREIGN KEY (pid) REFERENCES later (id);"),
+                changeSet("b", "CREATE TABLE later (id int);")).size());
+    }
+
+    @Test
+    void handlesPerItemOnlyAndInheritanceStarsInTruncate() throws IOException {
+        assertEquals(1, lint(new OrderingDependencyRule(),
+                changeSet("a", "TRUNCATE ONLY t1, ONLY t2;"),
+                changeSet("b", "CREATE TABLE t2 (id int);")).size());
+        assertEquals(1, lint(new OrderingDependencyRule(),
+                changeSet("a", "TRUNCATE t1*, t2;"),
+                changeSet("b", "CREATE TABLE t2 (id int);")).size());
     }
 
     @Test

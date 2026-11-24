@@ -374,35 +374,19 @@ public final class SqlStatementSplitter {
                 || character == '\r' || character == '\f' || character == '\u000B';
     }
 
+    /**
+     * Adds a statement for a range that both call sites have already trimmed to
+     * a non-trivia token, so the range always yields non-empty text.
+     */
     private static void addIfNotEmpty(List<SqlStatement> statements, String sql, List<Token> tokens,
                                       int start, int end, boolean stripComments) {
-        if (start < 0 || hasOnlyTrivia(tokens, start, end)) {
+        if (start < 0) {
             return;
         }
         String text = statementText(sql, tokens, start, end, stripComments);
         if (!text.isEmpty()) {
             statements.add(new SqlStatement(text, start, end));
         }
-    }
-
-    /**
-     * Returns whether the token range contains no non-trivia token. The token
-     * scan never creates such a range, but the line scan can when a
-     * dollar-quote-delimited segment holds only comments.
-     */
-    private static boolean hasOnlyTrivia(List<Token> tokens, int start, int end) {
-        for (Token token : tokens) {
-            if (token.endOffset() <= start) {
-                continue;
-            }
-            if (token.startOffset() >= end) {
-                break;
-            }
-            if (!token.isTrivia()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static String statementText(String sql, List<Token> tokens, int start, int end, boolean stripComments) {

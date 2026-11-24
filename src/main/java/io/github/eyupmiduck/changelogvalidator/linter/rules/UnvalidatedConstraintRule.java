@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reports a constraint added {@code NOT VALID} in the forward changelog graph
@@ -30,7 +31,7 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
      */
     public static final String ID = "project-unvalidated-constraint";
 
-    private static void dropTable(List<Token> tokens, Map<String, Located> pending) {
+    private static void dropTable(List<Token> tokens, Map<PendingKey, Located> pending) {
         int name = 2;
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
             name += 2;
@@ -40,8 +41,7 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             if (table == null) {
                 return;
             }
-            String prefix = simpleName(table) + ".";
-            pending.keySet().removeIf(key -> key.startsWith(prefix));
+            pending.keySet().removeIf(key -> tablesMatch(key.table(), table));
             name = qualifiedNameEnd(tokens, name);
             if (!isPunctuation(tokens, name, ",")) {
                 return;
@@ -51,17 +51,22 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
     }
 
     /**
-     * Returns the pending-constraint key. The table is reduced to its final name
-     * segment so {@code ALTER TABLE public.t} and {@code ALTER TABLE t} refer to
-     * the same table.
+     * Returns the pending-constraint key. The qualified table is kept so two
+     * different schemas with the same final name do not share an entry.
      */
-    private static String key(String table, String constraint) {
-        return simpleName(table) + "." + constraint;
+    private static PendingKey key(String table, String constraint) {
+        return new PendingKey(table, constraint);
     }
 
-    private static String simpleName(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot < 0 ? name : name.substring(dot + 1);
+    /**
+     * Compares two table references with the shared policy: an exact qualified
+     * match, or equal simple names when at least one side is unqualified.
+     */
+    private static boolean tablesMatch(String a, String b) {
+        return RuleSupport.containsTable(Set.of(a), b);
+    }
+
+    private record PendingKey(String table, String constraint) {
     }
 
     private static int qualifiedNameEnd(List<Token> tokens, int start) {
@@ -77,9 +82,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return index >= 0 && index < tokens.size() && isPunctuation(tokens.get(index), text);
     }
 
-    private static int nextClause(List<Token> tokens, String keyword, int from) {
+    private static int nextClause(List<Token> tokens, String keyword, int from, int end) {
         int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
+        for (int i = from; i < end; i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
                 depth++;
@@ -92,11 +97,35 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return -1;
     }
 
-    private static boolean notValid(List<Token> tokens, int add) {
-        int next = nextClause(tokens, "ADD", add + 1);
-        int end = next < 0 ? tokens.size() : next;
+    /**
+     * Returns the end of the current {@code ALTER TABLE} command: the next
+     * top-level {@code ;} or {@code ALTER TABLE}, or the end of the tokens.
+     */
+    private static int commandEnd(List<Token> tokens, int start) {
         int depth = 0;
-        for (int i = add; i < end; i++) {
+        for (int i = start; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth == 0 && isPunctuation(token, ";")) {
+                return i;
+            } else if (depth == 0 && token.matchesKeyword("ALTER")
+                    && TokenWords.at(tokens, i + 1, "TABLE")) {
+                return i;
+            }
+        }
+        return tokens.size();
+    }
+
+    private static boolean notValid(List<Token> tokens, int add, int end) {
+        int next = nextClause(tokens, "ADD", add + 1, end);
+        int clauseEnd = next < 0 ? end : next;
+        int depth = 0;
+        for (int i = add; i < clauseEnd; i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
                 depth++;
@@ -126,7 +155,7 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
 
     @Override
     public List<Violation> check(ProjectContext context) {
-        Map<String, Located> pending = new LinkedHashMap<>();
+        Map<PendingKey, Located> pending = new LinkedHashMap<>();
         for (ProjectStatements.Statement statement : ProjectStatements.forward(context)) {
             List<Token> tokens = statement.tokens();
             if (TokenWords.startsWith(tokens, "DROP", "TABLE")) {
@@ -147,11 +176,12 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             if (table == null) {
                 continue;
             }
+            int end = commandEnd(tokens, cursor);
             // PostgreSQL runs DROP CONSTRAINT before ADD CONSTRAINT in a single
             // ALTER TABLE, and VALIDATE afterwards. A drop-and-re-add therefore
             // leaves the new constraint pending, not removed by the drop.
-            for (int drop = nextClause(tokens, "DROP", cursor + 1); drop >= 0;
-                 drop = nextClause(tokens, "DROP", drop + 1)) {
+            for (int drop = nextClause(tokens, "DROP", cursor + 1, end); drop >= 0;
+                 drop = nextClause(tokens, "DROP", drop + 1, end)) {
                 int name = drop + 1;
                 if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
                     continue;
@@ -160,53 +190,66 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
                 if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
                     name += 2;
                 }
-                if (name >= tokens.size()) {
+                if (name >= end) {
                     continue;
                 }
                 String constraint = RuleSupport.identifier(tokens.get(name));
                 if (constraint != null) {
-                    pending.remove(key(table, constraint));
+                    pending.keySet().removeIf(key -> key.constraint().equals(constraint)
+                            && tablesMatch(key.table(), table));
                 }
             }
-            for (int add = nextClause(tokens, "ADD", cursor + 1); add >= 0;
-                 add = nextClause(tokens, "ADD", add + 1)) {
+            for (int add = nextClause(tokens, "ADD", cursor + 1, end); add >= 0;
+                 add = nextClause(tokens, "ADD", add + 1, end)) {
                 int name = add + 1;
-                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
+                if (TokenWords.at(tokens, name, "CONSTRAINT")) {
+                    name++;
+                } else if (name + 1 < end
+                        && RuleSupport.identifier(tokens.get(name)) != null
+                        && (TokenWords.at(tokens, name + 1, "CHECK")
+                        || TokenWords.at(tokens, name + 1, "FOREIGN")
+                        || TokenWords.at(tokens, name + 1, "UNIQUE")
+                        || TokenWords.at(tokens, name + 1, "PRIMARY")
+                        || TokenWords.at(tokens, name + 1, "EXCLUDE"))) {
+                    // The CONSTRAINT keyword is optional: the name is already
+                    // at `name`, followed by the constraint kind.
+                } else {
                     continue;
                 }
-                name++;
-                if (name >= tokens.size()) {
+                if (name >= end) {
                     continue;
                 }
                 String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint == null || !notValid(tokens, add)) {
+                if (constraint == null || !notValid(tokens, add, end)) {
                     continue;
                 }
                 pending.putIfAbsent(key(table, constraint), new Located(statement.changeSet(),
                         statement.unit().file(), tokens.get(name).line(), tokens.get(name).column()));
             }
-            for (int validate = nextClause(tokens, "VALIDATE", cursor + 1); validate >= 0;
-                 validate = nextClause(tokens, "VALIDATE", validate + 1)) {
+            for (int validate = nextClause(tokens, "VALIDATE", cursor + 1, end); validate >= 0;
+                 validate = nextClause(tokens, "VALIDATE", validate + 1, end)) {
                 int name = validate + 1;
                 if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
                     continue;
                 }
                 name++;
-                if (name >= tokens.size()) {
+                if (name >= end) {
                     continue;
                 }
                 String constraint = RuleSupport.identifier(tokens.get(name));
                 if (constraint != null) {
-                    pending.remove(key(table, constraint));
+                    pending.keySet().removeIf(key -> key.constraint().equals(constraint)
+                            && tablesMatch(key.table(), table));
                 }
             }
         }
         List<Violation> violations = new ArrayList<>();
-        for (Map.Entry<String, Located> entry : pending.entrySet()) {
+        for (Map.Entry<PendingKey, Located> entry : pending.entrySet()) {
             Located located = entry.getValue();
             violations.add(new Violation(located.changeSet(), located.file(), located.line(), located.column(),
                     "ADD CONSTRAINT ... NOT VALID",
-                    "constraint '" + entry.getKey() + "' is added NOT VALID but never validated",
+                    "constraint '" + entry.getKey().constraint() + "' on " + entry.getKey().table()
+                            + " is added NOT VALID but never validated",
                     "Run ALTER TABLE ... VALIDATE CONSTRAINT in a later changeset, or remove the NOT VALID."));
         }
         return List.copyOf(violations);

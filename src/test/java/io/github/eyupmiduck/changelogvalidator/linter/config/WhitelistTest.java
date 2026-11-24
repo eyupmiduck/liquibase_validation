@@ -238,7 +238,8 @@ class WhitelistTest {
      */
     @Test
     void rejectsFileSelectorsThatCanNeverMatch() {
-        for (String file : List.of("/abs/007-some-index.sql", "changes/./sql/x.sql",
+        for (String file : List.of("/abs/007-some-index.sql", "C:/db/x.sql",
+                "C:\\db\\x.sql", "a//b.sql", "changes/./sql/x.sql",
                 "a/../sql/x.sql", "x.sql/.", "./../x.sql")) {
             assertThrows(IOException.class, () -> load("- file: " + file + "\n  reason: accepted\n"), file);
         }

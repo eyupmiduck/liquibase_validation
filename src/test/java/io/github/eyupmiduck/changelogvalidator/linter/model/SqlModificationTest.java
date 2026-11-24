@@ -68,6 +68,22 @@ class SqlModificationTest {
     }
 
     /**
+     * A pattern that is only compiled when applied (because it contains a
+     * {@code ${property}} placeholder) reports a pattern error as such, not as a
+     * replacement error.
+     */
+    @Test
+    void reportsAnApplyTimePatternErrorAsAPatternError() {
+        SqlModification modification = new SqlModification(
+                SqlModification.Kind.REGEXP_REPLACE, "a[${x}", "X", false, null);
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> modification.apply("SELECT a["));
+
+        assertTrue(failure.getMessage().contains("invalid regular expression"), failure.getMessage());
+    }
+
+    /**
      * {@code !all} excludes every database, just as {@code none} does.
      */
     @Test

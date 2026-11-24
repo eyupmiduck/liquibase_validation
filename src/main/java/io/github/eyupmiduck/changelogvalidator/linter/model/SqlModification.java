@@ -174,6 +174,10 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             case REGEXP_REPLACE -> {
                 try {
                     yield sql.replaceAll(value, with);
+                } catch (PatternSyntaxException e) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid regular expression: "
+                                    + e.getMessage(), e);
                 } catch (IllegalArgumentException e) {
                     throw new IllegalArgumentException(
                             "a REGEXP_REPLACE modification has an invalid replacement: " + e.getMessage(), e);

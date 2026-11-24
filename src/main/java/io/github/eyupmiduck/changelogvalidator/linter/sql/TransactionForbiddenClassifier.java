@@ -155,9 +155,20 @@ public final class TransactionForbiddenClassifier {
                 return Optional.empty();
             }
             for (int i = kindStart + 1; i < close; i++) {
-                if (tokens.get(i).matchesKeyword("CONCURRENTLY")) {
-                    return Optional.of(Family.REINDEX_CONCURRENTLY);
+                if (!tokens.get(i).matchesKeyword("CONCURRENTLY")) {
+                    continue;
                 }
+                // In TABLESPACE <name>, a name spelled concurrently is not the
+                // option.
+                if (i > kindStart + 1 && tokens.get(i - 1).matchesKeyword("TABLESPACE")) {
+                    continue;
+                }
+                // The option grammar is CONCURRENTLY [boolean]: an explicit
+                // false/off/0 disables it, so the statement is transaction-safe.
+                if (i + 1 < close && isFalseLiteral(tokens.get(i + 1))) {
+                    continue;
+                }
+                return Optional.of(Family.REINDEX_CONCURRENTLY);
             }
             kindStart = close + 1;
         }
@@ -257,6 +268,12 @@ public final class TransactionForbiddenClassifier {
 
     private static boolean isPunctuation(Token token, String punctuation) {
         return token.type() == TokenType.PUNCTUATION && punctuation.equals(token.text());
+    }
+
+    private static boolean isFalseLiteral(Token token) {
+        return token.matchesKeyword("FALSE")
+                || token.matchesKeyword("OFF")
+                || (token.type() == TokenType.NUMBER && token.text().equals("0"));
     }
 
     private static boolean isName(Token token) {

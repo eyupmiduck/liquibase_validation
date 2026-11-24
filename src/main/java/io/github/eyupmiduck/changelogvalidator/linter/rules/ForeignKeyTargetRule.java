@@ -73,7 +73,7 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
             // Only a CREATE TABLE or ALTER TABLE can declare a foreign key; a
             // REFERENCES in a SELECT can be an attribute name, and an identifier
             // preceded by a dot is not the keyword.
-            boolean canDeclareForeignKey = TokenWords.startsWith(tokens, "ALTER", "TABLE")
+            boolean canDeclareForeignKey = RuleSupport.containsAlterTablePhrase(tokens)
                     || (TokenWords.at(tokens, 0, "CREATE") && RuleSupport.createdTableAt(tokens, 0) != null);
             if (!canDeclareForeignKey) {
                 continue;

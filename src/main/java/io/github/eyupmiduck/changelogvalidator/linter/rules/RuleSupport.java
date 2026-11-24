@@ -105,6 +105,20 @@ final class RuleSupport {
     }
 
     /**
+     * Returns whether the token stream contains an {@code ALTER TABLE} phrase at
+     * any position. An unsplit command can hold several commands, so a rule that
+     * only inspects the first tokens would miss a later {@code ALTER TABLE}.
+     */
+    static boolean containsAlterTablePhrase(List<Token> tokens) {
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Returns whether {@code table} is one of {@code tables}, comparing the final
      * name segment so a schema-qualified and an unqualified reference to the same
      * table match. Two different schema-qualified names never match, even when
