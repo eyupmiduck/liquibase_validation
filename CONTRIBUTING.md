@@ -47,6 +47,10 @@ and the `linter` package. Keep it small and well-documented.
 - Public types and methods need Javadoc; keep methods small and focused.
 - Do not add comments that restate the code.
 - Avoid adding dependencies without a clear benefit.
+- Use jOOQ's type-safe DSL for database access in tests and shared test
+  support. Raw SQL is reserved for DDL, `pg_catalog`/`information_schema`
+  introspection, session settings, locks, privileges, deliberately malformed
+  input, and SQL with no clear jOOQ equivalent.
 
 ## Tests
 
