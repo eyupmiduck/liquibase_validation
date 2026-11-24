@@ -34,7 +34,9 @@ public final class YamlDocuments {
     }
 
     /**
-     * Renders a value as block-style YAML, for writing a whitelist.
+     * Renders a value as block-style YAML, for writing a whitelist. Block style
+     * is explicit because SnakeYAML's default {@code AUTO} renders a list of
+     * maps in flow style; two-space indentation is the SnakeYAML default.
      *
      * @param value the value to render
      * @return the YAML document
@@ -42,8 +44,6 @@ public final class YamlDocuments {
     public static String dump(Object value) {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        options.setPrettyFlow(true);
-        options.setIndent(2);
         return new Yaml(options).dump(value);
     }
 }

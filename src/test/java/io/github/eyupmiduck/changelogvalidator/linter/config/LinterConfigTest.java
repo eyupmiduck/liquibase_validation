@@ -70,4 +70,15 @@ class LinterConfigTest {
             assertThrows(IllegalArgumentException.class, () -> config(version).postgresMajorVersion(), version);
         }
     }
+
+    /**
+     * A major version below 1 and one that does not fit in an int are rejected,
+     * matching the documented contract.
+     */
+    @Test
+    void rejectsOutOfRangeVersions() {
+        for (String version : List.of("0", "0.9", "99999999999999999999")) {
+            assertThrows(IllegalArgumentException.class, () -> config(version).postgresMajorVersion(), version);
+        }
+    }
 }

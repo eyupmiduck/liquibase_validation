@@ -61,10 +61,11 @@ public final class Whitelist {
      * {@code rule}, {@code file}, {@code changeset}, {@code statement} and
      * {@code reason} keys. The {@code file} selector matches a case-insensitive
      * path suffix of the finding's file, so include a directory component to keep
-     * the match narrow; it must name a file, not a directory. The reason is
-     * required and non-empty; unknown keys and an entry that sets none of the
-     * selector keys fail fast. Ambiguity is detected when the whitelist is applied
-     * to findings, because overlap depends on the finding values.
+     * the match narrow; it must name a relative file path with no leading slash
+     * and no {@code "."}/{@code ".."} segments. The reason is required and
+     * non-empty; unknown keys and an entry that sets none of the selector keys
+     * fail fast. Ambiguity is detected when the whitelist is applied to findings,
+     * because overlap depends on the finding values.
      *
      * @param input the YAML document; an empty document yields the empty whitelist
      * @return the whitelist
@@ -103,37 +104,15 @@ public final class Whitelist {
             }
         }
         String reason = asString(index, "reason", map.get("reason"));
-        if (reason == null || reason.isBlank()) {
-            throw new IOException("linter whitelist entry " + index + " must set a non-empty reason");
-        }
-        AllowedFinding entry = new AllowedFinding(
-                selector(index, map, "rule"),
-                selector(index, map, "file"),
-                selector(index, map, "changeset"),
-                selector(index, map, "statement"),
-                reason);
-        if (entry.rule() == null && entry.file() == null && entry.changeset() == null && entry.statement() == null) {
-            throw new IOException("linter whitelist entry " + index
-                    + " must set at least one of rule, file, changeset or statement");
-        }
-        requireFileSelector(index, entry.file());
-        return entry;
-    }
-
-    /**
-     * Rejects a {@code file} selector that names a directory rather than a file:
-     * such a value can never match a finding, so it would surface as a
-     * misleading "stale whitelist entry" instead of a configuration error.
-     */
-    private static void requireFileSelector(int index, String file) throws IOException {
-        if (file == null) {
-            return;
-        }
-        String normalized = AllowedFinding.normalizePath(file);
-        if (normalized.isEmpty() || ".".equals(normalized) || "..".equals(normalized)
-                || file.endsWith("/") || file.endsWith("\\")) {
-            throw new IOException("linter whitelist entry " + index
-                    + " field file must name a file path, got: " + file);
+        try {
+            return new AllowedFinding(
+                    selector(index, map, "rule"),
+                    selector(index, map, "file"),
+                    selector(index, map, "changeset"),
+                    selector(index, map, "statement"),
+                    reason);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("linter whitelist entry " + index + ": " + e.getMessage(), e);
         }
     }
 
@@ -165,6 +144,9 @@ public final class Whitelist {
 
     /**
      * Creates a whitelist from explicit entries, for the update-whitelist mode.
+     * The {@link AllowedFinding} constructor enforces the same invariants
+     * {@link #load} does, so these entries cannot produce a whitelist the next
+     * run would reject.
      *
      * @param entries the entries
      * @return the whitelist
@@ -260,6 +242,33 @@ public final class Whitelist {
      * @param reason    why the finding is accepted; required and non-empty
      */
     public record AllowedFinding(String rule, String file, String changeset, String statement, String reason) {
+
+        /**
+         * Enforces the invariants every whitelist entry must satisfy, so the
+         * {@code of}/{@code write} paths cannot produce a whitelist that
+         * {@link Whitelist#load} would reject.
+         */
+        public AllowedFinding {
+            if (reason == null || reason.isBlank()) {
+                throw new IllegalArgumentException("whitelist entry must set a non-empty reason");
+            }
+            if (rule == null && file == null && changeset == null && statement == null) {
+                throw new IllegalArgumentException(
+                        "whitelist entry must set at least one of rule, file, changeset or statement");
+            }
+            if (file != null) {
+                String normalized = normalizePath(file);
+                List<String> segments = List.of(normalized.split("/"));
+                // Reject a selector that can never match a finding path: an
+                // absolute path, a directory, or one carrying "."/".." segments.
+                if (normalized.isEmpty() || normalized.startsWith("/")
+                        || file.endsWith("/") || file.endsWith("\\")
+                        || segments.contains(".") || segments.contains("..")) {
+                    throw new IllegalArgumentException(
+                            "whitelist entry field file must name a file path, got: " + file);
+                }
+            }
+        }
 
         private static boolean matches(String expected, String actual) {
             return expected == null || expected.equals(actual);

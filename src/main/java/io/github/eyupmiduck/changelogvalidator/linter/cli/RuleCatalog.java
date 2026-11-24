@@ -69,7 +69,8 @@ public final class RuleCatalog {
     }
 
     /**
-     * Writes a JSON array of {@code {id, kind, severity, default}} objects.
+     * Writes a JSON array of
+     * {@code {id, kind, severity, default, description, help}} objects.
      *
      * @param entries the rule metadata
      * @param out     the destination
