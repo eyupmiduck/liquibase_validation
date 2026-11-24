@@ -22,7 +22,7 @@ class RoutineBodiesTest {
     private static final Path FILE = Path.of("/db/function.sql");
 
     private static SqlUnit unit(String sql) {
-        SqlSource source = new SqlSource(SqlSource.Kind.ROUTINE_BODY, FILE, null, true, ";", false, null);
+        SqlSource source = new SqlSource(SqlSource.Kind.ROUTINE_BODY, FILE, null, false, ";", false, null);
         return new SqlUnit(source, FILE, sql, SqlLexer.tokenize(sql), SqlStatementSplitter.split(sql));
     }
 
@@ -130,10 +130,17 @@ class RoutineBodiesTest {
 
     @Test
     void skipsASingleQuotedBodyAndADeclarationWithoutABody() {
-        assertTrue(RoutineBodies.find(List.of(unit(
-                "CREATE FUNCTION f() RETURNS int AS 'SELECT 1' LANGUAGE sql;"))).isEmpty());
-        assertTrue(RoutineBodies.find(List.of(unit(
-                "CREATE FUNCTION f() RETURNS int LANGUAGE sql RETURN 1;"))).isEmpty());
+        // Neither form has an AS + dollar-string body, so the declaration is not
+        // recognised and the unit falls back to the bare-body treatment.
+        List<RoutineBodies.Body> singleQuoted = RoutineBodies.find(List.of(unit(
+                "CREATE FUNCTION f() RETURNS int AS 'SELECT 1' LANGUAGE sql;")));
+        assertEquals(1, singleQuoted.size());
+        assertEquals(RoutineBodies.Kind.UNKNOWN, singleQuoted.getFirst().kind());
+
+        List<RoutineBodies.Body> missingBody = RoutineBodies.find(List.of(unit(
+                "CREATE FUNCTION f() RETURNS int LANGUAGE sql RETURN 1;")));
+        assertEquals(1, missingBody.size());
+        assertEquals(RoutineBodies.Kind.UNKNOWN, missingBody.getFirst().kind());
     }
 
     @Test
@@ -150,14 +157,27 @@ class RoutineBodiesTest {
     void parsesNamedParametersAndTheirModes() {
         RoutineBodies.Body body = RoutineBodies.find(List.of(unit(
                         "CREATE FUNCTION app.f(i_x integer, OUT o_y text, INOUT io_z bigint,"
-                                + " VARIADIC i_values integer[]) RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
+                                + " IN OUT io_w text, VARIADIC i_values integer[]) RETURNS void"
+                                + " AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
                 .getFirst();
 
-        assertEquals(List.of("i_x", "o_y", "io_z", "i_values"),
+        assertEquals(List.of("i_x", "o_y", "io_z", "io_w", "i_values"),
                 body.parameters().stream().map(RoutineBodies.Parameter::name).toList());
         assertEquals(List.of(RoutineBodies.ParameterMode.IN, RoutineBodies.ParameterMode.OUT,
-                        RoutineBodies.ParameterMode.INOUT, RoutineBodies.ParameterMode.VARIADIC),
+                        RoutineBodies.ParameterMode.INOUT, RoutineBodies.ParameterMode.INOUT,
+                        RoutineBodies.ParameterMode.VARIADIC),
                 body.parameters().stream().map(RoutineBodies.Parameter::mode).toList());
+    }
+
+    @Test
+    void skipsUnnamedParametersWithDefaults() {
+        RoutineBodies.Body body = RoutineBodies.find(List.of(unit(
+                        "CREATE FUNCTION app.f(integer DEFAULT 5, integer = 6, i_real text DEFAULT 'x')"
+                                + " RETURNS void AS $$ BEGIN NULL; END; $$ LANGUAGE plpgsql;")))
+                .getFirst();
+
+        assertEquals(List.of("i_real"),
+                body.parameters().stream().map(RoutineBodies.Parameter::name).toList());
     }
 
     @Test

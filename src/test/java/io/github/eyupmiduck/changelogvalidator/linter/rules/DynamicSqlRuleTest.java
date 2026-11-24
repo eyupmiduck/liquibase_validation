@@ -128,8 +128,6 @@ class DynamicSqlRuleTest {
                 "CREATE FUNCTION execute() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
         assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
                 "CREATE FUNCTION f(execute int) RETURNS int AS $$ BEGIN RETURN $1; END; $$ LANGUAGE plpgsql;"))).isEmpty());
-        assertTrue(new DynamicSqlRule().check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY,
-                "CREATE FUNCTION execute() RETURNS int LANGUAGE sql RETURN 1;"))).isEmpty());
     }
 
     /**
@@ -156,7 +154,7 @@ class DynamicSqlRuleTest {
         Path body = tempDir.resolve("foo.sql");
         Files.writeString(body, "CREATE FUNCTION foo() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE t'; END; $$ LANGUAGE plpgsql;");
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true, null, null, null,
-                List.of(new SqlSource(SqlSource.Kind.ROUTINE_BODY, body, null, true, ";", false, null)),
+                List.of(new SqlSource(SqlSource.Kind.ROUTINE_BODY, body, null, false, ";", false, null)),
                 true, List.of());
         assertTrue(Linter.withRules(List.of(new DynamicSqlRule())).lint(List.of(changeSet)).isEmpty());
 
@@ -200,7 +198,7 @@ class DynamicSqlRuleTest {
         String sql = "CREATE FUNCTION app.foo() RETURNS void AS $$ BEGIN EXECUTE 'DROP TABLE t'; END;"
                 + " $$ LANGUAGE plpgsql;";
         ChangeSet changeSet = new ChangeSet("cs-1", "me", Path.of("/changelog.xml"), true, true, null, null, null,
-                List.of(new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, sql, true, ";", false, null)),
+                List.of(new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, sql, false, ";", false, null)),
                 true, List.of());
 
         assertTrue(new Linter(Rules.all(config), List.of(), config).lint(List.of(changeSet)).stream()

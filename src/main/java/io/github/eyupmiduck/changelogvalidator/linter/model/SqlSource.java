@@ -32,7 +32,8 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
 
     /**
      * Validates the source's required components and its kind-specific shape:
-     * exactly one of {@code path} or {@code text} is set, matching the kind.
+     * exactly one of {@code path} or {@code text} is set, matching the kind, and
+     * a {@link Kind#ROUTINE_BODY} is never split.
      */
     public SqlSource {
         Objects.requireNonNull(kind, "kind");
@@ -57,8 +58,11 @@ public record SqlSource(Kind kind, Path path, String text, boolean splitStatemen
                 if ((path == null) == (text == null)) {
                     throw new IllegalArgumentException("ROUTINE_BODY must set exactly one of path or text");
                 }
+                if (splitStatements) {
+                    throw new IllegalArgumentException(
+                            "a ROUTINE_BODY is never split; splitStatements must be false");
+                }
             }
-            default -> throw new IllegalArgumentException("unsupported kind: " + kind);
         }
     }
 

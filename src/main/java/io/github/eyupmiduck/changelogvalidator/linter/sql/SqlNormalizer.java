@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.model.SqlModification;
 
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,6 +29,18 @@ import java.util.regex.Pattern;
  * limit and a pathological expansion cannot exhaust the heap. A placeholder with
  * no property is left as-is, because the linter cannot see properties supplied on the
  * Liquibase command line (see ADR 0003).
+ *
+ * <p>Property substitution also applies to a {@code <modifySql>} transformation's
+ * {@code value}/{@code replace}/{@code with} attributes, matching Liquibase's
+ * changelog parameter expansion.
+ *
+ * <p>Limit: Liquibase applies its {@code SqlVisitor}s to each generated statement
+ * after splitting, while this normaliser applies them once to the changeset's
+ * whole SQL text. For a multi-statement body an append or prepend therefore
+ * affects the text as a whole rather than every statement, and
+ * appendSqlIfNotPresent checks the whole text. The token rules still see the
+ * statements Liquibase would execute, but a transformation whose placement
+ * depends on the split can differ from the executed SQL.
  */
 public final class SqlNormalizer {
 
@@ -72,7 +85,15 @@ public final class SqlNormalizer {
             if (!modification.appliesToPostgres()) {
                 continue;
             }
-            result = modification.apply(result);
+            String value = substituteProperties(modification.value(), normalisation.properties());
+            String with = modification.with() == null
+                    ? null
+                    : substituteProperties(modification.with(), normalisation.properties());
+            if (value.equals(modification.value()) && Objects.equals(with, modification.with())) {
+                result = modification.apply(result);
+            } else {
+                result = modification.withValues(value, with).apply(result);
+            }
         }
         return result;
     }

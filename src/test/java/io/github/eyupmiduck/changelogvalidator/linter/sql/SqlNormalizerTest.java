@@ -117,6 +117,36 @@ class SqlNormalizerTest {
     }
 
     /**
+     * A property placeholder inside a {@code <modifySql>} value or replacement is
+     * substituted before the transformation is applied, matching Liquibase's
+     * changelog parameter expansion.
+     */
+    @Test
+    void substitutesPropertiesInModifySqlAttributes() {
+        Normalisation normalisation = new Normalisation(
+                Map.of("suffix", " --x", "old", "SELECT", "new", "SELECT DISTINCT"),
+                List.of(
+                        new SqlModification(SqlModification.Kind.APPEND, "${suffix}", null, false, null),
+                        new SqlModification(SqlModification.Kind.REPLACE, "${old}", "${new}", false, null)));
+
+        assertEquals("SELECT DISTINCT 1; --x",
+                SqlNormalizer.normalise("SELECT 1;", normalisation, false));
+    }
+
+    /**
+     * A property placeholder inside a {@code regExpReplace} pattern is
+     * substituted before the pattern is applied.
+     */
+    @Test
+    void substitutesPropertiesInARegExpReplacePattern() {
+        Normalisation normalisation = new Normalisation(Map.of("digit", "\\d"),
+                List.of(new SqlModification(SqlModification.Kind.REGEXP_REPLACE,
+                        "a(${digit})", "b$1", false, null)));
+
+        assertEquals("SELECT b1;", SqlNormalizer.normalise("SELECT a1;", normalisation, false));
+    }
+
+    /**
      * A circular property reference reaches a fixed point and stops, rather than
      * looping to the depth limit.
      */

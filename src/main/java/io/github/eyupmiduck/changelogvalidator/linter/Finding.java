@@ -8,7 +8,8 @@ import java.util.Objects;
  *
  * @param ruleId          the id of the rule that reported the finding
  * @param severity        the effective severity
- * @param changeSetId     the changeset id
+ * @param changeSetId     the changeset id, or an empty string for a project-level
+ *                        finding that has no changeset
  * @param changeSetAuthor the changeset author, or an empty string
  * @param file            the file the violation is in (a SQL file, or the
  *                        changelog file for inline SQL)

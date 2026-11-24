@@ -162,8 +162,34 @@ public final class Linter {
         return suppressed.contains(SUPPRESS_ALL) || suppressed.contains(ruleId);
     }
 
-    private static int indexOfIgnoreCase(String text, String target) {
-        return text.toLowerCase(Locale.ROOT).indexOf(target.toLowerCase(Locale.ROOT));
+    static int indexOfIgnoreCase(String text, String target) {
+        if (target.isEmpty()) {
+            return 0;
+        }
+        for (int index = 0; index + target.length() <= text.length(); index++) {
+            if (text.regionMatches(true, index, target, 0, target.length())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns whether only horizontal whitespace precedes {@code offset} on its
+     * line, so a suppression pasted after SQL code on the same line is not
+     * treated as a directive.
+     */
+    private static boolean startsLine(String sql, int offset) {
+        for (int index = offset - 1; index >= 0; index--) {
+            char character = sql.charAt(index);
+            if (character == '\n' || character == '\r') {
+                return true;
+            }
+            if (character != ' ' && character != '\t' && character != '\f' && character != '\u000B') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String unquote(String value) {
@@ -180,10 +206,12 @@ public final class Linter {
      *
      * @param changeSets the changesets
      * @return the findings, in changeset then rule order
-     * @throws IOException           if a SQL file cannot be read
-     * @throws IllegalStateException if property substitution in a changeset's SQL
-     *                               cycles, does not converge, or exceeds the
-     *                               safety bound
+     * @throws IOException              if a SQL file cannot be read
+     * @throws IllegalStateException    if property substitution in a changeset's SQL
+     *                                  cycles, does not converge, or exceeds the
+     *                                  safety bound
+     * @throws IllegalArgumentException if a suppression comment is malformed or
+     *                                  names an unknown rule
      */
     public List<Finding> lint(List<ChangeSet> changeSets) throws IOException {
         return lint(ChangelogProject.of(changeSets));
@@ -194,10 +222,12 @@ public final class Linter {
      *
      * @param project the changelog graph and its changesets
      * @return the findings, in per-changeset, project, then analysis order
-     * @throws IOException           if a SQL file cannot be read
-     * @throws IllegalStateException if property substitution in a changeset's SQL
-     *                               cycles, does not converge, or exceeds the
-     *                               safety bound
+     * @throws IOException              if a SQL file cannot be read
+     * @throws IllegalStateException    if property substitution in a changeset's SQL
+     *                                  cycles, does not converge, or exceeds the
+     *                                  safety bound
+     * @throws IllegalArgumentException if a suppression comment is malformed or
+     *                                  names an unknown rule
      */
     public List<Finding> lint(ChangelogProject project) throws IOException {
         Objects.requireNonNull(project, "project");
@@ -308,23 +338,26 @@ public final class Linter {
     private Set<String> suppressions(RuleContext context) {
         Set<String> rules = new LinkedHashSet<>();
         for (SqlUnit unit : context.forward()) {
-            scanSuppressions(unit.tokens(), unit.file(), rules);
+            scanSuppressions(unit.tokens(), unit.sql(), unit.file(), rules);
         }
         for (SqlUnit unit : context.rollback()) {
-            scanSuppressions(unit.tokens(), unit.file(), rules);
+            scanSuppressions(unit.tokens(), unit.sql(), unit.file(), rules);
         }
         for (RoutineBodies.Body body : RoutineBodies.find(context.forward())) {
-            scanSuppressions(body.tokens(), body.unit().file(), rules);
+            scanSuppressions(body.tokens(), body.unit().sql(), body.unit().file(), rules);
         }
         for (RoutineBodies.Body body : RoutineBodies.find(context.rollback())) {
-            scanSuppressions(body.tokens(), body.unit().file(), rules);
+            scanSuppressions(body.tokens(), body.unit().sql(), body.unit().file(), rules);
         }
         return Set.copyOf(rules);
     }
 
-    private void scanSuppressions(List<Token> tokens, Path file, Set<String> rules) {
+    private void scanSuppressions(List<Token> tokens, String sql, Path file, Set<String> rules) {
         for (Token token : tokens) {
             if (token.type() != TokenType.LINE_COMMENT && token.type() != TokenType.DIRECTIVE) {
+                continue;
+            }
+            if (!startsLine(sql, token.startOffset())) {
                 continue;
             }
             Matcher matcher = SUPPRESSION.matcher(token.text());
@@ -351,6 +384,7 @@ public final class Linter {
             rules.add(SUPPRESS_ALL);
             return;
         }
+        int added = 0;
         for (String id : rulesPart.split("[,\\s]+")) {
             if (id.isBlank()) {
                 continue;
@@ -360,6 +394,11 @@ public final class Linter {
                         + " at " + file + ":" + line);
             }
             rules.add(id);
+            added++;
+        }
+        if (added == 0) {
+            throw new IllegalArgumentException("suppression comment names no rule ids at "
+                    + file + ":" + line);
         }
     }
 

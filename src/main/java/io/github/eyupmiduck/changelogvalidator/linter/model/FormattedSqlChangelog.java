@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Parses a Liquibase formatted SQL changelog into the same {@link ChangeSet}
@@ -50,6 +51,19 @@ import java.util.*;
 public final class FormattedSqlChangelog {
 
     private static final String MARKER = "--liquibase formatted sql";
+    /**
+     * Liquibase's header check tolerates flexible whitespace between the marker
+     * words; a single-space-only comparison would reject a file Liquibase accepts.
+     */
+    private static final Pattern MARKER_PATTERN =
+            Pattern.compile("(?i)^--\\s*liquibase\\s+formatted\\s+sql\\s*$");
+    /**
+     * The block-comment rollback form, matched as a line prefix so the closed
+     * variants (a comment closed on the same line, or a closed comment followed by
+     * SQL) are rejected too.
+     */
+    private static final Pattern BLOCK_ROLLBACK_PATTERN =
+            Pattern.compile("(?i)^/\\*\\s*liquibase\\s+rollback\\b");
     private static final String CHANGESET = "--changeset";
     private static final String ROLLBACK = "--rollback";
     private static final String ROLLBACK_SQL_FILE = "--rollbackSqlFile";
@@ -75,7 +89,7 @@ public final class FormattedSqlChangelog {
     public static List<ChangeSet> parse(Path file, Map<String, String> properties) throws IOException {
         List<String> lines = readLines(file);
         int marker = firstNonBlank(lines);
-        if (marker < 0 || !lines.get(marker).strip().equalsIgnoreCase(MARKER)) {
+        if (marker < 0 || !MARKER_PATTERN.matcher(lines.get(marker).strip()).matches()) {
             throw new IOException("not a Liquibase formatted SQL changelog (missing '" + MARKER + "'): " + file);
         }
         List<ChangeSet> changesets = new ArrayList<>();
@@ -165,10 +179,11 @@ public final class FormattedSqlChangelog {
     /**
      * Returns whether the line starts the block-comment rollback form
      * ({@code liquibase rollback} inside a block comment). The linter does not
-     * support that form.
+     * support that form, whether the comment is unclosed, closed on the same
+     * line, or followed by SQL.
      */
     private static boolean isMultiLineRollbackStart(String trimmed) {
-        return trimmed.matches("(?i)^/\\*\\s*liquibase\\s*rollback\\s*$");
+        return BLOCK_ROLLBACK_PATTERN.matcher(trimmed).find();
     }
 
     private static boolean startsWith(String text, String directive) {
@@ -299,10 +314,18 @@ public final class FormattedSqlChangelog {
             this.header = header;
         }
 
-        private static boolean booleanAttribute(Map<String, String> attributes, String name,
-                                                boolean defaultValue) {
+        private boolean booleanAttribute(Map<String, String> attributes, String name,
+                                         boolean defaultValue, Path file) throws IOException {
             String value = attributes.get(name);
-            return value == null ? defaultValue : Boolean.parseBoolean(value);
+            if (value == null) {
+                return defaultValue;
+            }
+            Boolean parsed = LiquibaseBoolean.parse(value);
+            if (parsed == null) {
+                throw new IOException("malformed boolean changeset attribute '" + name + ":" + value
+                        + "' at " + file + ":" + line);
+            }
+            return parsed;
         }
 
         private static String stringAttribute(Map<String, String> attributes, String name,
@@ -354,29 +377,29 @@ public final class FormattedSqlChangelog {
                 throw new IOException("changeset runWith:" + runWith
                         + " is not supported by the linter at " + file + ":" + line);
             }
-            if (booleanAttribute(attributes, "ignore", false)) {
+            if (booleanAttribute(attributes, "ignore", false, file)) {
                 return;
             }
             List<SqlSource> forwardSources = forward.toString().isBlank()
                     ? List.of()
                     : List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, forward.toString(),
-                    booleanAttribute(attributes, "splitStatements", true),
+                    booleanAttribute(attributes, "splitStatements", true, file),
                     stringAttribute(attributes, "endDelimiter", ";"),
-                    booleanAttribute(attributes, "stripComments", false),
+                    booleanAttribute(attributes, "stripComments", false, file),
                     null, Math.max(forwardLine, 1)));
             List<SqlSource> rollbackSources = !rollbackDefined || rollback.toString().isBlank()
                     ? List.of()
                     : List.of(new SqlSource(SqlSource.Kind.INLINE_SQL, null, rollback.toString(),
-                    booleanAttribute(attributes, "rollbackSplitStatements", true),
+                    booleanAttribute(attributes, "rollbackSplitStatements", true, file),
                     stringAttribute(attributes, "rollbackEndDelimiter", ";"),
-                    booleanAttribute(attributes, "rollbackStripComments", false),
+                    booleanAttribute(attributes, "rollbackStripComments", false, file),
                     null, Math.max(rollbackLine, 1)));
             changesets.add(new ChangeSet(
                     header.id(),
                     header.author(),
                     file,
-                    booleanAttribute(attributes, "runInTransaction", true),
-                    booleanAttribute(attributes, "runOnChange", false),
+                    booleanAttribute(attributes, "runInTransaction", true, file),
+                    booleanAttribute(attributes, "runOnChange", false, file),
                     nullableAttribute(attributes, "dbms"),
                     nullableAttribute(attributes, "context"),
                     nullableAttribute(attributes, "labels"),
