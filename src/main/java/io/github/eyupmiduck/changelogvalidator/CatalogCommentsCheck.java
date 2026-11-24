@@ -5,8 +5,9 @@ import java.util.*;
 
 /**
  * Checks the project-wide comment convention on a set of schemas: every schema,
- * table, table column, domain, composite/enum/range type and function/procedure
- * must have a non-blank {@code COMMENT ON}, and optionally every trigger too.
+ * table, table column, domain, composite/enum/range/multirange type and
+ * function/procedure must have a non-blank {@code COMMENT ON}, and optionally
+ * every trigger too.
  *
  * <p>The check is structural and catalog-only. It returns every missing or blank
  * comment as a {@link Violation}; {@link #check} additionally applies an explicit
@@ -21,8 +22,9 @@ import java.util.*;
  *   <li>base, partitioned and foreign table (not a partition, view or
  *       materialized view);</li>
  *   <li>column of those tables;</li>
- *   <li>domain, composite type, enum type, range type and user-defined base
- *       type, excluding array types and the implicit row type of a relation;</li>
+ *   <li>domain, composite type, enum type, range type, multirange type and
+ *       user-defined base type, excluding array types and the implicit row type
+ *       of a relation;</li>
  *   <li>function and procedure, including trigger functions, excluding
  *       extension-owned routines and the support routines PostgreSQL creates for
  *       a type;</li>
@@ -80,7 +82,7 @@ public final class CatalogCommentsCheck {
             JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
             LEFT JOIN pg_catalog.pg_class AS tc ON tc.oid = t.typrelid
             WHERE n.nspname = ANY (?)
-              AND t.typtype IN ('b', 'c', 'd', 'e', 'r')
+              AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'r')
               AND NOT (t.typtype = 'b' AND t.typcategory = 'A')
               AND (t.typtype <> 'c' OR tc.relkind = 'c')
             ORDER BY 1, 2
@@ -164,7 +166,9 @@ public final class CatalogCommentsCheck {
      * @param allowed    the accepted exceptions
      * @return the report; empty unexpected and stale lists when the convention
      * holds
-     * @throws SQLException if the catalog cannot be read
+     * @throws SQLException             if the catalog cannot be read
+     * @throws IllegalArgumentException if {@code schemas} is empty or names a
+     *                                  schema that does not exist
      */
     public static Report check(Connection connection, Collection<String> schemas,
                                Collection<AllowedObject> allowed) throws SQLException {
@@ -181,7 +185,9 @@ public final class CatalogCommentsCheck {
      * @param options    the object kinds to inspect
      * @return the report; empty unexpected and stale lists when the convention
      * holds
-     * @throws SQLException if the catalog cannot be read
+     * @throws SQLException             if the catalog cannot be read
+     * @throws IllegalArgumentException if {@code schemas} is empty or names a
+     *                                  schema that does not exist
      */
     public static Report check(Connection connection, Collection<String> schemas,
                                Collection<AllowedObject> allowed, Options options) throws SQLException {
@@ -227,6 +233,7 @@ public final class CatalogCommentsCheck {
         }
         String[] names = schemas.toArray(String[]::new);
         Array schemaArray = connection.createArrayOf("text", names);
+        Throwable failure = null;
         try {
             assertSchemasExist(connection, schemaArray, schemas);
             List<ObjectComment> objects = new ArrayList<>();
@@ -262,8 +269,21 @@ public final class CatalogCommentsCheck {
                                 resultSet.getString("comment")));
             }
             return List.copyOf(objects);
+        } catch (SQLException | RuntimeException | Error e) {
+            failure = e;
+            throw e;
         } finally {
-            schemaArray.free();
+            try {
+                schemaArray.free();
+            } catch (SQLException cleanup) {
+                if (failure == null) {
+                    throw cleanup;
+                }
+                // java.sql.Array is not AutoCloseable, so mirror the
+                // try-with-resources rule: keep the primary failure and attach
+                // the cleanup failure as suppressed context.
+                failure.addSuppressed(cleanup);
+            }
         }
     }
 
@@ -310,6 +330,7 @@ public final class CatalogCommentsCheck {
             case "c" -> Kind.COMPOSITE_TYPE;
             case "d" -> Kind.DOMAIN;
             case "e" -> Kind.ENUM_TYPE;
+            case "m" -> Kind.MULTIRANGE_TYPE;
             case "r" -> Kind.RANGE_TYPE;
             default -> throw new IllegalArgumentException("unsupported type kind: " + typeKind);
         };
@@ -347,6 +368,10 @@ public final class CatalogCommentsCheck {
          * A range type.
          */
         RANGE_TYPE("range type"),
+        /**
+         * A multirange type.
+         */
+        MULTIRANGE_TYPE("multirange type"),
         /**
          * A user-defined base type.
          */

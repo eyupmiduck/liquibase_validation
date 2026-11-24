@@ -451,6 +451,111 @@ class AuditColumnsCheckTest {
     }
 
     /**
+     * A trigger that copies {@code created_at} is not a refresh. The probe
+     * prefers an old row so the copied value cannot coincide with the current
+     * transaction timestamp, even when a fresh row was inserted first.
+     */
+    @Test
+    void probeDoesNotTreatACopiedCreatedAtAsARefresh() throws Exception {
+        execute("CREATE OR REPLACE FUNCTION unaudited.copy_created_at() RETURNS trigger LANGUAGE plpgsql AS $$"
+                + " BEGIN NEW.updated_at := NEW.created_at; RETURN NEW; END; $$");
+        execute("""
+                CREATE TABLE unaudited.copied (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """);
+        execute("CREATE TRIGGER copied_set_updated_at BEFORE UPDATE ON unaudited.copied"
+                + " FOR EACH ROW EXECUTE FUNCTION unaudited.copy_created_at()");
+
+        try (Connection caller = openConnection()) {
+            caller.setAutoCommit(false);
+            try (Statement statement = caller.createStatement()) {
+                // The fresh row is physically first; the probe must still prefer
+                // the old row.
+                statement.execute("INSERT INTO unaudited.copied (id) VALUES (1)");
+                statement.execute("""
+                        INSERT INTO unaudited.copied (id, created_at, updated_at)
+                        VALUES (2, '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')
+                        """);
+            }
+
+            Optional<AuditColumnsCheck.Probe> probe =
+                    AuditColumnsCheck.probeUpdate(caller, "unaudited", "copied");
+
+            assertTrue(probe.isPresent());
+            assertFalse(probe.get().updatedAtRefreshed(), () -> probe.get().describe());
+            caller.rollback();
+        }
+    }
+
+    /**
+     * A {@code NULL created_at} that the update leaves unchanged is preserved,
+     * not reported as a change.
+     */
+    @Test
+    void probeTreatsAnUnchangedNullCreatedAtAsPreserved() throws Exception {
+        execute("CREATE OR REPLACE FUNCTION unaudited.set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$"
+                + " BEGIN NEW.updated_at := now(); RETURN NEW; END; $$");
+        execute("""
+                CREATE TABLE unaudited.null_created (
+                    id integer PRIMARY KEY,
+                    created_at timestamptz,
+                    updated_at timestamptz NOT NULL DEFAULT now()
+                )
+                """);
+        execute("CREATE TRIGGER null_created_set_updated_at BEFORE UPDATE ON unaudited.null_created"
+                + " FOR EACH ROW EXECUTE FUNCTION unaudited.set_updated_at()");
+        execute("INSERT INTO unaudited.null_created (id, created_at) VALUES (1, NULL)");
+
+        Optional<AuditColumnsCheck.Probe> probe =
+                AuditColumnsCheck.probeUpdate(connection, "unaudited", "null_created");
+
+        assertTrue(probe.isPresent());
+        assertTrue(probe.get().createdAtPreserved(), () -> probe.get().describe());
+        assertTrue(probe.get().passed(), () -> probe.get().describe());
+    }
+
+    /**
+     * When both the savepoint rollback and the release fail, the rollback failure
+     * is attached to the release failure instead of being discarded.
+     */
+    @Test
+    void keepsTheRollbackFailureWhenReleasingTheSavepointAlsoFails() throws Exception {
+        createAuditedTable("orders");
+        execute("INSERT INTO audited.orders (id) VALUES (1)");
+
+        try (Connection delegate = openConnection()) {
+            delegate.setAutoCommit(false);
+            Connection failing = (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (proxy, method, args) -> {
+                        if (method.getName().equals("rollback") && args != null && args.length == 1
+                                && args[0] instanceof java.sql.Savepoint) {
+                            throw new SQLException("rollback failed");
+                        }
+                        if (method.getName().equals("releaseSavepoint")) {
+                            throw new SQLException("release failed");
+                        }
+                        try {
+                            return method.invoke(delegate, args);
+                        } catch (InvocationTargetException e) {
+                            throw e.getCause();
+                        }
+                    });
+
+            SQLException failure = assertThrows(SQLException.class,
+                    () -> AuditColumnsCheck.probeUpdate(failing, "audited", "orders"));
+            assertEquals("release failed", failure.getMessage());
+            assertEquals(1, failure.getSuppressed().length);
+            assertEquals("rollback failed", failure.getSuppressed()[0].getMessage());
+            delegate.rollback();
+        }
+    }
+
+    /**
      * The probe reports nothing to check for an empty table.
      */
     @Test

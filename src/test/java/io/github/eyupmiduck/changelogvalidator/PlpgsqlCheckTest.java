@@ -91,6 +91,7 @@ class PlpgsqlCheckTest {
         try (Statement statement = connection.createStatement()) {
             statement.execute("CREATE EXTENSION plpgsql_check");
             statement.execute("CREATE SCHEMA checked");
+            statement.execute("CREATE SCHEMA checked_fatal");
             statement.execute("""
                     CREATE FUNCTION checked.clean() RETURNS integer LANGUAGE plpgsql IMMUTABLE AS $$
                     BEGIN
@@ -147,6 +148,26 @@ class PlpgsqlCheckTest {
                         BEFORE UPDATE ON checked.audited_broken
                         FOR EACH ROW EXECUTE FUNCTION checked.trigger_warned()
                     """);
+            // check_function_bodies is normally on, which rejects these bodies at
+            // CREATE time; disable it so plpgsql_check has to analyse them.
+            statement.execute("SET check_function_bodies = off");
+            // A body that does not compile is a fatal error: plpgsql_check
+            // reports it as a row with no line and no statement.
+            statement.execute("""
+                    CREATE FUNCTION checked_fatal.uncompilable() RETURNS void LANGUAGE plpgsql AS $$
+                    this is not valid plpgsql
+                    $$""");
+            // Two independent errors: fatal_errors => true stops after the
+            // first, so collecting both proves it is off.
+            statement.execute("""
+                    CREATE FUNCTION checked_fatal.multiple_errors() RETURNS void LANGUAGE plpgsql AS $$
+                    DECLARE l_value integer;
+                    BEGIN
+                        SELECT missing_column INTO l_value FROM pg_class;
+                        PERFORM another_missing_column;
+                    END;
+                    $$""");
+            statement.execute("SET check_function_bodies = on");
         }
     }
 
@@ -231,6 +252,33 @@ class PlpgsqlCheckTest {
 
         assertTrue(findings.stream().noneMatch(finding -> finding.function().equals("trigger_unattached")),
                 () -> "trigger_unattached should be skipped; got: " + findings);
+    }
+
+    /**
+     * A body that does not compile is reported as a finding with no line (mapped
+     * to {@code -1}) and no statement, and every independent error is collected
+     * because {@code fatal_errors} is off.
+     */
+    @Test
+    void reportsCompilationErrorsAndCollectsEveryError() throws Exception {
+        List<PlpgsqlCheck.Finding> findings = PlpgsqlCheck.findFindings(connection, List.of("checked_fatal"));
+
+        PlpgsqlCheck.Finding uncompilable = findings.stream()
+                .filter(finding -> finding.function().equals("uncompilable"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("expected a finding for uncompilable; got: " + findings));
+        assertEquals(-1, uncompilable.line(), uncompilable.describe());
+        assertNull(uncompilable.statement(), uncompilable.describe());
+        assertTrue(uncompilable.message().contains("syntax error"), uncompilable.describe());
+
+        List<PlpgsqlCheck.Finding> errors = findings.stream()
+                .filter(finding -> finding.function().equals("multiple_errors"))
+                .filter(finding -> finding.level().equals("error"))
+                .toList();
+        assertTrue(errors.stream().anyMatch(finding -> finding.message().contains("missing_column")),
+                () -> "expected the first error; got: " + errors);
+        assertTrue(errors.stream().anyMatch(finding -> finding.message().contains("another_missing_column")),
+                () -> "expected the second error too; got: " + errors);
     }
 
     /**
@@ -327,6 +375,21 @@ class PlpgsqlCheckTest {
         assertThrows(IOException.class, () -> PlpgsqlCheck.loadWhitelist(stream("""
                 - message: [a]
                 """)));
+    }
+
+    /**
+     * A misspelled key is rejected instead of being ignored and silently
+     * widening the entry to every finding of the named function.
+     */
+    @Test
+    void rejectsUnknownWhitelistKeys() {
+        IOException failure = assertThrows(IOException.class,
+                () -> PlpgsqlCheck.loadWhitelist(stream("""
+                        - function: f
+                          mesage: misspelled
+                        """)));
+
+        assertTrue(failure.getMessage().contains("unknown key"), failure.getMessage());
     }
 
     /**

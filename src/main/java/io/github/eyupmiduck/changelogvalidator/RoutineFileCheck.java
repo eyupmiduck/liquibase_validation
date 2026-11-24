@@ -235,9 +235,13 @@ public final class RoutineFileCheck {
      * body is expanded so a guarded {@code DO $$ ... DROP TRIGGER ... $$} is
      * seen, while an ordinary string literal stays opaque.
      */
-    private static List<Drop> drops(String sql) {
+    private static List<Drop> drops(String sql) throws IOException {
         List<Drop> drops = new ArrayList<>();
-        List<Token> tokens = flattenDollarStrings(SqlLexer.tokenize(sql), 0).stream()
+        List<Token> flat = flattenDollarStrings(SqlLexer.tokenize(sql), 0);
+        if (flat.stream().anyMatch(token -> token.type().isError())) {
+            throw new IOException("SQL contains input the lexer cannot classify");
+        }
+        List<Token> tokens = flat.stream()
                 .filter(token -> !token.isTrivia())
                 .toList();
         for (int i = 0; i < tokens.size(); i++) {
@@ -263,9 +267,11 @@ public final class RoutineFileCheck {
             }
             String tableSchema = null;
             if (kind.equals("trigger")) {
-                int on = findWord(tokens, name.next(), "on");
-                if (on >= 0) {
-                    ParsedName table = qualifiedName(tokens, on + 1);
+                // In valid SQL the ON token immediately follows the trigger name.
+                // Do not search further: a DROP TRIGGER that lacks its ON clause
+                // must not borrow the ON clause of a later statement.
+                if (word(tokens, name.next(), "on")) {
+                    ParsedName table = qualifiedName(tokens, name.next() + 1);
                     if (table != null) {
                         tableSchema = table.schema();
                     }
@@ -333,15 +339,6 @@ public final class RoutineFileCheck {
     private static boolean isPunctuation(List<Token> tokens, int index, String punctuation) {
         return index < tokens.size() && tokens.get(index).type() == TokenType.PUNCTUATION
                 && punctuation.equals(tokens.get(index).text());
-    }
-
-    private static int findWord(List<Token> tokens, int start, String keyword) {
-        for (int i = start; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private record Kind(String forwardDirectory, String rollbackDirectory, String objectKind) {

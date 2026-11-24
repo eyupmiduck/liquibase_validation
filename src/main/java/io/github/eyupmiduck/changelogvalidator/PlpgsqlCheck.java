@@ -22,6 +22,13 @@ import java.util.*;
  */
 public final class PlpgsqlCheck {
 
+    /**
+     * The keys an allow-list entry may set. {@code reason} is an annotation that
+     * is accepted but ignored; the rest select a finding.
+     */
+    private static final Set<String> KNOWN_KEYS =
+            Set.of("schema", "function", "level", "statement", "message", "reason");
+
     private PlpgsqlCheck() {
     }
 
@@ -63,8 +70,12 @@ public final class PlpgsqlCheck {
                         SELECT 0::oid
                         WHERE p.prorettype <> 'pg_catalog.trigger'::pg_catalog.regtype
                     ) AS r
+                    -- fatal_errors => false keeps the analysis going after a
+                    -- failed statement and reports it as a row, so later
+                    -- findings in the same routine are not hidden.
                     CROSS JOIN LATERAL plpgsql_check_function_tb(
-                            p.oid::regprocedure, r.relid::regclass, all_warnings => true
+                            p.oid::regprocedure, r.relid::regclass,
+                            fatal_errors => false, all_warnings => true
                         ) AS issue
                     WHERE n.nspname = ANY (?)
                         AND p.prokind IN ('f', 'p')
@@ -74,11 +85,20 @@ public final class PlpgsqlCheck {
                 statement.setArray(1, schemaArray);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
+                        int line = resultSet.getInt(3);
+                        if (resultSet.wasNull()) {
+                            // A compilation error has no line; use a sentinel so
+                            // the diagnostic does not claim line 0.
+                            line = -1;
+                        }
                         findings.add(new Finding(
                                 resultSet.getString(1),
                                 resultSet.getString(2),
-                                resultSet.getInt(3),
+                                line,
                                 resultSet.getString(4),
+                                // statement is NULL for diagnostics that are not
+                                // attached to a statement, for example a
+                                // compilation error.
                                 resultSet.getString(5),
                                 resultSet.getString(6)));
                     }
@@ -162,14 +182,17 @@ public final class PlpgsqlCheck {
     /**
      * Reads an allow-list from a YAML document: a list of mappings with
      * {@code schema}, {@code function}, {@code level}, {@code statement} and
-     * {@code message} keys (any other keys are ignored). Each entry must set at
-     * least one of those keys, so a misspelled entry cannot silently become a
+     * {@code message} keys. The {@code reason} key is accepted as a free-form
+     * annotation and ignored. Any other key is rejected, so a misspelled key
+     * fails fast instead of silently widening an entry. Each entry must set at
+     * least one of the five matching keys, so an entry cannot silently become a
      * catch-all.
      *
      * @param input the YAML document; an empty document yields an empty list
      * @return the accepted findings
      * @throws IOException if the document is malformed, is not a list of
-     *                     mappings, or an entry sets none of the recognised keys
+     *                     mappings, contains an unknown key, or an entry sets
+     *                     none of the recognised keys
      */
     public static List<AllowedFinding> loadWhitelist(InputStream input) throws IOException {
         Object loaded;
@@ -190,6 +213,12 @@ public final class PlpgsqlCheck {
             Object item = entries.get(index);
             if (!(item instanceof Map<?, ?> entry)) {
                 throw new IOException("plpgsql_check whitelist entries must be mappings");
+            }
+            for (Object key : entry.keySet()) {
+                if (!KNOWN_KEYS.contains(String.valueOf(key))) {
+                    throw new IOException("plpgsql_check whitelist entry " + index
+                            + " has unknown key: " + key);
+                }
             }
             String schema = asString(index, "schema", entry.get("schema"));
             String function = asString(index, "function", entry.get("function"));
@@ -234,10 +263,15 @@ public final class PlpgsqlCheck {
      *
      * @param schema    the function's schema
      * @param function  the function name
-     * @param line      the line number the finding points at
+     * @param line      the line number the finding points at, or {@code -1} when
+     *                  the analyser reports no line (for example a compilation
+     *                  error)
      * @param level     the finding level (for example {@code error} or
      *                  {@code warning})
-     * @param statement the PL/pgSQL statement type
+     * @param statement the PL/pgSQL statement type, or {@code null} when the
+     *                  analyser does not identify one (for example a compilation
+     *                  error); an allow-list entry that sets {@code statement}
+     *                  cannot match such a finding
      * @param message   the finding message
      */
     public record Finding(String schema, String function, int line, String level,

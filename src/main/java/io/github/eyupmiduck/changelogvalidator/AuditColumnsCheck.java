@@ -204,6 +204,15 @@ public final class AuditColumnsCheck {
      * after a successful rollback; on rollback failure the connection is left
      * in manual-commit mode rather than committing the probe's update.
      *
+     * <p>To reduce a false pass, the probe prefers the row whose existing
+     * {@code created_at} and {@code updated_at} are oldest, so a broken trigger
+     * that copies either value produces a timestamp far from the transaction
+     * timestamp. A table whose every row was created in the current transaction
+     * has no such row: a trigger that copies {@code created_at} then writes the
+     * transaction timestamp itself and is indistinguishable from a genuine
+     * refresh. That residual blind spot is inherent to probing inside a live
+     * transaction.
+     *
      * @param connection an open connection to the database
      * @param schema     the table's schema
      * @param table      the table to probe
@@ -229,7 +238,12 @@ public final class AuditColumnsCheck {
             String ctid;
             OffsetDateTime createdAt;
             try (PreparedStatement select = connection.prepareStatement(
-                    "SELECT ctid::text AS ctid, created_at FROM " + qualified + " LIMIT 1 FOR UPDATE")) {
+                    // Prefer the row whose audit values are oldest, so a broken
+                    // trigger that copies created_at or the old updated_at
+                    // yields a value far from the transaction timestamp instead
+                    // of one that happens to equal it.
+                    "SELECT ctid::text AS ctid, created_at FROM " + qualified
+                            + " ORDER BY greatest(created_at, updated_at) ASC LIMIT 1 FOR UPDATE")) {
                 try (ResultSet resultSet = select.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
@@ -263,7 +277,7 @@ public final class AuditColumnsCheck {
                     && transactionTimestamp != null
                     && Duration.between(transactionTimestamp, afterUpdatedAt).abs()
                     .compareTo(MAX_REFRESH_DRIFT) <= 0;
-            boolean createdPreserved = createdAt != null && createdAt.equals(afterCreatedAt);
+            boolean createdPreserved = Objects.equals(createdAt, afterCreatedAt);
             return Optional.of(new Probe(schema, table, refreshed, createdPreserved));
         } catch (SQLException e) {
             failure = e;
@@ -276,13 +290,27 @@ public final class AuditColumnsCheck {
                     // it only after the rollback has succeeded.
                     connection.setAutoCommit(true);
                 } else if (savepoint != null) {
+                    SQLException rollbackFailure = null;
                     try {
                         connection.rollback(savepoint);
+                    } catch (SQLException rollback) {
+                        rollbackFailure = rollback;
                     } finally {
-                        // ROLLBACK TO SAVEPOINT leaves the savepoint defined; release
-                        // it so a long-lived caller transaction does not accumulate
-                        // savepoints, even when the rollback itself failed.
-                        connection.releaseSavepoint(savepoint);
+                        try {
+                            // ROLLBACK TO SAVEPOINT leaves the savepoint defined;
+                            // release it so a long-lived caller transaction does
+                            // not accumulate savepoints, even when the rollback
+                            // itself failed.
+                            connection.releaseSavepoint(savepoint);
+                        } catch (SQLException release) {
+                            if (rollbackFailure != null) {
+                                release.addSuppressed(rollbackFailure);
+                            }
+                            throw release;
+                        }
+                        if (rollbackFailure != null) {
+                            throw rollbackFailure;
+                        }
                     }
                 }
             } catch (SQLException cleanup) {

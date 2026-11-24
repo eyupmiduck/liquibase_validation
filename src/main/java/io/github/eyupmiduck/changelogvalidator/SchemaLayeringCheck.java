@@ -21,6 +21,11 @@ import java.util.*;
  * is not seen. A reference that is not written as {@code schema.object} is not
  * seen either; the check deliberately avoids guessing from unqualified names.
  *
+ * <p>A routine with a SQL-standard body ({@code BEGIN ATOMIC}, PostgreSQL 14+)
+ * stores that body in {@code prosqlbody}, not in {@code prosrc}; such a body is
+ * not scanned, so a reference that appears only there is not seen. Its
+ * signature is still scanned.
+ *
  * <p>Extension-owned routines are excluded, like the other routine checks. An
  * explicit {@link Reference} allow-list suppresses a known exception; an entry
  * that matches nothing is stale and reported. The report also counts the
@@ -60,6 +65,7 @@ public final class SchemaLayeringCheck {
         }
         Set<Reference> found = new LinkedHashSet<>();
         Array schemaArray = connection.createArrayOf("text", schemas.toArray());
+        Throwable failure = null;
         try {
             String sql = """
                     SELECT n.nspname AS schema_name,
@@ -87,13 +93,19 @@ public final class SchemaLayeringCheck {
                         String fromSchema = rows.getString("schema_name");
                         String routine = rows.getString("routine_name");
                         routines.merge(fromSchema, 1, Integer::sum);
+                        // Tokenize each fragment once; the loop below may scan it
+                        // against several higher schemas. A SQL-standard body has
+                        // no prosrc, so there is nothing to scan (documented).
+                        String bodySql = rows.getString("body");
+                        List<Token> body = bodySql == null ? List.of() : tokens(bodySql);
+                        List<Token> signature = tokens(
+                                rows.getString("arguments") + " " + rows.getString("result"));
                         int index = schemas.indexOf(fromSchema);
                         for (int higher = 0; higher < index; higher++) {
                             String toSchema = schemas.get(higher);
-                            for (String object : references(rows.getString("body"), toSchema)) {
+                            for (String object : references(body, toSchema)) {
                                 found.add(new Reference(fromSchema, routine, toSchema, object));
                             }
-                            String signature = rows.getString("arguments") + " " + rows.getString("result");
                             for (String object : references(signature, toSchema)) {
                                 found.add(new Reference(fromSchema, routine, toSchema, object));
                             }
@@ -112,8 +124,21 @@ public final class SchemaLayeringCheck {
                     .filter(entry -> found.stream().noneMatch(reference -> matches(entry, reference)))
                     .toList();
             return new Report(unexpected, stale, routines, objects);
+        } catch (SQLException | RuntimeException | Error e) {
+            failure = e;
+            throw e;
         } finally {
-            schemaArray.free();
+            try {
+                schemaArray.free();
+            } catch (SQLException cleanup) {
+                if (failure == null) {
+                    throw cleanup;
+                }
+                // java.sql.Array is not AutoCloseable, so mirror the
+                // try-with-resources rule: keep the primary failure and attach
+                // the cleanup failure as suppressed context.
+                failure.addSuppressed(cleanup);
+            }
         }
     }
 
@@ -129,6 +154,13 @@ public final class SchemaLayeringCheck {
                     SELECT p.pronamespace AS namespace
                     FROM pg_catalog.pg_proc AS p
                     WHERE p.prokind IN ('f', 'p')
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM pg_catalog.pg_depend AS d
+                          WHERE d.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+                            AND d.objid = p.oid
+                            AND d.deptype = 'e'
+                      )
                     UNION ALL
                     SELECT c.relnamespace AS namespace
                     FROM pg_catalog.pg_class AS c
@@ -170,18 +202,24 @@ public final class SchemaLayeringCheck {
      * a reference.
      */
     private static Set<String> references(String sql, String schema) {
+        return references(tokens(sql), schema);
+    }
+
+    /**
+     * Returns the objects a token stream references as {@code schema.object}.
+     * An unquoted name folds to lower case, as PostgreSQL does; a quoted
+     * identifier compares exactly.
+     */
+    private static Set<String> references(List<Token> tokens, String schema) {
         Set<String> objects = new LinkedHashSet<>();
-        List<Token> tokens = SqlLexer.tokenize(sql).stream()
-                .filter(token -> !token.isTrivia())
-                .toList();
         for (int i = 0; i + 2 < tokens.size(); i++) {
             Token first = tokens.get(i);
-            if (!identifier(first).equalsIgnoreCase(schema)
+            if (!matchesSchema(first, schema)
                     || tokens.get(i + 1).type() != TokenType.PUNCTUATION
                     || !tokens.get(i + 1).text().equals(".")) {
                 continue;
             }
-            String object = identifier(tokens.get(i + 2));
+            String object = objectName(tokens.get(i + 2));
             if (!object.isBlank()) {
                 objects.add(object);
             }
@@ -189,9 +227,23 @@ public final class SchemaLayeringCheck {
         return objects;
     }
 
-    private static String identifier(Token token) {
+    private static List<Token> tokens(String sql) {
+        return SqlLexer.tokenize(sql).stream()
+                .filter(token -> !token.isTrivia())
+                .toList();
+    }
+
+    private static boolean matchesSchema(Token token, String schema) {
         return switch (token.type()) {
-            case WORD -> token.text();
+            case WORD -> token.text().toLowerCase(Locale.ROOT).equals(schema);
+            case QUOTED_IDENTIFIER -> token.identifier().equals(schema);
+            default -> false;
+        };
+    }
+
+    private static String objectName(Token token) {
+        return switch (token.type()) {
+            case WORD -> token.text().toLowerCase(Locale.ROOT);
             case QUOTED_IDENTIFIER -> token.identifier();
             default -> "";
         };

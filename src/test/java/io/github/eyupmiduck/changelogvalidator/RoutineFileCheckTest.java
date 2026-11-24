@@ -305,6 +305,42 @@ class RoutineFileCheckTest {
     }
 
     /**
+     * A DROP TRIGGER without its own ON clause must not borrow the ON clause of a
+     * later statement.
+     */
+    @Test
+    void reportsATriggerRollbackThatBorrowsALaterOnClause() throws IOException {
+        writeCompliantTrigger();
+        write("triggers-rollback/app/foo_trg-rollback.sql", """
+                DROP TRIGGER IF EXISTS foo_trg;
+                DROP POLICY p ON app.foo FOR DELETE;
+                """);
+
+        List<RoutineFileCheck.Violation> violations = violations();
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.getFirst().message().contains("DROP TRIGGER's table is not schema-qualified"),
+                violations.getFirst().message());
+    }
+
+    /**
+     * A rollback file the lexer cannot classify is reported, mirroring the
+     * forward path, instead of silently ignoring the unclassifiable input.
+     */
+    @Test
+    void reportsARollbackTheLexerCannotClassify() throws IOException {
+        writeCompliantTrigger();
+        write("triggers-rollback/app/foo_trg-rollback.sql", """
+                DROP TRIGGER IF EXISTS foo_trg ON app.foo;
+                DO $do$ BEGIN NULL; $$;
+                """);
+
+        List<RoutineFileCheck.Violation> violations = violations();
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.getFirst().message().contains("cannot analyse the SQL file"),
+                violations.getFirst().message());
+    }
+
+    /**
      * A file that is not directly under a schema directory is reported.
      */
     @Test
