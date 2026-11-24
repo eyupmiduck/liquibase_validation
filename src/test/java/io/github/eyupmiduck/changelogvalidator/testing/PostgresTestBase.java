@@ -8,8 +8,10 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.SQLDialect;
+import org.jooq.Table;
 import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
+import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInstance;
@@ -85,7 +87,20 @@ public abstract class PostgresTestBase {
     private Connection connection;
 
     private static void execute(Connection connection, String sql) throws SQLException {
-        try (connection; Statement statement = connection.createStatement()) {
+        try (connection) {
+            executeStatement(connection, sql);
+        }
+    }
+
+    /**
+     * Executes one statement on an existing connection without closing it.
+     *
+     * @param connection the connection
+     * @param sql        the statement
+     * @throws SQLException if the statement fails
+     */
+    protected static void executeStatement(Connection connection, String sql) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
             statement.execute(sql);
         }
     }
@@ -94,8 +109,170 @@ public abstract class PostgresTestBase {
      * Quotes a PostgreSQL identifier, doubling embedded quotes, so a database or
      * role name that needs quoting is used literally in administrative SQL.
      */
-    static String quoteIdentifier(String identifier) {
+    protected static String quoteIdentifier(String identifier) {
         return "\"" + identifier.replace("\"", "\"\"") + "\"";
+    }
+
+    /**
+     * Quotes every part of a dotted SQL name separately, so a qualified name is
+     * rendered as {@code "schema"."object"}.
+     *
+     * @param identifier the identifier or dotted name
+     * @return the quoted identifier
+     */
+    protected static String quoteQualifiedIdentifier(String identifier) {
+        StringBuilder result = new StringBuilder();
+        for (String part : identifier.split("\\.")) {
+            if (!result.isEmpty()) {
+                result.append('.');
+            }
+            result.append(quoteIdentifier(part));
+        }
+        return result.toString();
+    }
+
+    /**
+     * Evaluates a SQL expression and returns its scalar value.
+     *
+     * @param expression the SQL expression
+     * @param type       the expected Java type
+     * @param <T>        the expected Java type
+     * @return the expression's value, never null
+     */
+    protected <T> T evaluate(String expression, Class<T> type) {
+        Record record = dsl.fetchOne("SELECT " + expression);
+        assertNotNull(record, () -> "no row returned for expression: " + expression);
+        T value = record.get(0, type);
+        assertNotNull(value, () -> "NULL returned for expression: " + expression);
+        return value;
+    }
+
+    /**
+     * Returns the name of the database this test's jOOQ context is connected to.
+     *
+     * @return the current database name
+     */
+    protected String currentDatabase() {
+        return dsl.fetchValue(DSL.currentCatalog());
+    }
+
+    /**
+     * Switches the connection to a role, for a test that exercises a caller
+     * role's privileges. The role name is quoted because {@code SET ROLE} takes
+     * no bind parameter.
+     *
+     * @param connection the connection
+     * @param role       the role name
+     * @throws SQLException if the role cannot be set
+     */
+    protected static void setRole(Connection connection, String role) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET ROLE " + quoteIdentifier(role));
+        }
+    }
+
+    /**
+     * Returns the schema name of a generated jOOQ table.
+     *
+     * @param table the table
+     * @return the table's schema name
+     */
+    protected static String schema(Table<?> table) {
+        return table.getSchema().getName();
+    }
+
+    /**
+     * Returns the name of a generated jOOQ table.
+     *
+     * @param table the table
+     * @return the table's name
+     */
+    protected static String name(Table<?> table) {
+        return table.getName();
+    }
+
+    /**
+     * Returns the OID of a relation, resolving the name with PostgreSQL's own
+     * {@code regclass} rules.
+     *
+     * @param qualifiedName the schema-qualified relation name
+     * @return the relation OID
+     */
+    protected long relationOid(String qualifiedName) {
+        return dsl.fetchOne("SELECT ?::regclass::oid", qualifiedName).get(0, Long.class);
+    }
+
+    /**
+     * Cancels another backend, for concurrency tests that stop a worker or a
+     * competing session.
+     *
+     * @param pid the backend PID
+     * @return whether the signal was sent
+     */
+    protected boolean cancelBackend(int pid) {
+        return Boolean.TRUE.equals(dsl.fetchValue(DSL.function(
+                DSL.name("pg_catalog", "pg_cancel_backend"), SQLDataType.BOOLEAN,
+                DSL.val(pid))));
+    }
+
+    /**
+     * Returns the current backend's PID.
+     *
+     * @param connection the connection
+     * @return the backend PID
+     * @throws SQLException if the query fails
+     */
+    protected static int backendPid(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("SELECT pg_backend_pid()")) {
+            assertTrue(rows.next(), "pg_backend_pid() returns a row");
+            return rows.getInt(1);
+        }
+    }
+
+    /**
+     * Sets the session's {@code statement_timeout}, so a blocked statement in a
+     * concurrency test aborts instead of hanging the build.
+     *
+     * @param connection the connection
+     * @param timeout    the timeout, for example {@code 15s}
+     * @throws SQLException if the setting fails
+     */
+    protected static void setStatementTimeout(Connection connection, String timeout) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET statement_timeout = '" + timeout + "'");
+        }
+    }
+
+    /**
+     * Opens an additional test-role connection with a server-side statement
+     * timeout, for a worker in a concurrency test. The caller closes it.
+     *
+     * @param timeout the timeout, for example {@code 15s}
+     * @return the connection
+     * @throws SQLException if the connection or the setting fails
+     */
+    protected Connection openConnectionWithStatementTimeout(String timeout) throws SQLException {
+        Connection connection = openTestConnection();
+        try {
+            setStatementTimeout(connection, timeout);
+            return connection;
+        } catch (SQLException e) {
+            connection.close();
+            throw e;
+        }
+    }
+
+    /**
+     * Executes one statement on a superuser connection to this test's database.
+     *
+     * @param sql the statement
+     * @throws SQLException if the statement fails
+     */
+    protected void executeAsSuperuser(String sql) throws SQLException {
+        try (Connection admin = openAdminConnection(currentDatabase())) {
+            executeStatement(admin, sql);
+        }
     }
 
     /**
