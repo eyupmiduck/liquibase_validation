@@ -18,7 +18,8 @@ class CommentContractTest extends CommentContract {
 
     /**
      * Creates and comments a schema, table, columns, domain, composite, enum,
-     * range, function, procedure, trigger function and trigger.
+     * range and its multirange companion, function, procedure, trigger function
+     * and trigger.
      *
      * @throws Exception if the fixture cannot be created
      */
@@ -47,6 +48,7 @@ class CommentContractTest extends CommentContract {
             statement.execute("COMMENT ON TYPE " + SCHEMA + ".mood IS 'fixture enum'");
             statement.execute("CREATE TYPE " + SCHEMA + ".price_range AS RANGE (subtype = numeric)");
             statement.execute("COMMENT ON TYPE " + SCHEMA + ".price_range IS 'fixture range'");
+            statement.execute("COMMENT ON TYPE " + SCHEMA + ".price_multirange IS 'fixture multirange'");
             statement.execute("CREATE FUNCTION " + SCHEMA + ".add_one(i_value integer) RETURNS integer"
                     + " LANGUAGE sql AS 'SELECT i_value + 1'");
             statement.execute("COMMENT ON FUNCTION " + SCHEMA + ".add_one(integer) IS 'fixture function'");

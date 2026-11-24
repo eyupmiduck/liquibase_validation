@@ -57,13 +57,19 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
             // separate findings.
             return;
         }
-        int open = indexOfPunctuation(tokens, "(", name + 1);
+        int nameEnd = qualifiedNameEnd(tokens, name);
+        if (TokenWords.at(tokens, nameEnd, "AS")) {
+            // CREATE TABLE ... AS SELECT: a later paren belongs to the query, not
+            // to a column list.
+            return;
+        }
+        int open = indexOfPunctuation(tokens, "(", nameEnd);
         if (open < 0) {
             return;
         }
         for (List<Token> segment : segments(tokens, open)) {
             Token first = segment.getFirst();
-            if (isTableConstraint(first)) {
+            if (isTableConstraint(segment)) {
                 continue;
             }
             String column = RuleSupport.identifier(first);
@@ -77,11 +83,17 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
     }
 
     private static void createIndex(ProjectStatements.Statement statement, List<Token> tokens,
-                                    Map<String, Located> indexes, List<Violation> violations) {
+                                    Map<String, Located> indexes, Map<String, String> indexTables,
+                                    List<Violation> violations) {
         int name = TokenWords.at(tokens, 1, "UNIQUE") ? 2 : 1;
         name++; // INDEX
         if (TokenWords.at(tokens, name, "CONCURRENTLY")) {
             name++;
+        }
+        if (TokenWords.at(tokens, name, "ON")) {
+            // Unnamed index: PostgreSQL generates the name, so there is no
+            // declared name to track for duplicates.
+            return;
         }
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
                 && TokenWords.at(tokens, name + 2, "EXISTS")) {
@@ -93,6 +105,17 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         }
         report(indexes, index, "index", "CREATE INDEX", statement, tokens.get(name), violations);
         indexes.putIfAbsent(index, located(statement, tokens.get(name)));
+        int on = TokenWords.indexOf(tokens, "ON", name + 1);
+        if (on >= 0) {
+            int tableStart = on + 1;
+            if (TokenWords.at(tokens, tableStart, "ONLY")) {
+                tableStart++;
+            }
+            String table = RuleSupport.qualifiedName(tokens, tableStart);
+            if (table != null) {
+                indexTables.putIfAbsent(index, table);
+            }
+        }
     }
 
     private static void alterTable(ProjectStatements.Statement statement, List<Token> tokens,
@@ -109,75 +132,162 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         if (table == null) {
             return;
         }
-        for (int add = nextClause(tokens, "ADD", cursor + 1); add >= 0;
-             add = nextClause(tokens, "ADD", add + 1)) {
-            int item = add + 1;
-            if (TokenWords.at(tokens, item, "COLUMN")) {
-                item++;
-                if (TokenWords.at(tokens, item, "IF") && TokenWords.at(tokens, item + 1, "NOT")
-                        && TokenWords.at(tokens, item + 2, "EXISTS")) {
-                    continue;
+        // PostgreSQL executes the actions left to right, so a DROP followed by an
+        // ADD of the same name is not a duplicate. Visit the clauses in textual
+        // order instead of grouping all ADDs before all DROPs.
+        int depth = 0;
+        for (int i = cursor + 1; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+                continue;
+            }
+            if (isPunctuation(token, ")")) {
+                if (depth > 0) {
+                    depth--;
                 }
-                String column = RuleSupport.identifier(tokens.get(item));
-                if (column == null) {
-                    continue;
-                }
-                String key = table + "." + column;
-                report(columns, key, "column", "ADD COLUMN", statement, tokens.get(item), violations);
-                columns.putIfAbsent(key, located(statement, tokens.get(item)));
-            } else if (TokenWords.at(tokens, item, "CONSTRAINT")) {
-                item++;
-                String constraint = RuleSupport.identifier(tokens.get(item));
-                if (constraint == null) {
-                    continue;
-                }
-                String key = table + "." + constraint;
-                report(constraints, key, "constraint", "ADD CONSTRAINT", statement, tokens.get(item), violations);
-                constraints.putIfAbsent(key, located(statement, tokens.get(item)));
+                continue;
+            }
+            if (depth != 0 || !isActionStart(tokens, i, cursor)) {
+                continue;
+            }
+            if (token.matchesKeyword("ADD")) {
+                addAction(tokens, i, table, statement, columns, constraints, violations);
+            } else if (token.matchesKeyword("DROP")) {
+                dropAction(tokens, i, table, columns, constraints);
             }
         }
-        for (int drop = nextClause(tokens, "DROP", cursor + 1); drop >= 0;
-             drop = nextClause(tokens, "DROP", drop + 1)) {
-            int item = drop + 1;
-            if (TokenWords.at(tokens, item, "COLUMN")) {
-                item++;
-                if (TokenWords.at(tokens, item, "IF") && TokenWords.at(tokens, item + 1, "EXISTS")) {
-                    item += 2;
-                }
-                String column = RuleSupport.identifier(tokens.get(item));
-                if (column != null) {
-                    columns.remove(table + "." + column);
-                }
-            } else if (TokenWords.at(tokens, item, "CONSTRAINT")) {
-                item++;
-                if (TokenWords.at(tokens, item, "IF") && TokenWords.at(tokens, item + 1, "EXISTS")) {
-                    item += 2;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(item));
-                if (constraint != null) {
-                    constraints.remove(table + "." + constraint);
-                }
+    }
+
+    private static void addAction(List<Token> tokens, int add, String table,
+                                  ProjectStatements.Statement statement, Map<String, Located> columns,
+                                  Map<String, Located> constraints, List<Violation> violations) {
+        int item = add + 1;
+        if (TokenWords.at(tokens, item, "COLUMN")) {
+            item++;
+            if (skipIfNotExists(tokens, item)) {
+                return;
             }
+            if (item >= tokens.size()) {
+                return;
+            }
+            String column = RuleSupport.identifier(tokens.get(item));
+            if (column == null) {
+                return;
+            }
+            String key = table + "." + column;
+            report(columns, key, "column", "ADD COLUMN", statement, tokens.get(item), violations);
+            columns.putIfAbsent(key, located(statement, tokens.get(item)));
+            return;
         }
+        if (TokenWords.at(tokens, item, "CONSTRAINT")) {
+            item++;
+            if (item >= tokens.size()) {
+                return;
+            }
+            String constraint = RuleSupport.identifier(tokens.get(item));
+            if (constraint == null) {
+                return;
+            }
+            String key = table + "." + constraint;
+            report(constraints, key, "constraint", "ADD CONSTRAINT", statement, tokens.get(item), violations);
+            constraints.putIfAbsent(key, located(statement, tokens.get(item)));
+            return;
+        }
+        // ADD [COLUMN] is optional; a bare identifier names a column unless it
+        // starts an unnamed constraint kind.
+        if (skipIfNotExists(tokens, item) || item >= tokens.size() || startsUnnamedConstraint(tokens, item)) {
+            return;
+        }
+        String column = RuleSupport.identifier(tokens.get(item));
+        if (column == null) {
+            return;
+        }
+        String key = table + "." + column;
+        report(columns, key, "column", "ADD COLUMN", statement, tokens.get(item), violations);
+        columns.putIfAbsent(key, located(statement, tokens.get(item)));
+    }
+
+    private static void dropAction(List<Token> tokens, int drop, String table,
+                                   Map<String, Located> columns, Map<String, Located> constraints) {
+        int item = drop + 1;
+        if (TokenWords.at(tokens, item, "COLUMN")) {
+            item++;
+            if (skipIfExists(tokens, item)) {
+                item += 2;
+            }
+            if (item >= tokens.size()) {
+                return;
+            }
+            String column = RuleSupport.identifier(tokens.get(item));
+            if (column != null) {
+                columns.remove(table + "." + column);
+            }
+            return;
+        }
+        if (TokenWords.at(tokens, item, "CONSTRAINT")) {
+            item++;
+            if (skipIfExists(tokens, item)) {
+                item += 2;
+            }
+            if (item >= tokens.size()) {
+                return;
+            }
+            String constraint = RuleSupport.identifier(tokens.get(item));
+            if (constraint != null) {
+                constraints.remove(table + "." + constraint);
+            }
+            return;
+        }
+        // DROP [COLUMN] is optional; a bare identifier names a column.
+        if (skipIfExists(tokens, item)) {
+            item += 2;
+        }
+        if (item >= tokens.size()) {
+            return;
+        }
+        String column = RuleSupport.identifier(tokens.get(item));
+        if (column != null) {
+            columns.remove(table + "." + column);
+        }
+    }
+
+    private static boolean skipIfNotExists(List<Token> tokens, int index) {
+        return TokenWords.at(tokens, index, "IF") && TokenWords.at(tokens, index + 1, "NOT")
+                && TokenWords.at(tokens, index + 2, "EXISTS");
+    }
+
+    private static boolean skipIfExists(List<Token> tokens, int index) {
+        return TokenWords.at(tokens, index, "IF") && TokenWords.at(tokens, index + 1, "EXISTS");
     }
 
     private static void dropTable(ProjectStatements.Statement statement, List<Token> tokens,
                                   Map<String, Located> tables, Map<String, Located> columns,
-                                  Map<String, Located> constraints) {
+                                  Map<String, Located> constraints, Map<String, Located> indexes,
+                                  Map<String, String> indexTables) {
         int name = 2;
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
             name += 2;
         }
-        String table = RuleSupport.qualifiedName(tokens, name);
-        if (table == null) {
-            return;
+        while (name < tokens.size()) {
+            String table = RuleSupport.qualifiedName(tokens, name);
+            if (table == null) {
+                return;
+            }
+            tables.remove(table);
+            removeChildren(columns, table);
+            removeChildren(constraints, table);
+            removeIndexesFor(indexes, indexTables, table);
+            name = qualifiedNameEnd(tokens, name);
+            if (!isPunctuation(tokens, name, ",")) {
+                return;
+            }
+            name++;
         }
-        tables.remove(table);
-        removeChildren(columns, table);
-        removeChildren(constraints, table);
     }
 
-    private static void dropIndex(List<Token> tokens, Map<String, Located> indexes) {
+    private static void dropIndex(List<Token> tokens, Map<String, Located> indexes,
+                                  Map<String, String> indexTables) {
         int name = 2;
         if (TokenWords.at(tokens, name, "CONCURRENTLY")) {
             name++;
@@ -185,9 +295,32 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
             name += 2;
         }
-        String index = RuleSupport.qualifiedName(tokens, name);
-        if (index != null) {
+        while (name < tokens.size()) {
+            String index = RuleSupport.qualifiedName(tokens, name);
+            if (index == null) {
+                return;
+            }
             indexes.remove(index);
+            indexTables.remove(index);
+            name = qualifiedNameEnd(tokens, name);
+            if (!isPunctuation(tokens, name, ",")) {
+                return;
+            }
+            name++;
+        }
+    }
+
+    private static void removeIndexesFor(Map<String, Located> indexes, Map<String, String> indexTables,
+                                         String table) {
+        List<String> dropped = new ArrayList<>();
+        for (Map.Entry<String, String> entry : indexTables.entrySet()) {
+            if (RuleSupport.containsTable(java.util.Set.of(table), entry.getValue())) {
+                dropped.add(entry.getKey());
+            }
+        }
+        for (String index : dropped) {
+            indexes.remove(index);
+            indexTables.remove(index);
         }
     }
 
@@ -211,19 +344,64 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         return new Located(statement.changeSet(), statement.unit().file(), token.line(), token.column());
     }
 
-    private static int nextClause(List<Token> tokens, String keyword, int from) {
-        int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (isPunctuation(token, "(")) {
-                depth++;
-            } else if (isPunctuation(token, ")")) {
-                depth--;
-            } else if (depth == 0 && token.matchesKeyword(keyword)) {
-                return i;
-            }
+    /**
+     * Returns whether the token at {@code index} starts an {@code ALTER TABLE}
+     * action: the first action directly after the table name, or an action after
+     * a separating comma. The check keeps a column named {@code add} or
+     * {@code drop} from being mistaken for a clause keyword.
+     */
+    private static boolean isActionStart(List<Token> tokens, int index, int cursor) {
+        if (index <= cursor) {
+            return false;
         }
-        return -1;
+        Token previous = tokens.get(index - 1);
+        if (isPunctuation(previous, ",")) {
+            return true;
+        }
+        if (previous.type() == TokenType.OPERATOR && previous.text().equals("*")
+                && (index - 2 == cursor || (index >= 3 && isDot(tokens.get(index - 3))))) {
+            // ALTER TABLE [ONLY] name * action also covers descendants.
+            return true;
+        }
+        return RuleSupport.identifier(previous) != null
+                && (index - 1 == cursor || (index >= 2 && isDot(tokens.get(index - 2))));
+    }
+
+    private static boolean isDot(Token token) {
+        return isPunctuation(token, ".");
+    }
+
+    /**
+     * Returns whether the tokens at {@code index} start an unnamed constraint
+     * kind, which must not be treated as a bare column name.
+     */
+    private static boolean startsUnnamedConstraint(List<Token> tokens, int index) {
+        if (TokenWords.at(tokens, index, "PRIMARY") && TokenWords.at(tokens, index + 1, "KEY")) {
+            return true;
+        }
+        if (TokenWords.at(tokens, index, "FOREIGN") && TokenWords.at(tokens, index + 1, "KEY")) {
+            return true;
+        }
+        if (TokenWords.at(tokens, index, "CHECK")) {
+            return isPunctuation(tokens, index + 1, "(");
+        }
+        if (TokenWords.at(tokens, index, "UNIQUE")) {
+            // PostgreSQL 15+ allows UNIQUE NULLS [NOT] DISTINCT before the list.
+            return isPunctuation(tokens, index + 1, "(")
+                    || TokenWords.at(tokens, index + 1, "NULLS");
+        }
+        if (TokenWords.at(tokens, index, "EXCLUDE")) {
+            return TokenWords.at(tokens, index + 1, "USING") || isPunctuation(tokens, index + 1, "(");
+        }
+        return false;
+    }
+
+    private static int qualifiedNameEnd(List<Token> tokens, int start) {
+        int i = start + 1;
+        while (i + 1 < tokens.size() && isDot(tokens.get(i)) && RuleSupport.identifier(tokens.get(i + 1)) != null) {
+            i += 2;
+        }
+        return i;
     }
 
     private static int indexOfPunctuation(List<Token> tokens, String punctuation, int from) {
@@ -280,14 +458,34 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         return -1;
     }
 
-    private static boolean isTableConstraint(Token token) {
-        return token.matchesKeyword("CONSTRAINT")
-                || token.matchesKeyword("PRIMARY")
+    /**
+     * Returns whether a {@code CREATE TABLE} column-list segment is a table
+     * constraint rather than a column definition. {@code CONSTRAINT} and
+     * {@code EXCLUDE} are non-reserved in PostgreSQL, so they are only a
+     * constraint lead in their actual grammatical form.
+     */
+    private static boolean isTableConstraint(List<Token> segment) {
+        Token first = segment.getFirst();
+        if (first.matchesKeyword("CONSTRAINT")) {
+            return segment.size() > 2 && isConstraintKind(segment.get(2));
+        }
+        if (first.matchesKeyword("EXCLUDE")) {
+            return segment.size() > 1
+                    && (TokenWords.at(segment, 1, "USING") || isPunctuation(segment.get(1), "("));
+        }
+        return isConstraintKind(first) || first.matchesKeyword("LIKE");
+    }
+
+    private static boolean isConstraintKind(Token token) {
+        return token.matchesKeyword("PRIMARY")
                 || token.matchesKeyword("UNIQUE")
                 || token.matchesKeyword("CHECK")
                 || token.matchesKeyword("FOREIGN")
-                || token.matchesKeyword("EXCLUDE")
-                || token.matchesKeyword("LIKE");
+                || token.matchesKeyword("EXCLUDE");
+    }
+
+    private static boolean isPunctuation(List<Token> tokens, int index, String text) {
+        return index >= 0 && index < tokens.size() && isPunctuation(tokens.get(index), text);
     }
 
     private static boolean isPunctuation(Token token, String text) {
@@ -310,19 +508,20 @@ public final class DuplicateObjectRule implements ProjectAnalysisRule {
         Map<String, Located> indexes = new LinkedHashMap<>();
         Map<String, Located> columns = new LinkedHashMap<>();
         Map<String, Located> constraints = new LinkedHashMap<>();
+        Map<String, String> indexTables = new LinkedHashMap<>();
         List<Violation> violations = new ArrayList<>();
         for (ProjectStatements.Statement statement : ProjectStatements.forward(context)) {
             List<Token> tokens = statement.tokens();
             if (TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
                 createTable(statement, tokens, tables, columns, violations);
             } else if (isCreateIndex(tokens)) {
-                createIndex(statement, tokens, indexes, violations);
+                createIndex(statement, tokens, indexes, indexTables, violations);
             } else if (TokenWords.startsWith(tokens, "ALTER", "TABLE")) {
                 alterTable(statement, tokens, columns, constraints, violations);
             } else if (TokenWords.startsWith(tokens, "DROP", "TABLE")) {
-                dropTable(statement, tokens, tables, columns, constraints);
+                dropTable(statement, tokens, tables, columns, constraints, indexes, indexTables);
             } else if (TokenWords.startsWith(tokens, "DROP", "INDEX")) {
-                dropIndex(tokens, indexes);
+                dropIndex(tokens, indexes, indexTables);
             }
         }
         return List.copyOf(violations);

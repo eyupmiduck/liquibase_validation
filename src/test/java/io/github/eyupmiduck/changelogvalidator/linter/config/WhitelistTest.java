@@ -3,6 +3,7 @@ package io.github.eyupmiduck.changelogvalidator.linter.config;
 import io.github.eyupmiduck.changelogvalidator.linter.Finding;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -228,5 +229,68 @@ class WhitelistTest {
                 """);
 
         assertTrue(whitelist.apply(List.of(FINDING)).isEmpty());
+    }
+
+    /**
+     * A selector that can never match a resolved finding path is rejected at
+     * load time: an absolute path, a {@code "."} or {@code ".."} segment, or a
+     * trailing {@code "/."}.
+     */
+    @Test
+    void rejectsFileSelectorsThatCanNeverMatch() {
+        for (String file : List.of("/abs/007-some-index.sql", "C:/db/x.sql",
+                "C:\\db\\x.sql", "a//b.sql", "changes/./sql/x.sql",
+                "a/../sql/x.sql", "x.sql/.", "./../x.sql")) {
+            assertThrows(IOException.class, () -> load("- file: " + file + "\n  reason: accepted\n"), file);
+        }
+    }
+
+    /**
+     * The programmatic construction path rejects blank selectors, matching
+     * {@code load}, so a written whitelist cannot be rejected on the next run.
+     */
+    @Test
+    void rejectsBlankProgrammaticSelectors() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(" ", null, null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, "   ", null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, null, "", null, "reason"));
+    }
+
+    /**
+     * The programmatic construction paths share the load-time invariants: a
+     * non-blank reason, at least one selector, and a valid file selector.
+     */
+    @Test
+    void rejectsInvalidEntriesFromTheProgrammaticApi() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding("rule-a", null, null, null, " "));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, null, null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, "/abs/x.sql", null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, "a/../x.sql", null, null, "reason"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Whitelist.AllowedFinding(null, "db/", null, null, "reason"));
+    }
+
+    /**
+     * An entry built through the programmatic API writes the YAML list that
+     * {@link Whitelist#load} reads back unchanged.
+     */
+    @Test
+    void writesALoadableYamlList(@TempDir Path tempDir) throws IOException {
+        Whitelist.AllowedFinding entry = new Whitelist.AllowedFinding(
+                "changeset-single-statement", "changes/sql_changes/007-some-index.sql",
+                "007-some-index", null, "accepted");
+        Path file = tempDir.resolve("whitelist.yml");
+
+        Whitelist.write(List.of(entry), file);
+
+        assertEquals(List.of(entry), Whitelist.load(file).entries());
+        assertEquals(List.of(entry), Whitelist.of(List.of(entry)).entries());
     }
 }

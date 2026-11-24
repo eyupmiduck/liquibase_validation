@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 import io.github.eyupmiduck.changelogvalidator.linter.sql.SqlStatement;
@@ -40,10 +41,51 @@ public final class BlockRawAlterTableRule implements Rule {
      */
     public static final String ID = "block-raw-alter-table";
 
-    private static boolean isAlterTable(List<Token> tokens) {
-        return tokens.size() >= 2
-                && tokens.get(0).matchesKeyword("ALTER")
-                && tokens.get(1).matchesKeyword("TABLE");
+    /**
+     * Returns the index of the first {@code ALTER TABLE} phrase, or {@code -1}.
+     * A statement whose SQL was not split into individual commands can contain
+     * an {@code ALTER TABLE} after another command, so the phrase is searched for
+     * at every token position rather than only at the start.
+     */
+    private static int alterTableAt(List<Token> tokens, int from) {
+        for (int i = from; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the end of the command that starts at {@code alter}: the next
+     * top-level {@code ;}, the next top-level {@code ALTER TABLE}, or the end of
+     * the tokens. The bound keeps a hint from reading a later command's clause in
+     * an unsplit statement.
+     */
+    private static int commandEnd(List<Token> tokens, int alter) {
+        int depth = 0;
+        for (int i = alter + 2; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.type() == TokenType.PUNCTUATION) {
+                if (token.text().equals("(")) {
+                    depth++;
+                    continue;
+                }
+                if (token.text().equals(")")) {
+                    if (depth > 0) {
+                        depth--;
+                    }
+                    continue;
+                }
+                if (depth == 0 && token.text().equals(";")) {
+                    return i;
+                }
+            }
+            if (depth == 0 && token.matchesKeyword("ALTER") && TokenWords.at(tokens, i + 1, "TABLE")) {
+                return i;
+            }
+        }
+        return tokens.size();
     }
 
     /**
@@ -78,7 +120,13 @@ public final class BlockRawAlterTableRule implements Rule {
             if (next.matchesKeyword("CONSTRAINT")) {
                 return "use ddl_utils.rename_constraint";
             }
-            return "use ddl_utils.rename_column";
+            if (next.matchesKeyword("COLUMN")
+                    || (rename + 2 < tokens.size() && tokens.get(rename + 2).matchesKeyword("TO"))) {
+                return "use ddl_utils.rename_column";
+            }
+            // RENAME is unreserved in PostgreSQL, so it can be an identifier
+            // (for example a constraint named rename). Fall through to the
+            // clause checks below.
         }
         if (hasClause(tokens, "DROP", "NOT", "NULL")) {
             return "use ddl_utils.drop_not_null";
@@ -170,18 +218,25 @@ public final class BlockRawAlterTableRule implements Rule {
             }
             for (SqlStatement statement : unit.commands()) {
                 List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
-                if (!isAlterTable(tokens)) {
-                    continue;
+                int from = 0;
+                while (from < tokens.size()) {
+                    int alter = alterTableAt(tokens, from);
+                    if (alter < 0) {
+                        break;
+                    }
+                    int end = commandEnd(tokens, alter);
+                    List<Token> command = tokens.subList(alter, end);
+                    Token token = tokens.get(alter);
+                    String table = RuleSupport.qualifiedName(command, tableNameStart(command));
+                    String hint = wrapperHint(command);
+                    violations.add(new Violation(
+                            "ALTER TABLE",
+                            "raw ALTER TABLE" + (table == null ? "" : " on " + table)
+                                    + " bypasses the ddl_utils lock-aware wrappers; " + hint,
+                            "Call the matching ddl_utils function/procedure instead of a hand-written ALTER TABLE.",
+                            unit.file(), token.line(), token.column()));
+                    from = Math.max(end, alter + 1);
                 }
-                Token token = RuleSupport.firstToken(unit, statement);
-                String table = RuleSupport.qualifiedName(tokens, tableNameStart(tokens));
-                String hint = wrapperHint(tokens);
-                violations.add(new Violation(
-                        "ALTER TABLE",
-                        "raw ALTER TABLE" + (table == null ? "" : " on " + table)
-                                + " bypasses the ddl_utils lock-aware wrappers; " + hint,
-                        "Call the matching ddl_utils function/procedure instead of a hand-written ALTER TABLE.",
-                        unit.file(), token.line(), token.column()));
             }
         }
     }

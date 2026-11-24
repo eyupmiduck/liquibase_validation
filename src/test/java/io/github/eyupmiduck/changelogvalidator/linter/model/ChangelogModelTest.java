@@ -257,6 +257,27 @@ class ChangelogModelTest {
     }
 
     /**
+     * An unrecognised boolean spelling falls back to the attribute's default,
+     * matching Liquibase's BooleanParser, instead of silently flipping a
+     * default-true attribute to false.
+     */
+    @Test
+    void usesTheDefaultForAnUnrecognisedBooleanSpelling() throws IOException {
+        Path dir = Files.createDirectories(changelogRoot.resolve("malformed"));
+        Path master = dir.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <changeSet id="001-bad" author="a" runInTransaction="flase">
+                    <sql splitStatements="flase">SELECT 1;</sql>
+                </changeSet>
+                """));
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(ChangelogModel.changesets(dir, master), "001-bad");
+
+        assertTrue(changeSet.runInTransaction());
+        assertTrue(changeSet.sqlSources().getFirst().splitStatements());
+    }
+
+    /**
      * A structured addColumn is rendered into the ALTER TABLE the rules inspect.
      */
     @Test
@@ -602,6 +623,31 @@ class ChangelogModelTest {
         IOException sqlFailure = assertThrows(IOException.class,
                 () -> ChangelogModel.changesets(changelogRoot, master));
         assertTrue(sqlFailure.getMessage().contains("sqlFile without a path attribute"));
+    }
+
+    /**
+     * Liquibase's boolean spellings are honoured for changeset and source
+     * attributes, so {@code "1"} and {@code "yes"} are not read as false.
+     */
+    @Test
+    void parsesLiquibaseBooleanSpellings() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="007-booleans" author="a" runInTransaction="1" runOnChange="yes">
+                    <sqlFile path="sql_changes/007-booleans.sql" relativeToChangelogFile="yes"
+                             splitStatements="1" stripComments="on"/>
+                </changeSet>
+                """));
+        write("sql_changes/007-booleans.sql", "SELECT 1;");
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(
+                ChangelogModel.changesets(changelogRoot, master), "007-booleans");
+
+        assertTrue(changeSet.runInTransaction());
+        assertTrue(changeSet.runOnChange());
+        SqlSource source = changeSet.sqlSources().getFirst();
+        assertEquals(changelogRoot.resolve("sql_changes/007-booleans.sql").normalize(), source.path());
+        assertTrue(source.splitStatements());
+        assertTrue(source.stripComments());
     }
 
     /**

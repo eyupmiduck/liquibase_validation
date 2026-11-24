@@ -119,7 +119,8 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
      * from {@link #pgVersion()}.
      *
      * @return the major version, or {@code null} when no version is configured
-     * @throws IllegalArgumentException if the configured version is not a number
+     * @throws IllegalArgumentException if the configured version is not a number,
+     *                                  is less than 1, or does not fit in an int
      */
     public Integer postgresMajorVersion() {
         if (pgVersion == null || pgVersion.isBlank()) {
@@ -129,8 +130,8 @@ public record LinterConfig(String pgVersion, Severity failOn, List<String> exclu
         if (!PG_VERSION.matcher(normalized).matches()) {
             throw new IllegalArgumentException("invalid pgVersion: " + pgVersion);
         }
-        String major = normalized.substring(0, normalized.indexOf('.') < 0
-                ? normalized.length() : normalized.indexOf('.'));
+        int dot = normalized.indexOf('.');
+        String major = normalized.substring(0, dot < 0 ? normalized.length() : dot);
         try {
             int value = Integer.parseInt(major);
             if (value < 1) {

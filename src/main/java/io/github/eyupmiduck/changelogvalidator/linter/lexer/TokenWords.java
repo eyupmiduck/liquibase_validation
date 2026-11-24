@@ -48,7 +48,9 @@ public final class TokenWords {
      *
      * @param words    the word tokens
      * @param keywords the keywords, in order
-     * @return {@code true} when the sequence matches the start
+     * @return {@code true} when the sequence matches the start; {@code false}
+     * when {@code keywords} is empty (an empty sequence never matches,
+     * unlike {@link String#startsWith(String)})
      */
     public static boolean startsWith(List<Token> words, String... keywords) {
         if (keywords.length == 0 || words.size() < keywords.length) {
@@ -87,6 +89,8 @@ public final class TokenWords {
 
     /**
      * Returns whether {@code words} contain any of the keywords.
+     *
+     * <p>This helper is used only by the tests today; no production rule needs it.
      *
      * @param words    the word tokens
      * @param keywords the keywords

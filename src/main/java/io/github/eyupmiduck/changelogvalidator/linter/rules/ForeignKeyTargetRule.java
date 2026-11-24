@@ -3,7 +3,6 @@ package io.github.eyupmiduck.changelogvalidator.linter.rules;
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
-import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenWords;
 
 import java.util.*;
 
@@ -54,29 +53,45 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         return Severity.WARNING;
     }
 
+    private static boolean containsCreateTable(List<Token> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("CREATE")
+                    && RuleSupport.createdTableAt(tokens, i) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public List<Violation> check(ProjectContext context) {
         List<ProjectStatements.Statement> statements = ProjectStatements.forward(context);
         Set<String> created = new LinkedHashSet<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
-            if (TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
-                int name = 2;
-                if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
-                        && TokenWords.at(tokens, name + 2, "EXISTS")) {
-                    name += 3;
-                }
-                String table = RuleSupport.qualifiedName(tokens, name);
-                if (table != null) {
-                    created.add(table);
+            for (int i = 0; i < tokens.size(); i++) {
+                if (tokens.get(i).matchesKeyword("CREATE")) {
+                    String table = RuleSupport.createdTableAt(tokens, i);
+                    if (table != null) {
+                        created.add(table);
+                    }
                 }
             }
         }
         List<Violation> violations = new ArrayList<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
+            // Only a CREATE TABLE or ALTER TABLE can declare a foreign key; a
+            // REFERENCES in a SELECT can be an attribute name, and an identifier
+            // preceded by a dot is not the keyword.
+            boolean canDeclareForeignKey = RuleSupport.containsAlterTablePhrase(tokens)
+                    || containsCreateTable(tokens);
+            if (!canDeclareForeignKey) {
+                continue;
+            }
             for (int i = 0; i + 1 < tokens.size(); i++) {
-                if (!tokens.get(i).matchesKeyword("REFERENCES")) {
+                if (!tokens.get(i).matchesKeyword("REFERENCES")
+                        || (i > 0 && RuleSupport.isDot(tokens.get(i - 1)))) {
                     continue;
                 }
                 String referenced = RuleSupport.qualifiedName(tokens, i + 1);

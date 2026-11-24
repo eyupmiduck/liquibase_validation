@@ -51,4 +51,44 @@ class SqlModificationTest {
                 () -> new SqlModification(SqlModification.Kind.REGEXP_REPLACE, "[[", "", false, null));
         assertTrue(invalid.getMessage().contains("invalid regular expression"));
     }
+
+    /**
+     * A malformed REGEXP_REPLACE replacement fails when the changelog is read
+     * instead of escaping as a raw runtime exception during linting.
+     */
+    @Test
+    void rejectsAMalformedRegExpReplacement() {
+        IllegalArgumentException badGroup = assertThrows(IllegalArgumentException.class,
+                () -> new SqlModification(SqlModification.Kind.REGEXP_REPLACE, "a(\\d)", "$x", false, null));
+        assertTrue(badGroup.getMessage().contains("invalid replacement"), badGroup.getMessage());
+
+        IllegalArgumentException dangling = assertThrows(IllegalArgumentException.class,
+                () -> new SqlModification(SqlModification.Kind.REGEXP_REPLACE, "a(\\d)", "\\", false, null));
+        assertTrue(dangling.getMessage().contains("invalid replacement"), dangling.getMessage());
+    }
+
+    /**
+     * A pattern that is only compiled when applied (because it contains a
+     * {@code ${property}} placeholder) reports a pattern error as such, not as a
+     * replacement error.
+     */
+    @Test
+    void reportsAnApplyTimePatternErrorAsAPatternError() {
+        SqlModification modification = new SqlModification(
+                SqlModification.Kind.REGEXP_REPLACE, "a[${x}", "X", false, null);
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> modification.apply("SELECT a["));
+
+        assertTrue(failure.getMessage().contains("invalid regular expression"), failure.getMessage());
+    }
+
+    /**
+     * {@code !all} excludes every database, just as {@code none} does.
+     */
+    @Test
+    void treatsNotAllAsAnExclusionOfEverything() {
+        assertFalse(append("!all").appliesToPostgres());
+        assertFalse(append("!all,postgresql").appliesToPostgres());
+    }
 }

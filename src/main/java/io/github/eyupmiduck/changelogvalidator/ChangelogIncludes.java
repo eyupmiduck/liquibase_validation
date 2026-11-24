@@ -2,10 +2,12 @@ package io.github.eyupmiduck.changelogvalidator;
 
 import org.w3c.dom.Element;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.*;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -68,7 +70,7 @@ public final class ChangelogIncludes {
             }
         }
         boolean relativeToChangelogFile =
-                "true".equalsIgnoreCase(includeAll.getAttribute("relativeToChangelogFile"));
+                booleanAttribute(includeAll, "relativeToChangelogFile", false);
         Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
         Path directory = resolveWithin(root, base, path, "includeAll");
         boolean errorIfMissingOrEmpty = booleanAttribute(includeAll, "errorIfMissingOrEmpty", true);
@@ -78,13 +80,20 @@ public final class ChangelogIncludes {
         if (minDepth < 0) {
             throw new IOException("includeAll minDepth must not be negative: " + path);
         }
+        if (maxDepth < 0) {
+            throw new IOException("includeAll maxDepth must not be negative: " + path);
+        }
         // Liquibase's internal default is 0, but a file directly in the include
         // directory is depth 1 here (as the documentation describes), so an
-        // explicit 0 selects the same files as the default.
-        minDepth = Math.max(minDepth, 1);
+        // explicit 0 selects the same files as the default. maxDepth 0 means
+        // unlimited. Normalise maxDepth and validate it against the parsed
+        // minDepth before clamping, so an explicit minDepth="0" maxDepth="0"
+        // pair is accepted while minDepth="2" maxDepth="1" still fails closed.
+        maxDepth = maxDepth == 0 ? Integer.MAX_VALUE : maxDepth;
         if (maxDepth < minDepth) {
             throw new IOException("includeAll maxDepth must not be less than minDepth: " + path);
         }
+        minDepth = Math.max(minDepth, 1);
         if (!Files.isDirectory(directory)) {
             if (errorIfMissingOrEmpty) {
                 throw new IOException("includeAll directory not found: " + path);
@@ -93,7 +102,7 @@ public final class ChangelogIncludes {
         }
         List<Path> files = new ArrayList<>();
         Path realRoot = root.toRealPath();
-        try (var stream = Files.walk(directory)) {
+        try (var stream = Files.walk(directory, maxDepth)) {
             for (Path file : stream.filter(Files::isRegularFile).toList()) {
                 int depth = directory.relativize(file).getNameCount();
                 if (depth < minDepth || depth > maxDepth) {
@@ -145,9 +154,20 @@ public final class ChangelogIncludes {
         if (!resolved.startsWith(root)) {
             throw new IOException(kind + " escapes the changelog root: " + reference);
         }
-        if (Files.exists(resolved)) {
+        // Test the link itself rather than its target: a dangling symlink whose
+        // target lies outside the root would otherwise look absent and skip the
+        // containment check entirely.
+        if (Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) {
             Path realRoot = root.toRealPath();
-            Path realResolved = resolved.toRealPath();
+            Path realResolved;
+            try {
+                realResolved = resolved.toRealPath();
+            } catch (NoSuchFileException e) {
+                // The link exists but its target does not, so containment cannot
+                // be verified. Fail closed; includeAll would reject it later.
+                throw new IOException(kind + " escapes the changelog root via a symlink"
+                        + " (the link is dangling): " + reference, e);
+            }
             if (!realResolved.startsWith(realRoot)) {
                 throw new IOException(kind + " escapes the changelog root via a symlink: " + reference);
             }
@@ -174,7 +194,13 @@ public final class ChangelogIncludes {
      * @throws IOException if the file cannot be read
      */
     public static boolean isFormattedSql(Path file) throws IOException {
-        try (var reader = Files.newBufferedReader(file)) {
+        // Decode leniently so a mis-encoded (for example Latin-1 or UTF-16) SQL
+        // file is classified as not formatted and reported by the unformatted-SQL
+        // check instead of aborting the whole graph with a MalformedInputException.
+        var decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        try (var reader = new BufferedReader(new InputStreamReader(Files.newInputStream(file), decoder))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 String stripped = line.strip();
@@ -199,8 +225,15 @@ public final class ChangelogIncludes {
         return dot < 0 ? "" : name.substring(dot).toLowerCase(Locale.ROOT);
     }
 
-    private static boolean booleanAttribute(Element element, String name, boolean defaultValue) {
-        return element.hasAttribute(name) ? Boolean.parseBoolean(element.getAttribute(name)) : defaultValue;
+    private static boolean booleanAttribute(Element element, String name, boolean defaultValue) throws IOException {
+        if (!element.hasAttribute(name)) {
+            return defaultValue;
+        }
+        String value = element.getAttribute(name).strip();
+        if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+            throw new IOException("includeAll " + name + " is not a boolean: " + value);
+        }
+        return "true".equalsIgnoreCase(value);
     }
 
     private static int intAttribute(Element element, String name, int defaultValue) throws IOException {

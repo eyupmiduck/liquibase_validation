@@ -88,6 +88,7 @@ class CatalogCommentsCheckTest extends PostgresTestBase {
                 "COMMENT ON TYPE " + SCHEMA + ".mood IS 'fixture enum'",
                 "CREATE TYPE " + SCHEMA + ".price_range AS RANGE (subtype = numeric)",
                 "COMMENT ON TYPE " + SCHEMA + ".price_range IS 'fixture range'",
+                "COMMENT ON TYPE " + SCHEMA + ".price_multirange IS 'fixture multirange'",
                 "CREATE FUNCTION " + SCHEMA + ".add_one(i_value integer) RETURNS integer"
                         + " LANGUAGE sql AS 'SELECT i_value + 1'",
                 "COMMENT ON FUNCTION " + SCHEMA + ".add_one(integer) IS 'fixture function'",
@@ -155,6 +156,7 @@ class CatalogCommentsCheckTest extends PostgresTestBase {
                 "composite type " + SCHEMA + ".pair",
                 "enum type " + SCHEMA + ".mood",
                 "range type " + SCHEMA + ".price_range",
+                "multirange type " + SCHEMA + ".price_multirange",
                 "function " + SCHEMA + ".add_one",
                 "procedure " + SCHEMA + ".do_nothing",
                 "function " + SCHEMA + ".set_updated_at",
@@ -214,6 +216,23 @@ class CatalogCommentsCheckTest extends PostgresTestBase {
                 problems.getFirst());
 
         execute("COMMENT ON DOMAIN " + SCHEMA + ".int_array IS 'fixture domain'");
+        assertEquals(List.of(), problems(true));
+    }
+
+    /**
+     * A range type's auto-created multirange companion is inspected too.
+     */
+    @Test
+    void inspectsTheMultirangeCompanionOfARangeType() throws Exception {
+        execute(
+                "COMMENT ON SCHEMA " + SCHEMA + " IS 'fixture schema'",
+                "CREATE TYPE " + SCHEMA + ".price_range AS RANGE (subtype = numeric)",
+                "COMMENT ON TYPE " + SCHEMA + ".price_range IS 'fixture range'");
+
+        assertEquals(List.of("multirange type " + SCHEMA + ".price_multirange: missing or blank comment"),
+                problems(true));
+
+        execute("COMMENT ON TYPE " + SCHEMA + ".price_multirange IS 'fixture multirange'");
         assertEquals(List.of(), problems(true));
     }
 

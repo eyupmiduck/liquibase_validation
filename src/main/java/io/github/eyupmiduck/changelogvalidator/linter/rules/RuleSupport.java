@@ -105,30 +105,118 @@ final class RuleSupport {
     }
 
     /**
-     * Returns whether {@code table} is one of {@code tables}, comparing the final
-     * name segment so a schema-qualified and an unqualified reference to the same
-     * table match.
-     *
-     * @param tables the created table names
-     * @param table  the table to look for
-     * @return {@code true} when the table is present
+     * Returns whether the token stream contains an {@code ALTER TABLE} phrase at
+     * any position. An unsplit command can hold several commands, so a rule that
+     * only inspects the first tokens would miss a later {@code ALTER TABLE}.
      */
-    static boolean containsTable(Set<String> tables, String table) {
-        if (tables.contains(table)) {
-            return true;
-        }
-        String simple = simpleName(table);
-        for (String candidate : tables) {
-            if (simpleName(candidate).equals(simple)) {
+    static boolean containsAlterTablePhrase(List<Token> tokens) {
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
                 return true;
             }
         }
         return false;
     }
 
+    /**
+     * Returns whether {@code candidate} and {@code table} denote the same table
+     * under the shared policy: an exact match, or equal simple names when at
+     * least one side is unqualified.
+     *
+     * @param candidate a known or created table name
+     * @param table     the table to compare
+     * @return {@code true} when they denote the same table
+     */
+    static boolean sameTable(String candidate, String table) {
+        if (candidate.equals(table)) {
+            return true;
+        }
+        if (isQualified(table) && isQualified(candidate)) {
+            return false;
+        }
+        return simpleName(candidate).equals(simpleName(table));
+    }
+
+    /**
+     * Returns whether {@code table} is one of {@code tables}, comparing the final
+     * name segment so a schema-qualified and an unqualified reference to the same
+     * table match. Two different schema-qualified names never match, even when
+     * their final segments are equal.
+     *
+     * @param tables the created table names
+     * @param table  the table to look for
+     * @return {@code true} when the table is present
+     */
+    static boolean containsTable(Set<String> tables, String table) {
+        for (String candidate : tables) {
+            if (sameTable(candidate, table)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isQualified(String name) {
+        return name.lastIndexOf('.') >= 0;
+    }
+
     private static String simpleName(String name) {
         int dot = name.lastIndexOf('.');
         return dot < 0 ? name : name.substring(dot + 1);
+    }
+
+    /**
+     * Returns whether the token is one of the {@code CREATE} modifiers that can
+     * precede {@code TABLE}: {@code UNLOGGED}, {@code TEMPORARY}/{@code TEMP},
+     * {@code GLOBAL} or {@code LOCAL}.
+     *
+     * @param token the token
+     * @return {@code true} for a {@code CREATE TABLE} modifier
+     */
+    static boolean isCreateModifier(Token token) {
+        return token.matchesKeyword("UNLOGGED")
+                || token.matchesKeyword("TEMPORARY")
+                || token.matchesKeyword("TEMP")
+                || token.matchesKeyword("GLOBAL")
+                || token.matchesKeyword("LOCAL");
+    }
+
+    /**
+     * Returns the index of the table name in a {@code CREATE [modifier] TABLE}
+     * statement that starts at {@code create}, or {@code -1} when the tokens do
+     * not name a table (for example a {@code CREATE INDEX}).
+     *
+     * @param tokens the statement's tokens
+     * @param create the index of the {@code CREATE} keyword
+     * @return the index of the table name, or -1
+     */
+    static int createdTableNameIndex(List<Token> tokens, int create) {
+        int table = create + 1;
+        while (table < tokens.size() && isCreateModifier(tokens.get(table))) {
+            table++;
+        }
+        if (!TokenWords.at(tokens, table, "TABLE")) {
+            return -1;
+        }
+        int name = table + 1;
+        if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
+                && TokenWords.at(tokens, name + 2, "EXISTS")) {
+            name += 3;
+        }
+        return name;
+    }
+
+    /**
+     * Returns the normalized table name created by a {@code CREATE [modifier]
+     * TABLE} statement that starts at {@code create}, or {@code null}.
+     *
+     * @param tokens the statement's tokens
+     * @param create the index of the {@code CREATE} keyword
+     * @return the normalized table name, or null
+     */
+    static String createdTableAt(List<Token> tokens, int create) {
+        int name = createdTableNameIndex(tokens, create);
+        return name < 0 ? null : qualifiedName(tokens, name);
     }
 
     /**
@@ -188,6 +276,12 @@ final class RuleSupport {
      */
     static Token firstToken(SqlUnit unit, SqlStatement statement) {
         for (Token token : unit.tokens()) {
+            if (token.startOffset() >= statement.endOffset()) {
+                break;
+            }
+            if (token.isTrivia()) {
+                continue;
+            }
             if (token.startOffset() >= statement.startOffset() && token.endOffset() <= statement.endOffset()) {
                 return token;
             }
@@ -219,6 +313,7 @@ final class RuleSupport {
         return switch (family) {
             case CREATE_INDEX_CONCURRENTLY -> "CREATE INDEX CONCURRENTLY";
             case DROP_INDEX_CONCURRENTLY -> "DROP INDEX CONCURRENTLY";
+            case REFRESH_MATERIALIZED_VIEW_CONCURRENTLY -> "REFRESH MATERIALIZED VIEW CONCURRENTLY";
             case REINDEX_CONCURRENTLY -> "REINDEX CONCURRENTLY";
             case REINDEX -> "REINDEX DATABASE/SYSTEM/SCHEMA";
             case DETACH_PARTITION_CONCURRENTLY -> "ALTER TABLE ... DETACH PARTITION CONCURRENTLY";

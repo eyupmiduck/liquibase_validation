@@ -5,6 +5,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.SqlUnit;
 import io.github.eyupmiduck.changelogvalidator.linter.lexer.Token;
+import io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType;
 import io.github.eyupmiduck.changelogvalidator.linter.model.RoutineBodies;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
@@ -27,6 +28,28 @@ public final class RoutineTransactionControlRule implements Rule {
      * The rule id.
      */
     public static final String ID = "routine-transaction-control";
+
+    /**
+     * Returns whether the {@code COMMIT}/{@code ROLLBACK} at {@code index} is a
+     * transaction-control statement rather than an identifier. The next
+     * non-trivia token is {@code ;}, {@code WORK}, {@code TRANSACTION}, {@code TO}
+     * or {@code AND}, or the body ends.
+     */
+    private static boolean isTransactionControl(List<Token> tokens, int index) {
+        for (int i = index + 1; i < tokens.size(); i++) {
+            Token next = tokens.get(i);
+            if (next.isTrivia()) {
+                continue;
+            }
+            return (next.type() == TokenType.PUNCTUATION && next.text().equals(";"))
+                    || next.matchesKeyword("WORK")
+                    || next.matchesKeyword("TRANSACTION")
+                    || next.matchesKeyword("TO")
+                    || next.matchesKeyword("AND")
+                    || next.matchesKeyword("PREPARED");
+        }
+        return true;
+    }
 
     @Override
     public String id() {
@@ -58,11 +81,14 @@ public final class RoutineTransactionControlRule implements Rule {
                 if (body.kind() != RoutineBodies.Kind.FUNCTION) {
                     continue;
                 }
-                for (Token token : body.tokens()) {
+                List<Token> tokens = body.tokens();
+                for (int i = 0; i < tokens.size(); i++) {
+                    Token token = tokens.get(i);
                     if (token.isTrivia()) {
                         continue;
                     }
-                    if (token.matchesKeyword("COMMIT") || token.matchesKeyword("ROLLBACK")) {
+                    if ((token.matchesKeyword("COMMIT") || token.matchesKeyword("ROLLBACK"))
+                            && isTransactionControl(tokens, i)) {
                         violations.add(new Violation(
                                 token.text().toUpperCase(java.util.Locale.ROOT),
                                 "stored function body uses transaction control",

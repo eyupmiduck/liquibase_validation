@@ -176,6 +176,8 @@ public final class SqlStatementSplitter {
         List<SqlStatement> statements = new ArrayList<>();
         int statementStart = -1;
         int statementEnd = -1;
+        int statementLine = -1;
+        int statementColumn = -1;
         int lineStart = 0;
         int lineNumber = 1;
         while (lineStart <= sql.length()) {
@@ -186,12 +188,17 @@ public final class SqlStatementSplitter {
                     && !opaqueLines.contains(lineNumber)
                     && sql.substring(first, last + 1).equalsIgnoreCase(delimiter);
             if (delimiterLine) {
-                addLineStatement(statements, sql, tokens, statementStart, statementEnd, stripComments);
+                addLineStatement(statements, sql, statementStart, statementEnd,
+                        statementLine, statementColumn, stripComments);
                 statementStart = -1;
                 statementEnd = -1;
+                statementLine = -1;
+                statementColumn = -1;
             } else if (first >= 0) {
                 if (statementStart < 0) {
                     statementStart = first;
+                    statementLine = lineNumber;
+                    statementColumn = first - lineStart + 1;
                 }
                 statementEnd = last + 1;
             }
@@ -201,25 +208,41 @@ public final class SqlStatementSplitter {
             lineStart = nextLineStart(sql, lineEnd);
             lineNumber++;
         }
-        addLineStatement(statements, sql, tokens, statementStart, statementEnd, stripComments);
+        addLineStatement(statements, sql, statementStart, statementEnd,
+                statementLine, statementColumn, stripComments);
         return List.copyOf(statements);
     }
 
     /**
      * Adds a line-scanned segment unless it is empty or contains only comments.
-     * The segment text is lexed again because the full token stream can classify
-     * a delimiter-bounded comment region as a dollar-quoted string.
+     * The segment text is re-lexed with absolute offsets because the full token
+     * stream can classify a delimiter-bounded comment region as a dollar-quoted
+     * string; the fragment's own tokens then pair its dollar quotes correctly and
+     * its real comment tokens are stripped. The span is trimmed to the fragment's
+     * first and last non-trivia token, matching the token-scan path.
      */
-    private static void addLineStatement(List<SqlStatement> statements, String sql, List<Token> tokens,
-                                         int start, int end, boolean stripComments) {
-        if (start < 0 || hasOnlyTriviaInText(sql, start, end)) {
+    private static void addLineStatement(List<SqlStatement> statements, String sql,
+                                         int start, int end, int line, int column,
+                                         boolean stripComments) {
+        if (start < 0) {
             return;
         }
-        addIfNotEmpty(statements, sql, tokens, start, end, stripComments);
-    }
-
-    private static boolean hasOnlyTriviaInText(String sql, int start, int end) {
-        return SqlLexer.tokenize(sql.substring(start, end)).stream().allMatch(Token::isTrivia);
+        List<Token> fragmentTokens = SqlLexer.tokenize(sql.substring(start, end), start, line, column);
+        int first = -1;
+        int last = -1;
+        for (Token token : fragmentTokens) {
+            if (token.isTrivia()) {
+                continue;
+            }
+            if (first < 0) {
+                first = token.startOffset();
+            }
+            last = token.endOffset();
+        }
+        if (first < 0) {
+            return;
+        }
+        addIfNotEmpty(statements, sql, fragmentTokens, first, last, stripComments);
     }
 
     private static boolean isDelimiter(List<Token> tokens, int index, String delimiter) {
@@ -351,35 +374,19 @@ public final class SqlStatementSplitter {
                 || character == '\r' || character == '\f' || character == '\u000B';
     }
 
+    /**
+     * Adds a statement for a range that both call sites have already trimmed to
+     * a non-trivia token, so the range always yields non-empty text.
+     */
     private static void addIfNotEmpty(List<SqlStatement> statements, String sql, List<Token> tokens,
                                       int start, int end, boolean stripComments) {
-        if (start < 0 || hasOnlyTrivia(tokens, start, end)) {
+        if (start < 0) {
             return;
         }
         String text = statementText(sql, tokens, start, end, stripComments);
         if (!text.isEmpty()) {
             statements.add(new SqlStatement(text, start, end));
         }
-    }
-
-    /**
-     * Returns whether the token range contains no non-trivia token. The token
-     * scan never creates such a range, but the line scan can when a
-     * dollar-quote-delimited segment holds only comments.
-     */
-    private static boolean hasOnlyTrivia(List<Token> tokens, int start, int end) {
-        for (Token token : tokens) {
-            if (token.endOffset() <= start) {
-                continue;
-            }
-            if (token.startOffset() >= end) {
-                break;
-            }
-            if (!token.isTrivia()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static String statementText(String sql, List<Token> tokens, int start, int end, boolean stripComments) {

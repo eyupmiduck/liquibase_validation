@@ -411,6 +411,75 @@ class ChangelogLayoutCheckTest {
     }
 
     /**
+     * The ON-table lookup is bounded to the trigger's own statement, so an ON
+     * in a later GRANT/COMMENT/INDEX statement does not bind to the trigger.
+     */
+    @Test
+    void doesNotBindATriggersOnToALaterStatement() throws IOException {
+        project(triggerChangeSet("trigger-app.foo_trg",
+                "triggers/app/foo_trg.sql", "triggers-rollback/app/foo_trg-rollback.sql"));
+        write("changes/triggers/app/foo_trg.sql", """
+                CREATE OR REPLACE TRIGGER foo_trg
+                    BEFORE UPDATE
+                    FOR EACH ROW
+                EXECUTE FUNCTION app.set_updated_at();
+                GRANT EXECUTE ON app.foo TO app_writer;
+                """);
+        write("changes/triggers-rollback/app/foo_trg-rollback.sql", "DROP TRIGGER IF EXISTS foo_trg ON app.foo;\n");
+
+        List<ChangelogLayoutCheck.Violation> violations = violations();
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.getFirst().message().contains("not schema-qualified"),
+                violations.getFirst().message());
+    }
+
+    /**
+     * A quoted identifier keeps its case in PostgreSQL, so a quoted declaration
+     * that differs only in case from the path is reported.
+     */
+    @Test
+    void reportsAQuotedDeclarationThatDiffersOnlyInCase() throws IOException {
+        project(procedureChangeSet("function-app.foo",
+                "functions/app/foo.sql", "functions-rollback/app/foo-rollback.sql"));
+        write("changes/functions/app/foo.sql",
+                "CREATE OR REPLACE FUNCTION app.\"Foo\"() RETURNS integer LANGUAGE sql AS 'SELECT 1';\n");
+        write("changes/functions-rollback/app/foo-rollback.sql", "DROP FUNCTION IF EXISTS app.foo();\n");
+
+        List<ChangelogLayoutCheck.Violation> violations = violations();
+        assertEquals(1, violations.size(), violations.toString());
+        assertTrue(violations.getFirst().message().contains("declares app.Foo"),
+                violations.getFirst().message());
+    }
+
+    /**
+     * An unquoted identifier folds to lower case in PostgreSQL, so a declaration
+     * that differs only in case still names the path's object.
+     */
+    @Test
+    void acceptsAnUnquotedDeclarationWithDifferentCase() throws IOException {
+        project(procedureChangeSet("function-app.foo",
+                "functions/app/foo.sql", "functions-rollback/app/foo-rollback.sql"));
+        write("changes/functions/app/foo.sql",
+                "CREATE OR REPLACE FUNCTION APP.FOO() RETURNS integer LANGUAGE sql AS 'SELECT 1';\n");
+        write("changes/functions-rollback/app/foo-rollback.sql", "DROP FUNCTION IF EXISTS app.foo();\n");
+
+        assertEquals(List.of(), violations());
+    }
+
+    /**
+     * The path comparison is deliberately case-insensitive for checkouts on a
+     * case-insensitive filesystem; this pins that documented leniency.
+     */
+    @Test
+    void acceptsAPathCaseVariant() throws IOException {
+        project(sqlChangeSet("001-create", "Sql_Changes/001-Create.sql", "Rollback/001-Create-rollback.sql"));
+        write("changes/Sql_Changes/001-Create.sql", "SELECT 1;\n");
+        write("changes/Rollback/001-Create-rollback.sql", "SELECT 1;\n");
+
+        assertEquals(List.of(), violations());
+    }
+
+    /**
      * A file that is declared twice is reported.
      */
     @Test
@@ -471,6 +540,8 @@ class ChangelogLayoutCheckTest {
         List<ChangelogLayoutCheck.Violation> violations = violations();
         assertEquals(1, violations.size(), violations.toString());
         assertTrue(violations.getFirst().message().contains("cannot classify"),
+                violations.getFirst().message());
+        assertTrue(violations.getFirst().message().contains("line 1"),
                 violations.getFirst().message());
     }
 

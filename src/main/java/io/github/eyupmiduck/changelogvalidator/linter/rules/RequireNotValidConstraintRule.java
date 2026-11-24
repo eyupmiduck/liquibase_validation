@@ -37,13 +37,41 @@ public final class RequireNotValidConstraintRule implements Rule {
     public static final String ID = "require-not-valid-constraint";
 
     /**
-     * Returns the next top-level {@code ADD} at or after {@code from}, or -1.
+     * Returns the end of the {@code ALTER TABLE} command that starts at {@code cursor}:
+     * the next top-level {@code ;} or {@code ALTER TABLE} phrase, or the end of
+     * the tokens. An unsplit statement can hold several commands, and each one
+     * must only examine its own {@code ADD} clauses.
+     */
+    private static int commandEnd(List<Token> tokens, int cursor) {
+        int depth = 0;
+        for (int i = cursor; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (isPunctuation(token, "(")) {
+                depth++;
+            } else if (isPunctuation(token, ")")) {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth == 0) {
+                if (isPunctuation(token, ";")) {
+                    return i;
+                }
+                if (token.matchesKeyword("ALTER") && TokenWords.at(tokens, i + 1, "TABLE")) {
+                    return i;
+                }
+            }
+        }
+        return tokens.size();
+    }
+
+    /**
+     * Returns the next top-level {@code ADD} in {@code [from, end)}, or -1.
      * Skipping a nested one keeps an {@code add} column inside a CHECK expression
      * from being mistaken for a new clause.
      */
-    private static int nextAdd(List<Token> tokens, int from) {
+    private static int nextAdd(List<Token> tokens, int from, int end) {
         int depth = 0;
-        for (int i = from; i < tokens.size(); i++) {
+        for (int i = from; i < end; i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
                 depth++;
@@ -58,14 +86,14 @@ public final class RequireNotValidConstraintRule implements Rule {
 
     /**
      * Returns whether the current {@code ADD} clause has a top-level {@code NOT
-     * VALID}. The scan stops at the next top-level {@code ADD} and ignores a
-     * {@code NOT valid} pair inside a CHECK expression.
+     * VALID}. The scan stops at the next top-level {@code ADD} or the end of the
+     * command and ignores a {@code NOT valid} pair inside a CHECK expression.
      */
-    private static boolean notValid(List<Token> tokens, int add) {
-        int next = nextAdd(tokens, add + 1);
-        int end = next < 0 ? tokens.size() : next;
+    private static boolean notValid(List<Token> tokens, int add, int end) {
+        int next = nextAdd(tokens, add + 1, end);
+        int clauseEnd = next < 0 ? end : next;
         int depth = 0;
-        for (int i = add; i < end; i++) {
+        for (int i = add; i < clauseEnd; i++) {
             Token token = tokens.get(i);
             if (isPunctuation(token, "(")) {
                 depth++;
@@ -130,18 +158,26 @@ public final class RequireNotValidConstraintRule implements Rule {
                     if (table == null) {
                         continue;
                     }
-                    for (int add = nextAdd(tokens, cursor); add >= 0; add = nextAdd(tokens, add + 1)) {
+                    int end = commandEnd(tokens, cursor);
+                    for (int add = nextAdd(tokens, cursor, end); add >= 0;
+                         add = nextAdd(tokens, add + 1, end)) {
                         int constraint = add + 1;
                         if (TokenWords.at(tokens, constraint, "CONSTRAINT")) {
                             constraint++;
-                            if (constraint < tokens.size()
+                            if (constraint < end
                                     && RuleSupport.identifier(tokens.get(constraint)) != null) {
                                 constraint++;
                             }
                         }
-                        boolean check = TokenWords.at(tokens, constraint, "CHECK");
-                        boolean foreign = TokenWords.at(tokens, constraint, "FOREIGN");
-                        if ((!check && !foreign) || notValid(tokens, add)
+                        // The CONSTRAINT keyword is optional: ADD <name> CHECK (...).
+                        if (constraint < end && RuleSupport.identifier(tokens.get(constraint)) != null
+                                && (TokenWords.at(tokens, constraint + 1, "CHECK")
+                                || TokenWords.at(tokens, constraint + 1, "FOREIGN"))) {
+                            constraint++;
+                        }
+                        boolean check = constraint < end && TokenWords.at(tokens, constraint, "CHECK");
+                        boolean foreign = constraint < end && TokenWords.at(tokens, constraint, "FOREIGN");
+                        if ((!check && !foreign) || notValid(tokens, add, end)
                                 || RuleSupport.containsTable(createdTables, table)) {
                             continue;
                         }

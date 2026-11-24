@@ -64,6 +64,13 @@ public final class SarifReporter implements Reporter {
             return absolute.toUri().getRawPath();
         }
         String path = workingDirectory.relativize(absolute).toString().replace('\\', '/');
+        int firstSegmentEnd = path.indexOf('/');
+        String firstSegment = path.substring(0, firstSegmentEnd < 0 ? path.length() : firstSegmentEnd);
+        if (firstSegment.indexOf(':') >= 0) {
+            // RFC 3986 section 4.2: a ':' in the first segment of a relative
+            // reference is otherwise misparsed as the scheme separator.
+            path = "./" + path;
+        }
         try {
             return new URI(null, null, path, null).getRawPath();
         } catch (URISyntaxException e) {

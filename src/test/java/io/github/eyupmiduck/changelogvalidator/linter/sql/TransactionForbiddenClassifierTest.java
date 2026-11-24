@@ -29,8 +29,16 @@ class TransactionForbiddenClassifierTest {
                 Arguments.of("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx ON t (c);",
                         Family.CREATE_INDEX_CONCURRENTLY),
                 Arguments.of("DROP INDEX CONCURRENTLY idx;", Family.DROP_INDEX_CONCURRENTLY),
+                Arguments.of("REFRESH MATERIALIZED VIEW CONCURRENTLY mv;",
+                        Family.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
+                Arguments.of("REFRESH MATERIALIZED VIEW CONCURRENTLY sch.mv;",
+                        Family.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
+                Arguments.of("REFRESH MATERIALIZED VIEW CONCURRENTLY \"MV\";",
+                        Family.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
                 Arguments.of("REINDEX INDEX CONCURRENTLY idx;", Family.REINDEX_CONCURRENTLY),
                 Arguments.of("REINDEX TABLE CONCURRENTLY t;", Family.REINDEX_CONCURRENTLY),
+                Arguments.of("REINDEX (CONCURRENTLY) TABLE t;", Family.REINDEX_CONCURRENTLY),
+                Arguments.of("REINDEX (VERBOSE, CONCURRENTLY) INDEX i;", Family.REINDEX_CONCURRENTLY),
                 Arguments.of("REINDEX DATABASE d;", Family.REINDEX),
                 Arguments.of("REINDEX SYSTEM;", Family.REINDEX),
                 Arguments.of("REINDEX SCHEMA s;", Family.REINDEX),
@@ -58,7 +66,14 @@ class TransactionForbiddenClassifierTest {
                 Arguments.of("DROP INDEX idx;"),
                 Arguments.of("REINDEX INDEX idx;"),
                 Arguments.of("REINDEX TABLE idx;"),
+                Arguments.of("REINDEX TABLE concurrently;"),
                 Arguments.of("REINDEX INDEX public.concurrently;"),
+                Arguments.of("REINDEX (CONCURRENTLY false) TABLE t;"),
+                Arguments.of("REINDEX (CONCURRENTLY off) TABLE t;"),
+                Arguments.of("REINDEX (CONCURRENTLY 0) TABLE t;"),
+                Arguments.of("REINDEX (TABLESPACE concurrently) TABLE t;"),
+                Arguments.of("REFRESH MATERIALIZED VIEW mv;"),
+                Arguments.of("REFRESH MATERIALIZED VIEW concurrently;"),
                 Arguments.of("CREATE TABLE t (c int);"),
                 Arguments.of("ALTER TABLE t ADD COLUMN c int;"),
                 Arguments.of("ALTER TABLE t DETACH PARTITION p;"),
@@ -124,6 +139,26 @@ class TransactionForbiddenClassifierTest {
     void requiresGrammarAdjacency() {
         assertTrue(families("CREATE INDEX idx ON t (concurrently);", 17).isEmpty());
         assertTrue(families("ALTER TYPE mood ADD ATTRIBUTE value int;", 11).isEmpty());
+        assertTrue(families("ALTER TYPE comp ADD ATTRIBUTE (add value);", 11).isEmpty());
+        assertTrue(families("ALTER TYPE comp ADD ATTRIBUTE (add value, other int);", 11).isEmpty());
+    }
+
+    /**
+     * {@code familyOf} ignores trivia, so a direct caller may pass raw lexer
+     * output and a comment between the partition name and the option does not
+     * hide the option.
+     */
+    @Test
+    void familyOfIgnoresTrivia() {
+        String sql = "ALTER TABLE t DETACH PARTITION /*c*/ p CONCURRENTLY;";
+
+        assertEquals(java.util.Optional.of(Family.DETACH_PARTITION_CONCURRENTLY),
+                TransactionForbiddenClassifier.familyOf(SqlLexer.tokenize(sql), 17));
+        // A trailing delimiter is not the required object name after the option.
+        assertTrue(TransactionForbiddenClassifier.familyOf(
+                SqlLexer.tokenize("REINDEX TABLE concurrently;"), 17).isEmpty());
+        assertTrue(TransactionForbiddenClassifier.familyOf(
+                SqlLexer.tokenize("REFRESH MATERIALIZED VIEW CONCURRENTLY;"), 17).isEmpty());
     }
 
     /**

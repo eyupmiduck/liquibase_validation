@@ -147,6 +147,91 @@ class SchemaLayeringCheckTest extends PostgresTestBase {
     }
 
     /**
+     * A SQL-standard body ({@code BEGIN ATOMIC}) stores no {@code prosrc} text to
+     * scan. The check must not fail, and the body is a documented blind spot.
+     */
+    @Test
+    void handlesASqlStandardBodyWithoutFailing() throws SQLException {
+        try (Connection owner = openOwnerConnection();
+             Statement statement = owner.createStatement()) {
+            statement.execute("CREATE FUNCTION " + BOTTOM + ".atomic_body() RETURNS integer"
+                    + " LANGUAGE sql BEGIN ATOMIC SELECT " + TOP + ".top_fn(); END");
+        }
+
+        SchemaLayeringCheck.Report report = inspect(Set.of());
+        assertEquals(List.of(), report.unexpected(), report.unexpected().toString());
+    }
+
+    /**
+     * A quoted schema identifier compares exactly: {@code "LAYERING_TOP"} is a
+     * different schema from {@code layering_top}, so it is not a reference to it.
+     */
+    @Test
+    void doesNotMatchAQuotedSchemaWithDifferentCase() throws SQLException {
+        String database = dsl.fetchOne("SELECT pg_catalog.current_database()").get(0, String.class);
+        String mixedCase = "LAYERING_TOP";
+        try (Connection admin = openAdminConnection(database);
+             Statement statement = admin.createStatement()) {
+            statement.execute("DROP SCHEMA IF EXISTS " + quote(mixedCase) + " CASCADE");
+            statement.execute("CREATE SCHEMA " + quote(mixedCase) + " AUTHORIZATION "
+                    + quote(configuration().ownerUser()));
+        }
+        try (Connection owner = openOwnerConnection();
+             Statement statement = owner.createStatement()) {
+            statement.execute("CREATE FUNCTION " + quote(mixedCase) + ".top_fn() RETURNS integer"
+                    + " LANGUAGE sql AS 'SELECT 1'");
+            statement.execute("CREATE FUNCTION " + BOTTOM + ".bad_case() RETURNS integer"
+                    + " LANGUAGE sql AS 'SELECT " + quote(mixedCase) + ".top_fn()'");
+        }
+
+        SchemaLayeringCheck.Report report = inspect(Set.of());
+        assertEquals(List.of(), report.unexpected(), report.unexpected().toString());
+    }
+
+    /**
+     * An unquoted object name folds to lower case, like the catalog name, so an
+     * allow-list entry written with the catalog name matches.
+     */
+    @Test
+    void foldsAnUnquotedObjectNameToLowerCase() throws SQLException {
+        try (Connection owner = openOwnerConnection();
+             Statement statement = owner.createStatement()) {
+            statement.execute("CREATE FUNCTION " + BOTTOM + ".bad_object_case() RETURNS integer"
+                    + " LANGUAGE sql AS 'SELECT " + TOP + ".TOP_FN()'");
+        }
+
+        SchemaLayeringCheck.Report report = inspect(Set.of());
+        assertEquals(List.of(new SchemaLayeringCheck.Reference(BOTTOM, "bad_object_case", TOP, "top_fn")),
+                report.unexpected());
+    }
+
+    /**
+     * Extension-owned routines do not make a schema non-empty, because the scan
+     * cannot see them.
+     */
+    @Test
+    void excludesExtensionOwnedRoutinesFromTheObjectCount() throws SQLException {
+        String database = dsl.fetchOne("SELECT pg_catalog.current_database()").get(0, String.class);
+        String extensionSchema = "layering_extension";
+        try (Connection admin = openAdminConnection(database);
+             Statement statement = admin.createStatement()) {
+            statement.execute("DROP EXTENSION IF EXISTS intagg CASCADE");
+            statement.execute("DROP SCHEMA IF EXISTS " + extensionSchema + " CASCADE");
+            statement.execute("CREATE SCHEMA " + extensionSchema + " AUTHORIZATION "
+                    + quote(configuration().ownerUser()));
+            statement.execute("CREATE EXTENSION intagg SCHEMA " + extensionSchema);
+        }
+
+        try (Connection owner = openOwnerConnection()) {
+            SchemaLayeringCheck.Report report = SchemaLayeringCheck.inspect(
+                    owner, List.of(TOP, MID, BOTTOM, extensionSchema), Set.of());
+            assertEquals(0, report.routinesBySchema().get(extensionSchema));
+            assertEquals(Set.of(extensionSchema), report.emptySchemas(),
+                    () -> "extension-owned routines must not count: " + report.objectsBySchema());
+        }
+    }
+
+    /**
      * An allow-list entry suppresses a known exception and is not stale.
      */
     @Test

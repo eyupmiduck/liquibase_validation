@@ -44,11 +44,55 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             throw new IllegalArgumentException("a " + kind + " modification does not accept a with value");
         }
         if (kind == Kind.REGEXP_REPLACE) {
-            try {
-                Pattern.compile(value);
-            } catch (PatternSyntaxException e) {
-                throw new IllegalArgumentException(
-                        "a REGEXP_REPLACE modification has an invalid regular expression: " + value, e);
+            // A ${property} placeholder is not valid regex syntax until it is
+            // substituted; the effective pattern is compiled when it is applied.
+            if (!value.contains("${")) {
+                try {
+                    Pattern.compile(value);
+                } catch (PatternSyntaxException e) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid regular expression: " + value, e);
+                }
+            }
+            validateReplacement(with);
+        }
+    }
+
+    /**
+     * Validates the group-reference and escape syntax of a
+     * {@link Kind#REGEXP_REPLACE} replacement, so a malformed {@code with} fails
+     * when the changelog is read instead of during linting.
+     */
+    private static void validateReplacement(String replacement) {
+        for (int index = 0; index < replacement.length(); index++) {
+            char character = replacement.charAt(index);
+            if (character == '\\') {
+                if (index + 1 >= replacement.length()) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid replacement (dangling '\\'): "
+                                    + replacement);
+                }
+                index++;
+            } else if (character == '$') {
+                if (index + 1 >= replacement.length()) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid replacement (trailing '$'): "
+                                    + replacement);
+                }
+                char next = replacement.charAt(index + 1);
+                if (next == '{') {
+                    int close = replacement.indexOf('}', index + 2);
+                    if (close < 0 || close == index + 2) {
+                        throw new IllegalArgumentException(
+                                "a REGEXP_REPLACE modification has an invalid replacement (named group): "
+                                        + replacement);
+                    }
+                    index = close;
+                } else if (!Character.isDigit(next)) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid replacement (group reference): "
+                                    + replacement);
+                }
             }
         }
     }
@@ -74,7 +118,8 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
                 continue;
             }
             if (name.startsWith("!")) {
-                if (name.substring(1).strip().equalsIgnoreCase("postgresql")) {
+                String excluded = name.substring(1).strip();
+                if (excluded.equalsIgnoreCase("postgresql") || excluded.equalsIgnoreCase("all")) {
                     return false;
                 }
             } else if (name.equalsIgnoreCase("none")) {
@@ -87,6 +132,19 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
             }
         }
         return included || !hasInclusion;
+    }
+
+    /**
+     * Returns a copy of this modification with substituted attribute values, so
+     * a {@code ${property}} placeholder inside {@code value} or {@code with} is
+     * expanded before the transformation is applied.
+     *
+     * @param value the effective {@code value}/{@code replace} attribute
+     * @param with  the effective {@code with} attribute, or null
+     * @return the modification to apply
+     */
+    public SqlModification withValues(String value, String with) {
+        return new SqlModification(kind, value, with, applyToRollback, dbms);
     }
 
     /**
@@ -104,16 +162,27 @@ public record SqlModification(Kind kind, String value, String with, boolean appl
      *
      * @param sql the SQL to transform
      * @return the transformed SQL
-     * @throws IndexOutOfBoundsException if a {@link Kind#REGEXP_REPLACE}
-     *                                   {@code with} value references a group the
-     *                                   pattern does not define
+     * @throws IllegalArgumentException if a {@link Kind#REGEXP_REPLACE}
+     *                                  {@code with} value references a group the
+     *                                  pattern does not define
      */
     public String apply(String sql) {
         return switch (kind) {
             case APPEND -> sql + value;
             case PREPEND -> value + sql;
             case REPLACE -> sql.replace(value, with);
-            case REGEXP_REPLACE -> sql.replaceAll(value, with);
+            case REGEXP_REPLACE -> {
+                try {
+                    yield sql.replaceAll(value, with);
+                } catch (PatternSyntaxException e) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid regular expression: "
+                                    + e.getMessage(), e);
+                } catch (IllegalArgumentException e) {
+                    throw new IllegalArgumentException(
+                            "a REGEXP_REPLACE modification has an invalid replacement: " + e.getMessage(), e);
+                }
+            }
             case APPEND_IF_NOT_PRESENT -> sql.endsWith(value) ? sql : sql + value;
         };
     }

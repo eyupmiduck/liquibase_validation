@@ -20,8 +20,11 @@ import java.util.*;
  *
  * <p>A unit with no routine declaration is treated as a bare body and its own
  * tokens are returned, so a hand-written body fragment can still be checked. A
- * declaration whose body is a single-quoted SQL string is not extracted: the
- * supported forms are the dollar-quoted PL/pgSQL bodies.
+ * declaration is only recognised through its {@code AS $$...$$}/{@code AS
+ * $tag$...$tag$} body form. If a unit contains no recognised declaration, the
+ * whole unit falls back to the bare-body treatment. A unit that mixes a
+ * recognised declaration with an unsupported one is not re-scanned as a whole,
+ * so the unsupported declaration's tokens are not checked.
  */
 public final class RoutineBodies {
 
@@ -73,7 +76,6 @@ public final class RoutineBodies {
             if (kind == null) {
                 continue;
             }
-            declaration = true;
             String name = qualifiedName(tokens, cursor + 1);
             int open = indexOfPunctuation(tokens, "(", cursor + 1);
             if (open < 0) {
@@ -93,6 +95,11 @@ public final class RoutineBodies {
             }
             Body parsed = body(unit, body, name, kind, parameters(tokens, open, close));
             if (parsed != null) {
+                // Only a declaration recognised through its AS + dollar-string
+                // body is treated as a declaration. A unit with no recognised
+                // declaration falls back to the bare-body treatment below; a
+                // mixed unit is not re-scanned as a whole.
+                declaration = true;
                 bodies.add(parsed);
                 i = as + 1;
             }
@@ -157,6 +164,11 @@ public final class RoutineBodies {
         ParameterMode mode = ParameterMode.IN;
         if (segment.get(cursor).matchesKeyword("IN")) {
             cursor++;
+            // PostgreSQL also spells INOUT as the two tokens IN OUT.
+            if (cursor < segment.size() && segment.get(cursor).matchesKeyword("OUT")) {
+                mode = ParameterMode.INOUT;
+                cursor++;
+            }
         } else if (segment.get(cursor).matchesKeyword("OUT")) {
             mode = ParameterMode.OUT;
             cursor++;
@@ -186,6 +198,12 @@ public final class RoutineBodies {
         Token second = segment.get(cursor + 1);
         if (second.type() == TokenType.PUNCTUATION
                 && (second.text().equals(".") || second.text().equals("[") || second.text().equals("("))) {
+            return true;
+        }
+        // A DEFAULT keyword or '=' right after the candidate means the candidate
+        // is the type of an unnamed parameter, not a name: PostgreSQL accepts
+        // both spellings of a parameter default.
+        if (second.matchesKeyword("DEFAULT") || second.text().equals("=")) {
             return true;
         }
         String first = segment.get(cursor).text().toLowerCase(Locale.ROOT);
@@ -339,7 +357,8 @@ public final class RoutineBodies {
     /**
      * A declared routine parameter.
      *
-     * @param name  the parameter name as written (not case-folded)
+     * @param name  the parameter name: lower-cased for an unquoted identifier,
+     *              as written for a quoted identifier
      * @param mode  the parameter mode
      * @param token the token the name came from
      */

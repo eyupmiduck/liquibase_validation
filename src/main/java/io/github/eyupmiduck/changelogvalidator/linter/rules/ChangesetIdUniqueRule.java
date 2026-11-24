@@ -4,10 +4,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.ProjectRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Reports a duplicate changeset identity: the same {@code id}, {@code author} and
@@ -41,6 +38,7 @@ public final class ChangesetIdUniqueRule implements ProjectRule {
     @Override
     public List<Violation> check(List<ChangeSet> changeSets) {
         Map<String, ChangeSet> firstByIdentity = new LinkedHashMap<>();
+        Set<String> reported = new HashSet<>();
         List<Violation> violations = new ArrayList<>();
         for (ChangeSet changeSet : changeSets) {
             String key = changeSet.id() + '\u0000' + changeSet.author() + '\u0000'
@@ -49,11 +47,15 @@ public final class ChangesetIdUniqueRule implements ProjectRule {
             if (first == null) {
                 continue;
             }
-            if (first.line() == changeSet.line()
-                    && first.changelogFile().toAbsolutePath().normalize()
-                    .equals(changeSet.changelogFile().toAbsolutePath().normalize())) {
+            if (first.line() == changeSet.line()) {
                 // The same declaration reached twice through a repeated include,
                 // not two distinct changeset elements (which cannot share a line).
+                continue;
+            }
+            String identity = changeSet.changelogFile().toAbsolutePath().normalize() + "\u0000" + changeSet.line();
+            if (!reported.add(identity)) {
+                // A file with a genuine duplicate that is included more than once
+                // reaches the same offending declaration again; report it once.
                 continue;
             }
             violations.add(new Violation(

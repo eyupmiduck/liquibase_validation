@@ -202,6 +202,63 @@ class LinterCliTest {
     }
 
     /**
+     * The reserved end-of-options token is not a value, so a forgotten value
+     * fails fast instead of binding {@code --} as a file name.
+     */
+    @Test
+    void rejectsEndOfOptionsAsAValue() throws IOException {
+        Path root = changelog("clean", CLEAN);
+
+        Result result = run("--changelog-root", root.toString(), "--master", "--", "foo.xml");
+
+        assertEquals(2, result.code());
+        assertTrue(result.err().contains("missing value for --master"), result.err());
+        assertEquals(0, run("--changelog-root", root.toString(), "--").code());
+    }
+
+    /**
+     * An external file keeps its parent directory in the baseline, so two
+     * distinct files that share a name cannot merge into one suffix-matching
+     * whitelist entry.
+     */
+    @Test
+    void keepsExternalFilesWithTheSameNameApartInTheBaseline() {
+        Path root = tempDir.resolve("changelog");
+        String first = LinterCli.baselineFile(tempDir.resolve("shared").resolve("foo.sql"), root);
+        String second = LinterCli.baselineFile(tempDir.resolve("other").resolve("foo.sql"), root);
+
+        assertEquals("shared/foo.sql", first);
+        assertEquals("other/foo.sql", second);
+        assertNotEquals(first, second);
+        assertEquals("changes/foo.sql",
+                LinterCli.baselineFile(root.resolve("changes").resolve("foo.sql"), root));
+    }
+
+    /**
+     * A master outside the changelog root is baselined with its parent
+     * directory, and that selector still matches on the next run.
+     */
+    @Test
+    void baselinesAMasterOutsideTheRootByItsParentDirectory() throws IOException {
+        Path root = Files.createDirectories(tempDir.resolve("root"));
+        Path shared = Files.createDirectories(tempDir.resolve("shared"));
+        Path master = shared.resolve("db.changelog-master.xml");
+        Files.writeString(master, xml(FORBIDDEN));
+        Path whitelist = tempDir.resolve("baseline-outside.yml");
+
+        Result update = run("--changelog-root", root.toString(), "--master", master.toString(),
+                "--whitelist", whitelist.toString(), "--update-whitelist");
+
+        assertEquals(0, update.code(), update.err());
+        String yaml = Files.readString(whitelist);
+        assertTrue(yaml.contains("file: shared/db.changelog-master.xml"), yaml);
+
+        Result second = run("--changelog-root", root.toString(), "--master", master.toString(),
+                "--whitelist", whitelist.toString());
+        assertEquals(0, second.code(), second.err());
+    }
+
+    /**
      * {@code --fail-on none} also suppresses the stale-whitelist failure.
      */
     @Test

@@ -57,6 +57,20 @@ class ChangesetIdUniqueRuleTest {
     }
 
     @Test
+    void reportsAGenuineDuplicateOnlyOnceWhenTheFileIsIncludedTwice() {
+        ChangeSet first = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 5);
+        ChangeSet duplicate = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 10);
+        ChangeSet repeatedFirst = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 5);
+        ChangeSet repeatedDuplicate = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 10);
+
+        List<ProjectRule.Violation> violations = new ChangesetIdUniqueRule()
+                .check(List.of(first, duplicate, repeatedFirst, repeatedDuplicate));
+
+        assertEquals(1, violations.size());
+        assertEquals(duplicate, violations.getFirst().changeSet());
+    }
+
+    @Test
     void reportsEveryOccurrenceAfterTheFirstAndNormalizesThePath() {
         ChangeSet first = changeSet("001-create", "me", Path.of("/db/changelog.xml"), 1);
         ChangeSet second = changeSet("001-create", "me", Path.of("/db/./changelog.xml"), 2);

@@ -58,19 +58,6 @@ class RuleDocumentationTest {
         return rows;
     }
 
-    /**
-     * Every registered rule has a per-rule section, so the table link does not
-     * point at a missing heading.
-     */
-    @Test
-    void everyRuleHasAPerRuleSection() throws IOException {
-        String readme = Files.readString(README);
-        for (RuleCatalog.Entry entry : RuleCatalog.entries(LinterConfig.defaults())) {
-            assertTrue(readme.contains("#### " + entry.id() + "\n"),
-                    () -> "README is missing a section for " + entry.id());
-        }
-    }
-
     private static boolean isSeparator(String line) {
         return line.replaceAll("[|: -]", "").isEmpty();
     }
@@ -98,6 +85,19 @@ class RuleDocumentationTest {
 
     private static String severity(RuleCatalog.Entry entry) {
         return entry.severity().name().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Every registered rule has a per-rule section, so the table link does not
+     * point at a missing heading.
+     */
+    @Test
+    void everyRuleHasAPerRuleSection() throws IOException {
+        String readme = Files.readString(README);
+        for (RuleCatalog.Entry entry : RuleCatalog.entries(LinterConfig.defaults())) {
+            assertTrue(readme.contains("#### " + entry.id() + "\n"),
+                    () -> "README is missing a section for " + entry.id());
+        }
     }
 
     /**
