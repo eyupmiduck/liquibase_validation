@@ -215,6 +215,72 @@ class ChangelogValidatorTest {
         IOException failure = assertThrows(IOException.class,
                 () -> ChangelogValidator.findOrphanedSqlFiles(changes, master));
         assertTrue(failure.getMessage().contains("SQL file reference not found"));
+        assertTrue(failure.getMessage().contains("changes.xml"),
+                () -> "the failure should name the containing changelog: " + failure.getMessage());
+    }
+
+    /**
+     * A reference whose case differs from the file on disk still counts as a
+     * reference on a case-insensitive filesystem. A symlinked directory spells
+     * the case variant on a case-sensitive filesystem too.
+     */
+    @Test
+    void treatsACaseVariantSqlReferenceAsReferenced() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path scripts = Files.createDirectories(changes.resolve("scripts"));
+        Files.writeString(scripts.resolve("foo.sql"), "");
+        Files.createSymbolicLink(changes.resolve("Scripts"), scripts);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <changeSet id="001-create" author="test">
+                    <sqlFile path="Scripts/foo.sql" relativeToChangelogFile="true"/>
+                </changeSet>
+                """));
+
+        assertEquals(List.of(), ChangelogValidator.findOrphanedSqlFiles(changes, master));
+    }
+
+    /**
+     * A case-variant include of the same physical changelog is visited once, so
+     * its changesets are not reported twice.
+     */
+    @Test
+    void deduplicatesCaseVariantIncludes() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Path real = Files.createDirectories(changes.resolve("real"));
+        Files.writeString(real.resolve("changes.xml"), ChangelogTestSupport.changelog("""
+                <changeSet id="create-example" author="test"/>
+                """));
+        Files.createSymbolicLink(changes.resolve("Real"), real);
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="real/changes.xml" relativeToChangelogFile="true"/>
+                <include file="Real/changes.xml" relativeToChangelogFile="true"/>
+                """));
+
+        assertEquals(2, ChangelogValidator.findReachableChangelogFiles(changes, master).size());
+        assertEquals(List.of(new ChangelogValidator.InvalidChangeSet(
+                        real.resolve("changes.xml"), "create-example")),
+                ChangelogValidator.findInvalidlyNamedChangeSets(changes, master));
+    }
+
+    /**
+     * A raw SQL file reached through {@code <include>} is rejected at the include
+     * site, and the diagnostic names the including changelog.
+     */
+    @Test
+    void rejectsAnIncludeOfUnformattedSqlNamingTheIncluder() throws IOException {
+        Path changes = Files.createDirectories(tempDir.resolve("changes"));
+        Files.writeString(changes.resolve("raw.sql"), "SELECT 1;\n");
+        Path master = changes.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="raw.sql" relativeToChangelogFile="true"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReachableChangelogFiles(changes, master));
+        assertTrue(failure.getMessage().contains("formatted sql"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("master.xml"), failure.getMessage());
     }
 
     /**
