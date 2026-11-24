@@ -89,6 +89,41 @@ class ChangelogIncludesTest {
     }
 
     /**
+     * maxDepth 0 means unlimited, symmetrically with minDepth 0 meaning the
+     * default, so an explicit 0/0 pair is accepted and selects every depth.
+     */
+    @Test
+    void acceptsZeroMaxDepthAsUnlimited() throws IOException {
+        write("included/001-top.xml", "");
+        write("included/sub/002-nested.xml", "");
+        write("included/sub/deep/003-deep.xml", "");
+
+        List<Path> all = List.of(
+                root.resolve("included/001-top.xml"),
+                root.resolve("included/sub/002-nested.xml"),
+                root.resolve("included/sub/deep/003-deep.xml"));
+        assertEquals(all, include("path=\"included\" minDepth=\"0\" maxDepth=\"0\""));
+        assertEquals(all, include("path=\"included\" maxDepth=\"0\""));
+        assertTrue(assertThrows(IOException.class, () -> include("path=\"included\" maxDepth=\"-1\""))
+                .getMessage().contains("must not be negative"));
+    }
+
+    /**
+     * A malformed boolean attribute fails closed instead of being read as false,
+     * which would silently change which directory or file set is validated.
+     */
+    @Test
+    void rejectsMalformedBooleanAttributes() throws IOException {
+        Files.createDirectories(root.resolve("included"));
+        assertTrue(assertThrows(IOException.class,
+                () -> include("path=\"included\" relativeToChangelogFile=\"ture\""))
+                .getMessage().contains("not a boolean"));
+        assertTrue(assertThrows(IOException.class,
+                () -> include("path=\"included\" errorIfMissingOrEmpty=\"yes\""))
+                .getMessage().contains("not a boolean"));
+    }
+
+    /**
      * endsWithFilter is case-insensitive and trims whitespace.
      */
     @Test
@@ -151,6 +186,21 @@ class ChangelogIncludesTest {
     }
 
     /**
+     * A dangling symlink is inspected through the link itself and fails closed:
+     * following it would make it look absent and skip the containment check.
+     */
+    @Test
+    void rejectsDanglingSymlinkEscape() throws IOException {
+        Path rootPath = root.toAbsolutePath().normalize();
+        Files.createSymbolicLink(root.resolve("dangling.xml"),
+                root.getParent().resolve("missing-secret.xml"));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogIncludes.resolveWithin(rootPath, rootPath, "dangling.xml", "include"));
+        assertTrue(failure.getMessage().contains("symlink"), failure.getMessage());
+    }
+
+    /**
      * Invalid depth attributes and unsupported attributes fail closed.
      */
     @Test
@@ -198,5 +248,17 @@ class ChangelogIncludesTest {
         assertTrue(ChangelogIncludes.isFormattedSql(root.resolve("bom.sql")));
         assertFalse(ChangelogIncludes.isFormattedSql(root.resolve("plain.sql")));
         assertFalse(ChangelogIncludes.isFormattedSql(root.resolve("empty.sql")));
+    }
+
+    /**
+     * A SQL file that is not valid UTF-8 is decoded leniently and classified as
+     * not formatted, instead of aborting the graph with a decode error.
+     */
+    @Test
+    void decodesNonUtf8SqlLeniently() throws IOException {
+        Path latin1 = root.resolve("latin1.sql");
+        Files.write(latin1, new byte[]{'S', 'E', 'L', 'E', 'C', 'T', ' ', (byte) 0xE9, '\n'});
+
+        assertFalse(ChangelogIncludes.isFormattedSql(latin1));
     }
 }

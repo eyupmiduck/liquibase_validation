@@ -7,6 +7,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
 import java.io.InputStream;
@@ -58,7 +59,11 @@ public final class XmlDocuments {
             factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-            factory.setXIncludeAware(false);
+            try {
+                factory.setXIncludeAware(false);
+            } catch (UnsupportedOperationException e) {
+                throw new IllegalStateException("failed to configure the XML parser", e);
+            }
             factory.setExpandEntityReferences(false);
             return factory.newDocumentBuilder().parse(documentFile.toFile());
         } catch (SAXException e) {
@@ -87,6 +92,23 @@ public final class XmlDocuments {
     public static Map<String, Deque<Integer>> startTagLines(Path documentFile) throws IOException {
         SAXParserFactory factory = SAXParserFactory.newInstance();
         factory.setNamespaceAware(true);
+        // Configure the parser before parsing so a rejected hardening feature or
+        // access property is reported as a configuration failure, not as a
+        // malformed document. SAXParserFactory has no setAttribute, so the JAXP
+        // access properties are set on the SAXParser it creates; that is the
+        // documented SAX mechanism (the DOM path uses factory.setAttribute).
+        XMLReader reader = hardenedReader(factory);
+        TagLineHandler handler = new TagLineHandler();
+        reader.setContentHandler(handler);
+        try (InputStream input = Files.newInputStream(documentFile)) {
+            reader.parse(new InputSource(input));
+        } catch (SAXException e) {
+            throw new IOException("failed to parse XML " + documentFile, e);
+        }
+        return handler.lines();
+    }
+
+    private static XMLReader hardenedReader(SAXParserFactory factory) {
         try {
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -96,22 +118,11 @@ public final class XmlDocuments {
             // Supply the qualified name for prefixed elements, matching DOM's
             // Element#getTagName().
             factory.setFeature("http://xml.org/sax/features/namespace-prefixes", true);
-            TagLineHandler handler = new TagLineHandler();
-            // The factory's features apply to the reader it creates; setting them
-            // again on the reader would be redundant.
-            XMLReader reader = factory.newSAXParser().getXMLReader();
-            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-            reader.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-            reader.setContentHandler(handler);
-            try (InputStream input = Files.newInputStream(documentFile)) {
-                reader.parse(new InputSource(input));
-            }
-            return handler.lines();
-        } catch (SAXException e) {
-            throw new IOException("failed to parse XML " + documentFile, e);
-        } catch (IllegalArgumentException e) {
-            throw new IOException("failed to configure the XML parser", e);
-        } catch (ParserConfigurationException e) {
+            SAXParser parser = factory.newSAXParser();
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            return parser.getXMLReader();
+        } catch (SAXException | ParserConfigurationException | IllegalArgumentException e) {
             throw new IllegalStateException("failed to configure the XML parser", e);
         }
     }

@@ -49,9 +49,11 @@ import java.util.regex.Pattern;
  * </ul>
  *
  * <p>Paths are matched by suffix, so a project may put the {@code changes/}
- * directory under any changelog root. A changeset id that matches neither shape
- * is left to {@link ChangelogValidator}'s naming check. A structured change or
- * an inline SQL body has no file to join, so it is skipped.
+ * directory under any changelog root. The path comparison is deliberately
+ * case-insensitive so a changelog checked out on a case-insensitive filesystem
+ * (Windows, default macOS) still matches its changeset id. A changeset id that
+ * matches neither shape is left to {@link ChangelogValidator}'s naming check. A
+ * structured change or an inline SQL body has no file to join, so it is skipped.
  */
 public final class ChangelogLayoutCheck {
 
@@ -193,6 +195,17 @@ public final class ChangelogLayoutCheck {
         };
     }
 
+    /**
+     * Checks that the file's path under the root ends with the conventional
+     * suffix.
+     *
+     * <p>The comparison is case-insensitive on purpose. A changelog checked out
+     * on a case-insensitive filesystem (the default on Windows and macOS) may
+     * spell a path with a different case than the changeset id while still
+     * naming the same file; an exact comparison would reject those legitimate
+     * checkouts. This is a deliberate, documented leniency rather than an
+     * accident of the comparison.
+     */
     private static boolean checkSuffix(Path root, ChangeSet changeSet, SqlSource source,
                                        String expectedSuffix, String description,
                                        List<Violation> violations) {
@@ -237,7 +250,7 @@ public final class ChangelogLayoutCheck {
             return;
         }
         if (objectKind.equals("trigger")) {
-            if (!declaration.name().equalsIgnoreCase(expectedName)) {
+            if (!declaration.nameMatches(expectedName)) {
                 violations.add(violation(root, changeSet, file, declaration.line(),
                         "file declares trigger " + declaration.name()
                                 + " but the path expects " + expectedName));
@@ -245,7 +258,7 @@ public final class ChangelogLayoutCheck {
             if (declaration.tableSchema() == null) {
                 violations.add(violation(root, changeSet, file, declaration.line(),
                         "trigger's table is not schema-qualified; expected " + expectedSchema));
-            } else if (!declaration.tableSchema().equalsIgnoreCase(expectedSchema)) {
+            } else if (!declaration.tableSchemaMatches(expectedSchema)) {
                 violations.add(violation(root, changeSet, file, declaration.line(),
                         "trigger is on schema " + declaration.tableSchema()
                                 + " but the path expects " + expectedSchema));
@@ -255,8 +268,8 @@ public final class ChangelogLayoutCheck {
                 violations.add(violation(root, changeSet, file, declaration.line(),
                         "routine is not schema-qualified; expected "
                                 + expectedSchema + "." + expectedName));
-            } else if (!declaration.schema().equalsIgnoreCase(expectedSchema)
-                    || !declaration.name().equalsIgnoreCase(expectedName)) {
+            } else if (!declaration.schemaMatches(expectedSchema)
+                    || !declaration.nameMatches(expectedName)) {
                 violations.add(violation(root, changeSet, file, declaration.line(),
                         "file declares " + declaration.schema() + "." + declaration.name()
                                 + " but the path expects " + expectedSchema + "." + expectedName));
@@ -268,8 +281,11 @@ public final class ChangelogLayoutCheck {
         List<Token> tokens = SqlLexer.tokenize(Files.readString(file)).stream()
                 .filter(token -> !token.isTrivia())
                 .toList();
-        if (tokens.stream().anyMatch(token -> token.type().isError())) {
-            throw new IOException("SQL contains input the lexer cannot classify");
+        for (Token token : tokens) {
+            if (token.type().isError()) {
+                throw new IOException("SQL contains input the lexer cannot classify at line "
+                        + token.line() + ", column " + token.column());
+            }
         }
         List<Declaration> declarations = new ArrayList<>();
         for (int i = 0; i < tokens.size(); i++) {
@@ -294,17 +310,21 @@ public final class ChangelogLayoutCheck {
                 continue;
             }
             String tableSchema = null;
+            boolean tableSchemaQuoted = false;
             if (kind.equals("trigger")) {
-                int on = findWord(tokens, name.next(), "on");
+                // Bound the lookup to the trigger's own statement: a later
+                // GRANT/COMMENT/INDEX ... ON ... must not bind to this trigger.
+                int on = findWordWithinStatement(tokens, name.next(), "on");
                 if (on >= 0) {
                     ParsedName table = qualifiedName(tokens, on + 1);
                     if (table != null) {
                         tableSchema = table.schema();
+                        tableSchemaQuoted = table.schemaQuoted();
                     }
                 }
             }
             declarations.add(new Declaration(kind, name.schema(), name.name(), tableSchema,
-                    tokens.get(i).line()));
+                    tokens.get(i).line(), name.schemaQuoted(), name.nameQuoted(), tableSchemaQuoted));
             i = name.next() - 1;
         }
         return declarations;
@@ -315,11 +335,14 @@ public final class ChangelogLayoutCheck {
             return null;
         }
         String first = identifier(tokens.get(start));
+        boolean firstQuoted = tokens.get(start).type() == TokenType.QUOTED_IDENTIFIER;
         int next = start + 1;
         if (isPunctuation(tokens, next, ".") && isIdentifier(tokens, next + 1)) {
-            return new ParsedName(first, identifier(tokens.get(next + 1)), next + 2);
+            Token second = tokens.get(next + 1);
+            return new ParsedName(first, identifier(second), next + 2,
+                    firstQuoted, second.type() == TokenType.QUOTED_IDENTIFIER);
         }
-        return new ParsedName(null, first, next);
+        return new ParsedName(null, first, next, false, firstQuoted);
     }
 
     private static boolean isIdentifier(List<Token> tokens, int index) {
@@ -344,9 +367,13 @@ public final class ChangelogLayoutCheck {
                 && punctuation.equals(tokens.get(index).text());
     }
 
-    private static int findWord(List<Token> tokens, int start, String keyword) {
+    private static int findWordWithinStatement(List<Token> tokens, int start, String keyword) {
         for (int i = start; i < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword(keyword)) {
+            Token token = tokens.get(i);
+            if (isPunctuation(tokens, i, ";")) {
+                return -1;
+            }
+            if (token.matchesKeyword(keyword)) {
                 return i;
             }
         }
@@ -402,9 +429,33 @@ public final class ChangelogLayoutCheck {
         }
     }
 
-    private record ParsedName(String schema, String name, int next) {
+    private record ParsedName(String schema, String name, int next,
+                              boolean schemaQuoted, boolean nameQuoted) {
     }
 
-    record Declaration(String kind, String schema, String name, String tableSchema, int line) {
+    /**
+     * A stored-object declaration. The {@code *Quoted} flags record whether the
+     * identifier came from a double-quoted token: PostgreSQL keeps a quoted
+     * identifier's case and folds an unquoted one to lower case, so the two need
+     * different comparisons.
+     */
+    record Declaration(String kind, String schema, String name, String tableSchema, int line,
+                       boolean schemaQuoted, boolean nameQuoted, boolean tableSchemaQuoted) {
+
+        boolean schemaMatches(String expected) {
+            return schema != null && identifierMatches(schema, schemaQuoted, expected);
+        }
+
+        boolean nameMatches(String expected) {
+            return identifierMatches(name, nameQuoted, expected);
+        }
+
+        boolean tableSchemaMatches(String expected) {
+            return tableSchema != null && identifierMatches(tableSchema, tableSchemaQuoted, expected);
+        }
+    }
+
+    private static boolean identifierMatches(String actual, boolean quoted, String expected) {
+        return quoted ? actual.equals(expected) : actual.equalsIgnoreCase(expected);
     }
 }

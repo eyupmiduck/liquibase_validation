@@ -203,11 +203,19 @@ public final class ChangelogValidator {
      */
     public static List<Path> findOrphanedSqlFiles(Path changelogRoot, Path masterChangelog) throws IOException {
         Path root = changelogRoot.toAbsolutePath().normalize();
-        Set<Path> referenced = new HashSet<>(findReferencedSqlFiles(root, masterChangelog));
+        Set<String> referenced = new HashSet<>();
+        for (Path reference : findReferencedSqlFiles(root, masterChangelog)) {
+            referenced.add(pathKey(reference));
+        }
 
         List<Path> orphaned = new ArrayList<>();
         for (Path sqlFile : findSqlFiles(root)) {
-            if (!referenced.contains(sqlFile)) {
+            // Compare on a case-insensitive key so a reference spelled with a
+            // different case than the file on disk is not reported as an orphan
+            // on a case-insensitive filesystem. On a case-sensitive filesystem a
+            // case-mismatched reference already fails Files.isRegularFile, so
+            // this cannot mask a real mismatch there.
+            if (!referenced.contains(pathKey(sqlFile))) {
                 orphaned.add(sqlFile);
             }
         }
@@ -276,9 +284,14 @@ public final class ChangelogValidator {
      */
     private static Reachable parsedReachableChangelogFiles(Path root, Path masterChangelog)
             throws IOException {
-        Set<Path> visited = new LinkedHashSet<>();
+        // Deduplicate on a case-insensitive key while keeping the first real path
+        // for I/O and for the returned graph. A case-variant include names the
+        // same file on a case-insensitive filesystem, so visiting it twice would
+        // report its changesets twice.
+        Set<String> visited = new LinkedHashSet<>();
         Map<Path, Document> documents = new LinkedHashMap<>();
         Map<Path, Boolean> sqlFiles = new LinkedHashMap<>();
+        Map<String, Path> sqlFilesByKey = new HashMap<>();
         Map<Path, List<ChangeSet>> parsedSql = new LinkedHashMap<>();
         Deque<Pending> pending = new ArrayDeque<>();
         pending.add(new Pending(masterChangelog.toAbsolutePath().normalize(),
@@ -286,17 +299,20 @@ public final class ChangelogValidator {
         while (!pending.isEmpty()) {
             Pending next = pending.removeFirst();
             Path changelogFile = next.file();
+            String key = pathKey(changelogFile);
             if (ChangelogIncludes.isSqlFile(changelogFile)) {
-                sqlFiles.merge(changelogFile, next.formattedSql(), Boolean::logicalOr);
-                if (next.formattedSql() && !parsedSql.containsKey(changelogFile)) {
+                // A SQL file enqueues nothing, so re-visits cannot loop; the
+                // merge and the parsedSql guard dedupe its state.
+                Path canonical = sqlFilesByKey.computeIfAbsent(key, ignored -> changelogFile);
+                sqlFiles.merge(canonical, next.formattedSql(), Boolean::logicalOr);
+                if (next.formattedSql() && !parsedSql.containsKey(canonical)) {
                     // Parse once and keep the changesets for the naming check, so
                     // a file reached through several includes is read only once.
-                    parsedSql.put(changelogFile, FormattedSqlChangelog.parse(changelogFile, Map.of()));
+                    parsedSql.put(canonical, FormattedSqlChangelog.parse(canonical, Map.of()));
                 }
-                visited.add(changelogFile);
                 continue;
             }
-            if (!visited.add(changelogFile)) {
+            if (!visited.add(key)) {
                 continue;
             }
             Document document = parse(changelogFile);
@@ -318,10 +334,18 @@ public final class ChangelogValidator {
                     throw new IOException("include without a file attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
-                        "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
+                        booleanAttribute(include, "relativeToChangelogFile", false);
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 Path resolved = resolveWithin(root, base, file, "include");
-                pending.add(new Pending(resolved, ChangelogIncludes.isSqlFile(resolved)));
+                boolean sql = ChangelogIncludes.isSqlFile(resolved);
+                if (sql && !ChangelogIncludes.isFormattedSql(resolved)) {
+                    // Validate the marker at the include site so the diagnostic
+                    // names the including changelog, rather than relying on the
+                    // formatted-SQL parser to reject the file later.
+                    throw new IOException("include of a SQL file without the --liquibase formatted sql"
+                            + " marker: " + resolved + " in " + changelogFile);
+                }
+                pending.add(new Pending(resolved, sql));
             }
             documents.put(changelogFile, document);
         }
@@ -370,11 +394,12 @@ public final class ChangelogValidator {
                     throw new IOException(elementName + " without a path attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
-                        "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
+                        booleanAttribute(element, "relativeToChangelogFile", false);
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 Path resolved = resolveWithin(root, base, path, "SQL file reference");
                 if (!Files.isRegularFile(resolved)) {
-                    throw new IOException("SQL file reference not found: " + path);
+                    throw new IOException("SQL file reference not found: " + path
+                            + " in " + changelogFile);
                 }
                 result.add(root.relativize(resolved));
             }
@@ -397,6 +422,31 @@ public final class ChangelogValidator {
      */
     private static Path resolveWithin(Path root, Path base, String reference, String kind) throws IOException {
         return ChangelogIncludes.resolveWithin(root, base, reference, kind);
+    }
+
+    /**
+     * Returns the key used to compare two paths that may name the same file on
+     * a case-insensitive filesystem. The real path is kept separately for I/O.
+     */
+    private static String pathKey(Path file) {
+        return file.toString().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Reads a boolean XML attribute strictly: only {@code true} and {@code false}
+     * (case-insensitive) are accepted, so a typo cannot silently select the
+     * default and resolve a path against the wrong base.
+     */
+    private static boolean booleanAttribute(Element element, String name, boolean defaultValue)
+            throws IOException {
+        if (!element.hasAttribute(name)) {
+            return defaultValue;
+        }
+        String value = element.getAttribute(name).strip();
+        if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+            throw new IOException(name + " is not a boolean: " + value);
+        }
+        return "true".equalsIgnoreCase(value);
     }
 
     private static Document parse(Path changelogFile) throws IOException {
