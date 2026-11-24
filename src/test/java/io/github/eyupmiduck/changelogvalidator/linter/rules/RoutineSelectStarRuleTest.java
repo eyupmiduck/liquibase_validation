@@ -54,6 +54,13 @@ class RoutineSelectStarRuleTest {
     }
 
     @Test
+    void reportsAStarOnlyOnceWhenAScalarSubqueryHasNoFrom() {
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT (SELECT 1), t.* FROM app.t t; END;").size());
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT s.* FROM (SELECT 1) s; END;").size());
+        assertEquals(1, check("BEGIN RETURN QUERY SELECT (SELECT 1 UNION SELECT 2), t.* FROM app.t t; END;").size());
+    }
+
+    @Test
     void stopsAFramlessSelectAtTheStatementEnd() {
         assertEquals(1, check("BEGIN SELECT current_setting('x') INTO l_v;"
                 + " SELECT t.* FROM app.t t; END;").size());

@@ -1,6 +1,7 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
 import io.github.eyupmiduck.changelogvalidator.linter.Rule;
+import io.github.eyupmiduck.changelogvalidator.linter.RuleContext;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +44,37 @@ class RequireNotValidConstraintRuleTest {
         assertTrue(check("ALTER TABLE t ADD CONSTRAINT p PRIMARY KEY (x)").isEmpty());
         assertTrue(check("ALTER TABLE t ADD CONSTRAINT e EXCLUDE USING gist (x WITH =)").isEmpty());
         assertTrue(check("ALTER TABLE t ADD COLUMN c integer").isEmpty());
+    }
+
+    /**
+     * The CONSTRAINT keyword is optional, so a named CHECK or FOREIGN KEY
+     * without it is still reported.
+     */
+    @Test
+    void reportsANamedConstraintWithoutTheConstraintKeyword() {
+        assertEquals(1, check("ALTER TABLE t ADD c CHECK (x > 0)").size());
+        assertEquals(1, check("ALTER TABLE t ADD c FOREIGN KEY (x) REFERENCES other (id)").size());
+        assertTrue(check("ALTER TABLE t ADD c CHECK (x > 0) NOT VALID").isEmpty());
+    }
+
+    /**
+     * Each ALTER TABLE only examines its own ADD clauses in an unsplit statement,
+     * and an ALTER COLUMN subcommand does not end the command.
+     */
+    @Test
+    void boundsTheAddScanToTheCurrentCommand() {
+        RuleContext context =
+                RuleTestSupport.context(RuleTestSupport.changeSet(true, false, null, false),
+                        RuleTestSupport.unit("ALTER TABLE a RENAME COLUMN x TO y;"
+                                + " ALTER TABLE b ADD CONSTRAINT c CHECK (y > 0)", true, ""));
+
+        List<Rule.Violation> violations = new RequireNotValidConstraintRule().check(context);
+
+        assertEquals(1, violations.size());
+        assertTrue(violations.getFirst().message().contains("existing table b"),
+                violations.getFirst().message());
+        assertEquals(1, check("ALTER TABLE t ALTER COLUMN x SET NOT NULL,"
+                + " ADD CONSTRAINT c CHECK (x > 0)").size());
     }
 
     /**

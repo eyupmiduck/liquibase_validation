@@ -1,5 +1,6 @@
 package io.github.eyupmiduck.changelogvalidator.linter.rules;
 
+import io.github.eyupmiduck.changelogvalidator.ChangelogIncludes;
 import io.github.eyupmiduck.changelogvalidator.linter.ProjectAnalysisRule;
 import io.github.eyupmiduck.changelogvalidator.linter.Severity;
 import io.github.eyupmiduck.changelogvalidator.linter.model.ChangeSet;
@@ -7,6 +8,7 @@ import io.github.eyupmiduck.changelogvalidator.linter.model.ChangelogProject;
 import io.github.eyupmiduck.changelogvalidator.linter.model.SqlSource;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -47,8 +49,9 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
         }
     }
 
-    private static boolean isRoutineFile(Path root, Path file) {
-        Path relative = root.relativize(file.toAbsolutePath().normalize());
+    static boolean isRoutineFile(Path root, Path file) {
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        Path relative = normalizedRoot.relativize(file.toAbsolutePath().normalize());
         for (Path segment : relative) {
             if (ROUTINE_DIRECTORIES.contains(segment.toString())) {
                 return true;
@@ -81,7 +84,7 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
         List<Violation> violations = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(project.root())) {
             for (Path path : paths.filter(Files::isRegularFile).toList()) {
-                if (!path.getFileName().toString().endsWith(".sql") || !isRoutineFile(project.root(), path)) {
+                if (!ChangelogIncludes.isSqlFile(path) || !isRoutineFile(project.root(), path)) {
                     continue;
                 }
                 Path normalized = path.toAbsolutePath().normalize();
@@ -91,6 +94,8 @@ public final class UnregisteredRoutineFileRule implements ProjectAnalysisRule {
                             "Add a changeset that references this file, or remove it."));
                 }
             }
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
         return List.copyOf(violations);
     }

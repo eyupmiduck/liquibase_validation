@@ -64,6 +64,24 @@ class RoutineArgumentNamingRuleTest {
     }
 
     @Test
+    void foldsUnquotedLocalNamesAndKeepsQuotedCase() {
+        assertTrue(check("", "DECLARE L_amount integer; BEGIN NULL; END;").isEmpty());
+        assertEquals(1, check("", "DECLARE \"L_amount\" integer; BEGIN NULL; END;").size());
+    }
+
+    @Test
+    void acceptsTheTwoWordInOutMode() {
+        assertTrue(check("IN OUT io_x integer", "BEGIN NULL; END;").isEmpty());
+        assertEquals(1, check("IN OUT x integer", "BEGIN NULL; END;").size());
+    }
+
+    @Test
+    void toleratesAnUnmatchedParenOrMissingBeginInDeclare() {
+        assertEquals(2, check("", "DECLARE x integer); y text; BEGIN NULL; END;").size());
+        assertEquals(2, check("", "DECLARE x integer; y text;").size());
+    }
+
+    @Test
     void acceptsAndReportsForLoopVariables() {
         assertTrue(check("", "BEGIN FOR l_i IN 1..10 LOOP NULL; END LOOP; END;").isEmpty());
         assertEquals(1, check("", "BEGIN FOR i IN 1..10 LOOP NULL; END LOOP; END;").size());

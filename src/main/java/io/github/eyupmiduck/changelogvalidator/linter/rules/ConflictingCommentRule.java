@@ -49,11 +49,34 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
         if (tokens.size() < 3 || tokens.get(2).type() != TokenType.WORD) {
             return null;
         }
-        StringBuilder key = new StringBuilder(tokens.get(2).text());
-        for (int i = 3; i < is; i++) {
-            key.append(' ').append(tokens.get(i).text());
+        StringBuilder key = new StringBuilder();
+        for (int i = 2; i < is; i++) {
+            if (i > 2) {
+                key.append(' ');
+            }
+            String identifier = RuleSupport.identifier(tokens.get(i));
+            key.append(identifier != null ? identifier : tokens.get(i).text());
         }
         return key.toString();
+    }
+
+    /**
+     * Returns the {@code IS} keyword that introduces the comment value, or -1.
+     * {@code IS} is non-reserved, so an object named {@code is} is not the
+     * keyword; only a candidate followed by a string literal or {@code NULL} is
+     * accepted.
+     */
+    private static int valueIs(List<Token> tokens) {
+        for (int candidate = indexOf(tokens, "IS", 3); candidate >= 0;
+             candidate = indexOf(tokens, "IS", candidate + 1)) {
+            if (candidate + 1 < tokens.size()) {
+                Token value = tokens.get(candidate + 1);
+                if (value.matchesKeyword("NULL") || value.isStringLiteral()) {
+                    return candidate;
+                }
+            }
+        }
+        return -1;
     }
 
     private static boolean isPunctuation(Token token, String text) {
@@ -79,12 +102,12 @@ public final class ConflictingCommentRule implements ProjectAnalysisRule {
             if (!TokenWords.startsWith(tokens, "COMMENT", "ON")) {
                 continue;
             }
-            int is = indexOf(tokens, "IS", 3);
+            int is = valueIs(tokens);
             if (is < 0) {
                 continue;
             }
             String key = key(tokens, is);
-            if (key == null || is + 1 >= tokens.size()) {
+            if (key == null) {
                 continue;
             }
             Token value = tokens.get(is + 1);

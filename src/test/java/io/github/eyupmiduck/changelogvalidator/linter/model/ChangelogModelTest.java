@@ -605,6 +605,31 @@ class ChangelogModelTest {
     }
 
     /**
+     * Liquibase's boolean spellings are honoured for changeset and source
+     * attributes, so {@code "1"} and {@code "yes"} are not read as false.
+     */
+    @Test
+    void parsesLiquibaseBooleanSpellings() throws IOException {
+        write("changes.xml", ChangelogTestSupport.changelog("""
+                <changeSet id="007-booleans" author="a" runInTransaction="1" runOnChange="yes">
+                    <sqlFile path="sql_changes/007-booleans.sql" relativeToChangelogFile="yes"
+                             splitStatements="1" stripComments="on"/>
+                </changeSet>
+                """));
+        write("sql_changes/007-booleans.sql", "SELECT 1;");
+
+        ChangeSet changeSet = ChangelogTestSupport.byId(
+                ChangelogModel.changesets(changelogRoot, master), "007-booleans");
+
+        assertTrue(changeSet.runInTransaction());
+        assertTrue(changeSet.runOnChange());
+        SqlSource source = changeSet.sqlSources().getFirst();
+        assertEquals(changelogRoot.resolve("sql_changes/007-booleans.sql").normalize(), source.path());
+        assertTrue(source.splitStatements());
+        assertTrue(source.stripComments());
+    }
+
+    /**
      * The model and source records reject missing required components.
      */
     @Test

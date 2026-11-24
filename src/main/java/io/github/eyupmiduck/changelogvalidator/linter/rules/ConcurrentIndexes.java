@@ -61,7 +61,7 @@ final class ConcurrentIndexes {
                 List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
                 for (int i = 0; i < tokens.size(); i++) {
                     if (tokens.get(i).matchesKeyword("CREATE")) {
-                        String table = createdTableAt(tokens, i);
+                        String table = RuleSupport.createdTableAt(tokens, i);
                         if (table != null) {
                             tables.add(table);
                         }
@@ -126,33 +126,6 @@ final class ConcurrentIndexes {
         }
         return new Candidate(Kind.DROP, null, unit, tokens.get(start));
     }
-
-    private static String createdTableAt(List<Token> tokens, int start) {
-        int table = start + 1;
-        while (table < tokens.size() && isCreateModifier(tokens.get(table))) {
-            table++;
-        }
-        if (table >= tokens.size() || !tokens.get(table).matchesKeyword("TABLE")) {
-            return null;
-        }
-        int nameStart = table + 1;
-        if (nameStart + 2 < tokens.size()
-                && tokens.get(nameStart).matchesKeyword("IF")
-                && tokens.get(nameStart + 1).matchesKeyword("NOT")
-                && tokens.get(nameStart + 2).matchesKeyword("EXISTS")) {
-            nameStart += 3;
-        }
-        return RuleSupport.qualifiedName(tokens, nameStart);
-    }
-
-    private static boolean isCreateModifier(Token token) {
-        return token.matchesKeyword("UNLOGGED")
-                || token.matchesKeyword("TEMPORARY")
-                || token.matchesKeyword("TEMP")
-                || token.matchesKeyword("GLOBAL")
-                || token.matchesKeyword("LOCAL");
-    }
-
 
     /**
      * The index command.

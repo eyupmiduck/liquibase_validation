@@ -152,7 +152,9 @@ class RequireDbmsPostgresqlRuleTest {
         assertTrue(check("postgresql,!mysql", sql).isEmpty());
         assertTrue(check("PostgreSQL, !mysql, !oracle", sql).isEmpty());
         assertFalse(check("!mysql", sql).isEmpty());
-        assertFalse(check("postgresql,!all", sql).isEmpty());
+        // !all excludes every database, including PostgreSQL.
+        assertTrue(check("postgresql,!all", sql).isEmpty());
+        assertTrue(check("!all", sql).isEmpty());
         // Excluding PostgreSQL means the changeset never runs there, so there is
         // nothing for this rule to report.
         assertTrue(check("postgresql,!postgresql", sql).isEmpty());

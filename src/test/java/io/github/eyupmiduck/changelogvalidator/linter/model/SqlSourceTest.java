@@ -20,9 +20,9 @@ class SqlSourceTest {
         assertTrue(new SqlSource(SqlSource.Kind.INLINE_SQL, null, "SELECT 1;", true, ";", false, null).isInline());
         assertFalse(new SqlSource(SqlSource.Kind.SQL_FILE, Path.of("/db/x.sql"), null, true, ";", false, null)
                 .isInline());
-        assertFalse(new SqlSource(SqlSource.Kind.ROUTINE_BODY, Path.of("/db/f.sql"), null, true, ";", false, null)
+        assertFalse(new SqlSource(SqlSource.Kind.ROUTINE_BODY, Path.of("/db/f.sql"), null, false, ";", false, null)
                 .isInline());
-        assertTrue(new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, "BEGIN END", true, ";", false, null)
+        assertTrue(new SqlSource(SqlSource.Kind.ROUTINE_BODY, null, "BEGIN END", false, ";", false, null)
                 .isInline());
     }
 
@@ -44,5 +44,8 @@ class SqlSourceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new SqlSource(SqlSource.Kind.ROUTINE_BODY, Path.of("/x.sql"), "BEGIN END", true, ";", false,
                         null));
+        // A routine body is never split, even when its shape is otherwise valid.
+        assertThrows(IllegalArgumentException.class,
+                () -> new SqlSource(SqlSource.Kind.ROUTINE_BODY, Path.of("/x.sql"), null, true, ";", false, null));
     }
 }

@@ -102,7 +102,9 @@ public final class Rules {
 
     /**
      * Reads a rule's {@code knownTables} allow-list: tables installed outside
-     * the changelog that the rule should treat as existing.
+     * the changelog that the rule should treat as existing. Entries are stripped;
+     * an unquoted table name is folded to lower case by the lexer, so use the
+     * lower-case spelling for it.
      *
      * @param config the configuration
      * @param ruleId the rule id
@@ -110,26 +112,7 @@ public final class Rules {
      * @throws IllegalArgumentException when the option is not a list of strings
      */
     private static Set<String> knownTables(LinterConfig config, String ruleId) {
-        LinterConfig.RuleSettings settings = config.rules().get(ruleId);
-        if (settings == null) {
-            return Set.of();
-        }
-        Object value = settings.options().get("knownTables");
-        if (value == null) {
-            return Set.of();
-        }
-        if (!(value instanceof List<?> list)) {
-            throw new IllegalArgumentException("knownTables for " + ruleId + " must be a list");
-        }
-        List<String> tables = new ArrayList<>();
-        for (Object item : list) {
-            if (!(item instanceof String table) || table.isBlank()) {
-                throw new IllegalArgumentException(
-                        "knownTables for " + ruleId + " must contain non-blank strings");
-            }
-            tables.add(table.strip());
-        }
-        return Set.copyOf(tables);
+        return stringSetOption(config, ruleId, "knownTables");
     }
 
     /**
@@ -143,25 +126,39 @@ public final class Rules {
      * @throws IllegalArgumentException when the option is not a list of strings
      */
     private static Set<String> allowedRoutines(LinterConfig config) {
-        LinterConfig.RuleSettings settings = config.rules().get(DynamicSqlRule.ID);
+        return stringSetOption(config, DynamicSqlRule.ID, "allowedRoutines");
+    }
+
+    /**
+     * Reads a string-list rule option, validating that it is a list of non-blank
+     * strings and stripping each entry.
+     *
+     * @param config the configuration
+     * @param ruleId the rule id
+     * @param option the option name
+     * @return the option values, or an empty set
+     * @throws IllegalArgumentException when the option is not a list of strings
+     */
+    private static Set<String> stringSetOption(LinterConfig config, String ruleId, String option) {
+        LinterConfig.RuleSettings settings = config.rules().get(ruleId);
         if (settings == null) {
             return Set.of();
         }
-        Object value = settings.options().get("allowedRoutines");
+        Object value = settings.options().get(option);
         if (value == null) {
             return Set.of();
         }
         if (!(value instanceof List<?> list)) {
-            throw new IllegalArgumentException("allowedRoutines for " + DynamicSqlRule.ID + " must be a list");
+            throw new IllegalArgumentException(option + " for " + ruleId + " must be a list");
         }
-        List<String> names = new ArrayList<>();
+        List<String> values = new ArrayList<>();
         for (Object item : list) {
-            if (!(item instanceof String name) || name.isBlank()) {
+            if (!(item instanceof String text) || text.isBlank()) {
                 throw new IllegalArgumentException(
-                        "allowedRoutines for " + DynamicSqlRule.ID + " must contain non-blank strings");
+                        option + " for " + ruleId + " must contain non-blank strings");
             }
-            names.add(name.strip());
+            values.add(text.strip());
         }
-        return Set.copyOf(names);
+        return Set.copyOf(values);
     }
 }

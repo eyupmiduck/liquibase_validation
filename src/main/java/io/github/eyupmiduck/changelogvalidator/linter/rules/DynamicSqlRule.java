@@ -56,7 +56,9 @@ public final class DynamicSqlRule implements Rule {
     }
 
     /**
-     * Creates a rule with an allow-list.
+     * Creates a rule with an allow-list. An unquoted routine name is folded to
+     * lower case by the lexer, so an entry must use the lower-case spelling for
+     * it; a quoted identifier keeps its exact case.
      *
      * @param allowedRoutines the {@code schema.name} routines allowed to use
      *                        dynamic SQL
@@ -154,21 +156,42 @@ public final class DynamicSqlRule implements Rule {
      * Keeps the rule's original coverage for a legacy single-quoted routine body.
      * {@link RoutineBodies} deliberately extracts only dollar-quoted bodies; a
      * body written as {@code AS 'BEGIN ... EXECUTE ...; END'} is a single string
-     * token, so this fallback scans its text for the keyword. It is
-     * informational and quote-unaware, which is acceptable for the reminder.
+     * token, so this fallback scans its text for the keyword. Only the string
+     * that follows the {@code AS} of a {@code CREATE [OR REPLACE]
+     * FUNCTION/PROCEDURE} declaration is a legacy body; other {@code AS}
+     * strings (for example a column alias) are not. It is informational and
+     * quote-unaware, which is acceptable for the reminder.
      */
     private void collectSingleQuotedBodies(SqlUnit unit, List<Violation> violations) {
         List<Token> tokens = unit.tokens().stream().filter(token -> !token.isTrivia()).toList();
-        boolean declaration = tokens.stream()
-                .anyMatch(token -> token.matchesKeyword("FUNCTION") || token.matchesKeyword("PROCEDURE"));
-        if (!declaration) {
-            return;
-        }
-        for (int i = 0; i + 1 < tokens.size(); i++) {
-            Token body = tokens.get(i + 1);
-            if (!tokens.get(i).matchesKeyword("AS")
-                    || body.type() == TokenType.DOLLAR_STRING
-                    || !body.isStringLiteral()) {
+        for (int i = 0; i < tokens.size(); i++) {
+            if (!tokens.get(i).matchesKeyword("CREATE")) {
+                continue;
+            }
+            int cursor = i + 1;
+            if (word(tokens, cursor, "OR") && word(tokens, cursor + 1, "REPLACE")) {
+                cursor += 2;
+            }
+            if (!word(tokens, cursor, "FUNCTION") && !word(tokens, cursor, "PROCEDURE")) {
+                continue;
+            }
+            String name = RuleSupport.qualifiedName(tokens, cursor + 1);
+            int open = indexOfPunctuation(tokens, "(", cursor + 1);
+            if (open < 0) {
+                continue;
+            }
+            int close = matchingParen(tokens, open);
+            if (close < 0) {
+                continue;
+            }
+            int as = indexOf(tokens, "AS", close + 1);
+            if (as < 0 || as + 1 >= tokens.size()) {
+                continue;
+            }
+            Token body = tokens.get(as + 1);
+            i = as + 1;
+            if (body.type() == TokenType.DOLLAR_STRING || !body.isStringLiteral()
+                    || (name != null && allowedRoutines.contains(name))) {
                 continue;
             }
             Matcher matcher = EXECUTE.matcher(body.text());
@@ -181,6 +204,45 @@ public final class DynamicSqlRule implements Rule {
                         unit.file(), position[0], position[1]));
             }
         }
+    }
+
+    private static boolean word(List<Token> tokens, int index, String keyword) {
+        return index >= 0 && index < tokens.size() && tokens.get(index).matchesKeyword(keyword);
+    }
+
+    private static int indexOf(List<Token> tokens, String keyword, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword(keyword)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int indexOfPunctuation(List<Token> tokens, String punctuation, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.type() == TokenType.PUNCTUATION && token.text().equals(punctuation)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int matchingParen(List<Token> tokens, int open) {
+        int depth = 0;
+        for (int i = open; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.type() == TokenType.PUNCTUATION && token.text().equals("(")) {
+                depth++;
+            } else if (token.type() == TokenType.PUNCTUATION && token.text().equals(")")) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     @Override

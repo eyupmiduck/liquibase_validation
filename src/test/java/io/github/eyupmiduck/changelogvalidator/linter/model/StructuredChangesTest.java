@@ -152,7 +152,7 @@ class StructuredChangesTest {
     @Test
     void rendersSequences() throws IOException {
         assertEquals("CREATE SEQUENCE s.q AS bigint INCREMENT BY 2 MINVALUE 1 MAXVALUE 100"
-                        + " START WITH 5 CACHE 10 CYCLE ORDER;",
+                        + " START WITH 5 CACHE 10 CYCLE;",
                 rendered("<createSequence schemaName=\"s\" sequenceName=\"q\" dataType=\"bigint\""
                         + " incrementBy=\"2\" minValue=\"1\" maxValue=\"100\" startValue=\"5\""
                         + " cacheSize=\"10\" cycle=\"true\" ordered=\"true\"/>"));
@@ -161,6 +161,35 @@ class StructuredChangesTest {
         assertEquals("DROP SEQUENCE s.q;",
                 rendered("<dropSequence schemaName=\"s\" sequenceName=\"q\"/>"));
         assertNull(rendered("<createSequence/>"));
+    }
+
+    /**
+     * The NO MINVALUE/NO MAXVALUE token must belong to its own bound, so a
+     * mismatched value is ignored rather than rendered as the other bound.
+     */
+    @Test
+    void bindsNoValueTokensToTheirOwnBound() throws IOException {
+        assertEquals("CREATE SEQUENCE q NO MINVALUE;",
+                rendered("<createSequence sequenceName=\"q\" minValue=\"NOMINVALUE\"/>"));
+        assertEquals("CREATE SEQUENCE q NO MAXVALUE;",
+                rendered("<createSequence sequenceName=\"q\" maxValue=\"NOMAXVALUE\"/>"));
+        assertEquals("CREATE SEQUENCE q;",
+                rendered("<createSequence sequenceName=\"q\" minValue=\"NOMAXVALUE\"/>"));
+        assertEquals("CREATE SEQUENCE q;",
+                rendered("<createSequence sequenceName=\"q\" maxValue=\"NOMINVALUE\"/>"));
+    }
+
+    /**
+     * An index name is optional in Liquibase; PostgreSQL generates one, so the
+     * change still contributes the CREATE INDEX the token rules need.
+     */
+    @Test
+    void rendersAnUnnamedIndex() throws IOException {
+        assertEquals("CREATE INDEX ON t (c);",
+                rendered("<createIndex tableName=\"t\"><column name=\"c\"/></createIndex>"));
+        assertEquals("CREATE UNIQUE INDEX ON t (c);",
+                rendered("<createIndex tableName=\"t\" unique=\"true\">"
+                        + "<column name=\"c\"/></createIndex>"));
     }
 
     @Test

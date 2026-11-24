@@ -143,7 +143,13 @@ public final class RoutineSelectStarRule implements Rule {
                 continue;
             }
             if (isPunctuation(token, ")")) {
-                depth = Math.max(0, depth - 1);
+                if (depth == 0) {
+                    // The paren was opened before this select list (an enclosing
+                    // subquery or expression), so the select list ends here. The
+                    // outer scan reports any star in it.
+                    return;
+                }
+                depth--;
                 itemStart = false;
                 continue;
             }

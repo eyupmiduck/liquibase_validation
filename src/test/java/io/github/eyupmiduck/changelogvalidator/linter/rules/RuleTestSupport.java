@@ -46,7 +46,7 @@ final class RuleTestSupport {
      */
     static SqlUnit unit(SqlSource.Kind kind, String sql) {
         SqlSource source = switch (kind) {
-            case ROUTINE_BODY -> new SqlSource(kind, FILE, null, true, ";", false, null);
+            case ROUTINE_BODY -> new SqlSource(kind, FILE, null, false, ";", false, null);
             case SQL_FILE -> new SqlSource(kind, FILE, null, true, ";", true, null);
             case INLINE_SQL -> new SqlSource(kind, null, sql, true, ";", true, null);
         };

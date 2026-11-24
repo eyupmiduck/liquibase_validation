@@ -60,13 +60,8 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         Set<String> created = new LinkedHashSet<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
-            if (TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
-                int name = 2;
-                if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
-                        && TokenWords.at(tokens, name + 2, "EXISTS")) {
-                    name += 3;
-                }
-                String table = RuleSupport.qualifiedName(tokens, name);
+            if (TokenWords.at(tokens, 0, "CREATE")) {
+                String table = RuleSupport.createdTableAt(tokens, 0);
                 if (table != null) {
                     created.add(table);
                 }
@@ -75,8 +70,17 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         List<Violation> violations = new ArrayList<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
+            // Only a CREATE TABLE or ALTER TABLE can declare a foreign key; a
+            // REFERENCES in a SELECT can be an attribute name, and an identifier
+            // preceded by a dot is not the keyword.
+            boolean canDeclareForeignKey = TokenWords.startsWith(tokens, "ALTER", "TABLE")
+                    || (TokenWords.at(tokens, 0, "CREATE") && RuleSupport.createdTableAt(tokens, 0) != null);
+            if (!canDeclareForeignKey) {
+                continue;
+            }
             for (int i = 0; i + 1 < tokens.size(); i++) {
-                if (!tokens.get(i).matchesKeyword("REFERENCES")) {
+                if (!tokens.get(i).matchesKeyword("REFERENCES")
+                        || (i > 0 && RuleSupport.isDot(tokens.get(i - 1)))) {
                     continue;
                 }
                 String referenced = RuleSupport.qualifiedName(tokens, i + 1);

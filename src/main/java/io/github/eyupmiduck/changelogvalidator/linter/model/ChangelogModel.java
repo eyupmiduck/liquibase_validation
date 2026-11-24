@@ -131,7 +131,7 @@ public final class ChangelogModel {
                                 throw new IOException("include without a file attribute: " + normalized);
                             }
                             boolean relativeToChangelogFile =
-                                    "true".equalsIgnoreCase(child.getAttribute("relativeToChangelogFile"));
+                                    booleanAttribute(child, "relativeToChangelogFile", false);
                             Path base = relativeToChangelogFile ? normalized.getParent() : root;
                             Path resolved = resolveWithin(root, base, included, "include");
                             file.includes.add(resolved);
@@ -602,16 +602,15 @@ public final class ChangelogModel {
             sql.append(" AS ").append(dataType);
         }
         appendNumeric(sql, "INCREMENT BY", change.getAttribute("incrementBy"));
-        appendBound(sql, "MINVALUE", "NO MINVALUE", change.getAttribute("minValue"));
-        appendBound(sql, "MAXVALUE", "NO MAXVALUE", change.getAttribute("maxValue"));
+        appendBound(sql, "MINVALUE", "NOMINVALUE", change.getAttribute("minValue"));
+        appendBound(sql, "MAXVALUE", "NOMAXVALUE", change.getAttribute("maxValue"));
         appendNumeric(sql, "START WITH", change.getAttribute("startValue"));
         appendNumeric(sql, "CACHE", change.getAttribute("cacheSize"));
         if (booleanAttribute(change, "cycle", false)) {
             sql.append(" CYCLE");
         }
-        if (booleanAttribute(change, "ordered", false)) {
-            sql.append(" ORDER");
-        }
+        // ORDER is Liquibase's Oracle RAC option; PostgreSQL's CREATE SEQUENCE has
+        // no ORDER clause, so it is not rendered.
         return sql.append(';').toString();
     }
 
@@ -666,12 +665,12 @@ public final class ChangelogModel {
         }
     }
 
-    private static void appendBound(StringBuilder sql, String clause, String noClause, String value) {
+    private static void appendBound(StringBuilder sql, String clause, String noToken, String value) {
         if (value.isBlank()) {
             return;
         }
-        if ("NOMINVALUE".equalsIgnoreCase(value) || "NOMAXVALUE".equalsIgnoreCase(value)) {
-            sql.append(' ').append(noClause);
+        if (noToken.equalsIgnoreCase(value)) {
+            sql.append(" NO ").append(clause);
         } else if (INTEGER.matcher(value).matches()) {
             sql.append(' ').append(clause).append(' ').append(value);
         }
@@ -712,7 +711,7 @@ public final class ChangelogModel {
         String schema = change.getAttribute("schemaName");
         String index = qualified(schema, change.getAttribute("indexName"));
         String table = qualified(schema, change.getAttribute("tableName"));
-        if (index == null || table == null) {
+        if (table == null) {
             return null;
         }
         List<String> columns = new ArrayList<>();
@@ -725,8 +724,11 @@ public final class ChangelogModel {
             // An index needs a column list; "CREATE INDEX i ON t;" is invalid SQL.
             return null;
         }
+        // indexName is optional in Liquibase: PostgreSQL generates the name for an
+        // unnamed CREATE INDEX, so the change still contributes SQL to the rules.
+        String name = index == null ? "" : index + " ";
         String unique = booleanAttribute(change, "unique", false) ? "CREATE UNIQUE INDEX " : "CREATE INDEX ";
-        return unique + index + " ON " + table + " (" + String.join(", ", columns) + ");";
+        return unique + name + "ON " + table + " (" + String.join(", ", columns) + ");";
     }
 
     private static String dropIndexSql(Element change) {
@@ -794,7 +796,7 @@ public final class ChangelogModel {
             // body first), and Liquibase requires sqlFile/@path.
             throw new IOException("sqlFile without a path attribute: " + changelogFile);
         }
-        boolean relativeToChangelogFile = "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
+        boolean relativeToChangelogFile = booleanAttribute(element, "relativeToChangelogFile", false);
         Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
         return List.of(new SqlSource(
                 kind,
@@ -827,7 +829,11 @@ public final class ChangelogModel {
     }
 
     private static boolean booleanAttribute(Element element, String name, boolean defaultValue) {
-        return element.hasAttribute(name) ? Boolean.parseBoolean(element.getAttribute(name)) : defaultValue;
+        if (!element.hasAttribute(name)) {
+            return defaultValue;
+        }
+        Boolean parsed = LiquibaseBoolean.parse(element.getAttribute(name));
+        return parsed == null ? false : parsed;
     }
 
     private static String delimiterAttribute(Element element) {
