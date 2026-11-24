@@ -18,6 +18,8 @@
 
 - [ ] `./mvnw verify` passes locally
 - [ ] Tests are added or updated and have Javadoc
+- [ ] Database access uses jOOQ's DSL; raw SQL is limited to DDL, catalog
+  introspection, session settings, and SQL the DSL cannot express
 - [ ] Public API changes are reflected in the README
 - [ ] No secrets, credentials, or generated build output are included
 - [ ] The project `<version>` is unchanged (releases bump it deliberately)
