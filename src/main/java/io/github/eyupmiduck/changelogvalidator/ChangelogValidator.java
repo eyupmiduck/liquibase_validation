@@ -334,7 +334,7 @@ public final class ChangelogValidator {
                     throw new IOException("include without a file attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
-                        "true".equalsIgnoreCase(include.getAttribute("relativeToChangelogFile"));
+                        booleanAttribute(include, "relativeToChangelogFile", false);
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 Path resolved = resolveWithin(root, base, file, "include");
                 boolean sql = ChangelogIncludes.isSqlFile(resolved);
@@ -394,7 +394,7 @@ public final class ChangelogValidator {
                     throw new IOException(elementName + " without a path attribute: " + changelogFile);
                 }
                 boolean relativeToChangelogFile =
-                        "true".equalsIgnoreCase(element.getAttribute("relativeToChangelogFile"));
+                        booleanAttribute(element, "relativeToChangelogFile", false);
                 Path base = relativeToChangelogFile ? changelogFile.getParent() : root;
                 Path resolved = resolveWithin(root, base, path, "SQL file reference");
                 if (!Files.isRegularFile(resolved)) {
@@ -430,6 +430,23 @@ public final class ChangelogValidator {
      */
     private static String pathKey(Path file) {
         return file.toString().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Reads a boolean XML attribute strictly: only {@code true} and {@code false}
+     * (case-insensitive) are accepted, so a typo cannot silently select the
+     * default and resolve a path against the wrong base.
+     */
+    private static boolean booleanAttribute(Element element, String name, boolean defaultValue)
+            throws IOException {
+        if (!element.hasAttribute(name)) {
+            return defaultValue;
+        }
+        String value = element.getAttribute(name).strip();
+        if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+            throw new IOException(name + " is not a boolean: " + value);
+        }
+        return "true".equalsIgnoreCase(value);
     }
 
     private static Document parse(Path changelogFile) throws IOException {

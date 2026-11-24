@@ -354,6 +354,23 @@ class ChangelogValidatorTest {
     }
 
     /**
+     * A non-boolean {@code relativeToChangelogFile} is rejected instead of
+     * silently resolving the include against the changelog root.
+     */
+    @Test
+    void rejectsNonBooleanRelativeToChangelogFile() throws IOException {
+        Path root = Files.createDirectories(tempDir.resolve("changelog"));
+        Path master = root.resolve("master.xml");
+        Files.writeString(master, ChangelogTestSupport.changelog("""
+                <include file="changes.xml" relativeToChangelogFile="ture"/>
+                """));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> ChangelogValidator.findReferencedSqlFiles(root, master));
+        assertTrue(failure.getMessage().contains("relativeToChangelogFile"), failure.getMessage());
+    }
+
+    /**
      * A SQL file referenced as the body of a {@code createProcedure} element is
      * not orphaned, while an unreferenced routine body is.
      */
