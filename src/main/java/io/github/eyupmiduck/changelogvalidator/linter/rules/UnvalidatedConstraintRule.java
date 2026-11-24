@@ -162,16 +162,6 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         return token.type() == TokenType.PUNCTUATION && token.text().equals(text);
     }
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.WARNING;
-    }
-
     /**
      * Processes one {@code ALTER TABLE} command and returns its end offset.
      */
@@ -256,6 +246,16 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             }
         }
         return end;
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.WARNING;
     }
 
     @Override

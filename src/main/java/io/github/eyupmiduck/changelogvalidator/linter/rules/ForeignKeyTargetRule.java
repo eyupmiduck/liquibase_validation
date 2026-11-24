@@ -43,16 +43,6 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
         this.knownTables = Set.copyOf(knownTables);
     }
 
-    @Override
-    public String id() {
-        return ID;
-    }
-
-    @Override
-    public Severity defaultSeverity() {
-        return Severity.WARNING;
-    }
-
     private static boolean containsCreateTable(List<Token> tokens) {
         for (int i = 0; i < tokens.size(); i++) {
             if (tokens.get(i).matchesKeyword("CREATE")
@@ -61,6 +51,16 @@ public final class ForeignKeyTargetRule implements ProjectAnalysisRule {
             }
         }
         return false;
+    }
+
+    @Override
+    public String id() {
+        return ID;
+    }
+
+    @Override
+    public Severity defaultSeverity() {
+        return Severity.WARNING;
     }
 
     @Override
