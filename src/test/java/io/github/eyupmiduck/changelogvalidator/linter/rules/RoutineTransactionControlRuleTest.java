@@ -48,6 +48,22 @@ class RoutineTransactionControlRuleTest {
     }
 
     @Test
+    void ignoresCommitAndRollbackUsedAsIdentifiers() {
+        assertTrue(checkFunction("BEGIN SELECT t.commit FROM t; END;").isEmpty());
+        assertTrue(checkFunction("BEGIN commit := 1; END;").isEmpty());
+        assertTrue(checkFunction("BEGIN PERFORM commit(); END;").isEmpty());
+        assertTrue(checkFunction("BEGIN SELECT rollback FROM t; END;").isEmpty());
+    }
+
+    @Test
+    void acceptsTransactionControlStatementForms() {
+        assertEquals(1, checkFunction("BEGIN COMMIT WORK; END;").size());
+        assertEquals(1, checkFunction("BEGIN COMMIT TRANSACTION; END;").size());
+        assertEquals(1, checkFunction("BEGIN ROLLBACK TO SAVEPOINT s; END;").size());
+        assertEquals(1, checkFunction("BEGIN COMMIT AND CHAIN; END;").size());
+    }
+
+    @Test
     void ignoresCommentsAndStrings() {
         assertTrue(checkFunction("BEGIN -- COMMIT\n PERFORM 'ROLLBACK'; END;").isEmpty());
     }

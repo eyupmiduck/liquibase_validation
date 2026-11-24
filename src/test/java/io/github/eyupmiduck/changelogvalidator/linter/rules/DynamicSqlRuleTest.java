@@ -119,6 +119,32 @@ class DynamicSqlRuleTest {
     }
 
     /**
+     * The legacy fallback only scans the AS string of the routine declaration,
+     * not an unrelated AS string in the same unit.
+     */
+    @Test
+    void scansOnlyTheDeclarationsSingleQuotedBody() {
+        List<Rule.Violation> violations = new DynamicSqlRule().check(context(RuleTestSupport.unit(
+                SqlSource.Kind.ROUTINE_BODY,
+                "CREATE FUNCTION app.f() RETURNS void AS 'BEGIN EXECUTE ''DROP TABLE t''; END'"
+                        + " LANGUAGE plpgsql; SELECT 1 AS 'EXECUTE next';")));
+
+        assertEquals(1, violations.size());
+    }
+
+    /**
+     * The allow-list applies to the legacy single-quoted body too.
+     */
+    @Test
+    void skipsAnAllowListedRoutineWithASingleQuotedBody() {
+        String sql = "CREATE FUNCTION app.f() RETURNS void AS 'BEGIN EXECUTE ''DROP TABLE t''; END'"
+                + " LANGUAGE plpgsql;";
+
+        assertTrue(new DynamicSqlRule(Set.of("app.f"))
+                .check(context(RuleTestSupport.unit(SqlSource.Kind.ROUTINE_BODY, sql))).isEmpty());
+    }
+
+    /**
      * A routine or parameter named execute in the declaration header is not
      * dynamic SQL; only the body after AS is scanned.
      */

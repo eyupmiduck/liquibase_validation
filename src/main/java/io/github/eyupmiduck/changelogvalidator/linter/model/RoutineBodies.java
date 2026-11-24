@@ -157,6 +157,10 @@ public final class RoutineBodies {
         ParameterMode mode = ParameterMode.IN;
         if (segment.get(cursor).matchesKeyword("IN")) {
             cursor++;
+            if (cursor < segment.size() && segment.get(cursor).matchesKeyword("OUT")) {
+                mode = ParameterMode.INOUT;
+                cursor++;
+            }
         } else if (segment.get(cursor).matchesKeyword("OUT")) {
             mode = ParameterMode.OUT;
             cursor++;

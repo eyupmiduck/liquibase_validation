@@ -58,4 +58,44 @@ class RuleSupportTest {
                 () -> RuleSupport.firstToken(unit, new SqlStatement("", 0, 0)));
         assertTrue(error.getMessage().contains("no token"));
     }
+
+    /**
+     * A leading comment in a statement's span is not a location; the first
+     * meaningful token is reported instead.
+     */
+    @Test
+    void firstTokenSkipsLeadingCommentTrivia() {
+        SqlUnit unit = RuleTestSupport.unit("-- note\nSELECT 1");
+
+        Token token = RuleSupport.firstToken(unit, new SqlStatement("", 0, unit.sql().length()));
+
+        assertTrue(token.matchesKeyword("SELECT"), () -> "got " + token);
+    }
+
+    /**
+     * The simple-name fallback only matches a qualified name with an unqualified
+     * one; two different schemas never match. Quoted identifiers keep their case.
+     */
+    @Test
+    void containsTableOnlyFallsBackWhenOneNameIsUnqualified() {
+        assertFalse(RuleSupport.containsTable(java.util.Set.of("analytics.events"), "app.events"));
+        assertFalse(RuleSupport.containsTable(java.util.Set.of("app.events"), "analytics.events"));
+        assertTrue(RuleSupport.containsTable(java.util.Set.of("app.events"), "events"));
+        assertTrue(RuleSupport.containsTable(java.util.Set.of("events"), "app.events"));
+        assertFalse(RuleSupport.containsTable(java.util.Set.of("Foo"), "foo"));
+        assertTrue(RuleSupport.containsTable(java.util.Set.of("Foo"), "Foo"));
+    }
+
+    /**
+     * A {@code CREATE TABLE} modifier is recognised, so a temporary or unlogged
+     * table is not missed.
+     */
+    @Test
+    void createdTableAtAcceptsCreateModifiers() {
+        assertEquals("t", RuleSupport.createdTableAt(words("CREATE UNLOGGED TABLE t (id int)"), 0));
+        assertEquals("t", RuleSupport.createdTableAt(words("CREATE GLOBAL TEMPORARY TABLE t (id int)"), 0));
+        assertEquals("t", RuleSupport.createdTableAt(words("CREATE LOCAL TEMP TABLE t (id int)"), 0));
+        assertEquals("t", RuleSupport.createdTableAt(words("CREATE TEMPORARY TABLE IF NOT EXISTS t (id int)"), 0));
+        assertNull(RuleSupport.createdTableAt(words("CREATE INDEX i ON t (id)"), 0));
+    }
 }

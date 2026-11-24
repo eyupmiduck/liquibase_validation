@@ -35,10 +35,46 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
         if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "EXISTS")) {
             name += 2;
         }
-        String table = RuleSupport.qualifiedName(tokens, name);
-        if (table != null) {
-            pending.keySet().removeIf(key -> key.startsWith(table + "."));
+        while (name < tokens.size()) {
+            String table = RuleSupport.qualifiedName(tokens, name);
+            if (table == null) {
+                return;
+            }
+            String prefix = simpleName(table) + ".";
+            pending.keySet().removeIf(key -> key.startsWith(prefix));
+            name = qualifiedNameEnd(tokens, name);
+            if (!isPunctuation(tokens, name, ",")) {
+                return;
+            }
+            name++;
         }
+    }
+
+    /**
+     * Returns the pending-constraint key. The table is reduced to its final name
+     * segment so {@code ALTER TABLE public.t} and {@code ALTER TABLE t} refer to
+     * the same table.
+     */
+    private static String key(String table, String constraint) {
+        return simpleName(table) + "." + constraint;
+    }
+
+    private static String simpleName(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(dot + 1);
+    }
+
+    private static int qualifiedNameEnd(List<Token> tokens, int start) {
+        int i = start + 1;
+        while (i + 1 < tokens.size() && RuleSupport.isDot(tokens.get(i))
+                && RuleSupport.identifier(tokens.get(i + 1)) != null) {
+            i += 2;
+        }
+        return i;
+    }
+
+    private static boolean isPunctuation(List<Token> tokens, int index, String text) {
+        return index >= 0 && index < tokens.size() && isPunctuation(tokens.get(index), text);
     }
 
     private static int nextClause(List<Token> tokens, String keyword, int from) {
@@ -111,39 +147,9 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
             if (table == null) {
                 continue;
             }
-            for (int add = nextClause(tokens, "ADD", cursor + 1); add >= 0;
-                 add = nextClause(tokens, "ADD", add + 1)) {
-                int name = add + 1;
-                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
-                    continue;
-                }
-                name++;
-                if (name >= tokens.size()) {
-                    continue;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint == null || !notValid(tokens, add)) {
-                    continue;
-                }
-                String key = table + "." + constraint;
-                pending.putIfAbsent(key, new Located(statement.changeSet(), statement.unit().file(),
-                        tokens.get(name).line(), tokens.get(name).column()));
-            }
-            for (int validate = nextClause(tokens, "VALIDATE", cursor + 1); validate >= 0;
-                 validate = nextClause(tokens, "VALIDATE", validate + 1)) {
-                int name = validate + 1;
-                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
-                    continue;
-                }
-                name++;
-                if (name >= tokens.size()) {
-                    continue;
-                }
-                String constraint = RuleSupport.identifier(tokens.get(name));
-                if (constraint != null) {
-                    pending.remove(table + "." + constraint);
-                }
-            }
+            // PostgreSQL runs DROP CONSTRAINT before ADD CONSTRAINT in a single
+            // ALTER TABLE, and VALIDATE afterwards. A drop-and-re-add therefore
+            // leaves the new constraint pending, not removed by the drop.
             for (int drop = nextClause(tokens, "DROP", cursor + 1); drop >= 0;
                  drop = nextClause(tokens, "DROP", drop + 1)) {
                 int name = drop + 1;
@@ -159,7 +165,39 @@ public final class UnvalidatedConstraintRule implements ProjectAnalysisRule {
                 }
                 String constraint = RuleSupport.identifier(tokens.get(name));
                 if (constraint != null) {
-                    pending.remove(table + "." + constraint);
+                    pending.remove(key(table, constraint));
+                }
+            }
+            for (int add = nextClause(tokens, "ADD", cursor + 1); add >= 0;
+                 add = nextClause(tokens, "ADD", add + 1)) {
+                int name = add + 1;
+                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
+                    continue;
+                }
+                name++;
+                if (name >= tokens.size()) {
+                    continue;
+                }
+                String constraint = RuleSupport.identifier(tokens.get(name));
+                if (constraint == null || !notValid(tokens, add)) {
+                    continue;
+                }
+                pending.putIfAbsent(key(table, constraint), new Located(statement.changeSet(),
+                        statement.unit().file(), tokens.get(name).line(), tokens.get(name).column()));
+            }
+            for (int validate = nextClause(tokens, "VALIDATE", cursor + 1); validate >= 0;
+                 validate = nextClause(tokens, "VALIDATE", validate + 1)) {
+                int name = validate + 1;
+                if (!TokenWords.at(tokens, name, "CONSTRAINT")) {
+                    continue;
+                }
+                name++;
+                if (name >= tokens.size()) {
+                    continue;
+                }
+                String constraint = RuleSupport.identifier(tokens.get(name));
+                if (constraint != null) {
+                    pending.remove(key(table, constraint));
                 }
             }
         }

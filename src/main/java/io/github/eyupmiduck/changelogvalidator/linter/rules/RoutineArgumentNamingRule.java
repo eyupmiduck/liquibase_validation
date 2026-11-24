@@ -76,7 +76,9 @@ public final class RoutineArgumentNamingRule implements Rule {
             if (isPunctuation(token, "(")) {
                 depth++;
             } else if (isPunctuation(token, ")")) {
-                depth--;
+                if (depth > 0) {
+                    depth--;
+                }
             }
             if (depth == 0 && isPunctuation(token, ";")) {
                 addDeclaration(segment, locals);
@@ -85,6 +87,9 @@ public final class RoutineArgumentNamingRule implements Rule {
                 segment.add(token);
             }
         }
+        // A body fragment without a closing BEGIN still declares its last
+        // variable, so flush the pending segment.
+        addDeclaration(segment, locals);
     }
 
     private static void addDeclaration(List<Token> segment, List<Token> locals) {
@@ -102,10 +107,8 @@ public final class RoutineArgumentNamingRule implements Rule {
      * identifier.
      */
     private static String name(Token token) {
-        if (token.type() == TokenType.QUOTED_IDENTIFIER) {
-            return token.identifier();
-        }
-        return token.text();
+        String identifier = RuleSupport.identifier(token);
+        return identifier != null ? identifier : token.text();
     }
 
     /**

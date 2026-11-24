@@ -153,6 +153,41 @@ class BlockRawAlterTableRuleTest {
     }
 
     /**
+     * A source whose SQL is not split (an empty {@code endDelimiter}) can put an
+     * {@code ALTER TABLE} after another command; the phrase is found at any token
+     * position, and the hint and location belong to that command.
+     */
+    @Test
+    void reportsAlterTableAfterAnotherCommandInAnUnsplitSource() {
+        RuleContext context = RuleTestSupport.context(
+                RuleTestSupport.changeSet(true, false, null, false),
+                RuleTestSupport.unit("CREATE TABLE t (id int);\nALTER TABLE t ADD COLUMN c int;", true, ""));
+
+        List<Rule.Violation> violations = new BlockRawAlterTableRule().check(context);
+
+        assertEquals(1, violations.size());
+        Rule.Violation violation = violations.getFirst();
+        assertTrue(violation.message().contains("raw ALTER TABLE on t"), violation.message());
+        assertTrue(violation.message().contains("ddl_utils.add_column"), violation.message());
+        assertEquals(2, violation.line());
+        assertEquals(1, violation.column());
+    }
+
+    /**
+     * RENAME is unreserved in PostgreSQL, so an object named {@code rename} must
+     * fall through to the clause that actually follows it.
+     */
+    @Test
+    void doesNotClaimRenameWhenRenameIsAnIdentifier() {
+        assertTrue(check("ALTER TABLE t ADD CONSTRAINT rename UNIQUE (a);")
+                .get(0).message().contains("ddl_utils.add_unique_constraint_using_index"));
+        assertTrue(check("ALTER TABLE t ADD COLUMN rename text;")
+                .get(0).message().contains("ddl_utils.add_column"));
+        assertTrue(check("ALTER TABLE t RENAME old TO new;")
+                .get(0).message().contains("ddl_utils.rename_column"));
+    }
+
+    /**
      * Every {@code ALTER TABLE} in a multi-statement changeset is reported, and
      * a raw rollback {@code ALTER TABLE} is reported too.
      */

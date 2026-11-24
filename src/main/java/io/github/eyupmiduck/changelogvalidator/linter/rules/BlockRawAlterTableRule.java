@@ -40,10 +40,33 @@ public final class BlockRawAlterTableRule implements Rule {
      */
     public static final String ID = "block-raw-alter-table";
 
-    private static boolean isAlterTable(List<Token> tokens) {
-        return tokens.size() >= 2
-                && tokens.get(0).matchesKeyword("ALTER")
-                && tokens.get(1).matchesKeyword("TABLE");
+    /**
+     * Returns the index of the first {@code ALTER TABLE} phrase, or {@code -1}.
+     * A statement whose SQL was not split into individual commands can contain
+     * an {@code ALTER TABLE} after another command, so the phrase is searched for
+     * at every token position rather than only at the start.
+     */
+    private static int alterTableAt(List<Token> tokens) {
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the end of the command that starts at {@code alter}: the next
+     * top-level {@code ALTER TABLE} phrase, or the end of the tokens. The bound
+     * keeps a hint from reading a later command's clause in an unsplit statement.
+     */
+    private static int commandEnd(List<Token> tokens, int alter) {
+        for (int i = alter + 2; i + 1 < tokens.size(); i++) {
+            if (tokens.get(i).matchesKeyword("ALTER") && tokens.get(i + 1).matchesKeyword("TABLE")) {
+                return i;
+            }
+        }
+        return tokens.size();
     }
 
     /**
@@ -78,7 +101,13 @@ public final class BlockRawAlterTableRule implements Rule {
             if (next.matchesKeyword("CONSTRAINT")) {
                 return "use ddl_utils.rename_constraint";
             }
-            return "use ddl_utils.rename_column";
+            if (next.matchesKeyword("COLUMN")
+                    || (rename + 2 < tokens.size() && tokens.get(rename + 2).matchesKeyword("TO"))) {
+                return "use ddl_utils.rename_column";
+            }
+            // RENAME is unreserved in PostgreSQL, so it can be an identifier
+            // (for example a constraint named rename). Fall through to the
+            // clause checks below.
         }
         if (hasClause(tokens, "DROP", "NOT", "NULL")) {
             return "use ddl_utils.drop_not_null";
@@ -170,12 +199,14 @@ public final class BlockRawAlterTableRule implements Rule {
             }
             for (SqlStatement statement : unit.commands()) {
                 List<Token> tokens = RuleSupport.nonTriviaWithin(unit.tokens(), statement);
-                if (!isAlterTable(tokens)) {
+                int alter = alterTableAt(tokens);
+                if (alter < 0) {
                     continue;
                 }
-                Token token = RuleSupport.firstToken(unit, statement);
-                String table = RuleSupport.qualifiedName(tokens, tableNameStart(tokens));
-                String hint = wrapperHint(tokens);
+                List<Token> command = tokens.subList(alter, commandEnd(tokens, alter));
+                Token token = tokens.get(alter);
+                String table = RuleSupport.qualifiedName(command, tableNameStart(command));
+                String hint = wrapperHint(command);
                 violations.add(new Violation(
                         "ALTER TABLE",
                         "raw ALTER TABLE" + (table == null ? "" : " on " + table)

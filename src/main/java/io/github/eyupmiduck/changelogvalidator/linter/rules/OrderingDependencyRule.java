@@ -70,17 +70,65 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
             int cursor = TokenWords.at(tokens, 1, "ONLY") ? 2 : 1;
             add(references, RuleSupport.qualifiedName(tokens, cursor), tokens, cursor);
         } else if (TokenWords.startsWith(tokens, "DELETE", "FROM")) {
-            add(references, RuleSupport.qualifiedName(tokens, 2), tokens, 2);
-        } else if (TokenWords.at(tokens, 0, "TRUNCATE")) {
-            int cursor = TokenWords.at(tokens, 1, "TABLE") ? 2 : 1;
+            int cursor = 2;
+            if (TokenWords.at(tokens, cursor, "ONLY")) {
+                cursor++;
+            }
             add(references, RuleSupport.qualifiedName(tokens, cursor), tokens, cursor);
+        } else if (TokenWords.at(tokens, 0, "TRUNCATE")) {
+            int cursor = 1;
+            if (TokenWords.at(tokens, cursor, "TABLE")) {
+                cursor++;
+            }
+            if (TokenWords.at(tokens, cursor, "ONLY")) {
+                cursor++;
+            }
+            addTableList(references, tokens, cursor);
         }
-        for (int i = 0; i + 1 < tokens.size(); i++) {
-            if (tokens.get(i).matchesKeyword("REFERENCES")) {
-                add(references, RuleSupport.qualifiedName(tokens, i + 1), tokens, i + 1);
+        // A REFERENCES token in a SELECT is not a foreign-key clause (it can be
+        // an attribute name), and an identifier preceded by a dot is not the
+        // keyword.
+        boolean canDeclareForeignKey = TokenWords.startsWith(tokens, "ALTER", "TABLE")
+                || (TokenWords.at(tokens, 0, "CREATE") && RuleSupport.createdTableAt(tokens, 0) != null);
+        if (canDeclareForeignKey) {
+            for (int i = 0; i + 1 < tokens.size(); i++) {
+                if (tokens.get(i).matchesKeyword("REFERENCES")
+                        && !(i > 0 && RuleSupport.isDot(tokens.get(i - 1)))) {
+                    add(references, RuleSupport.qualifiedName(tokens, i + 1), tokens, i + 1);
+                }
             }
         }
         return references;
+    }
+
+    private static void addTableList(Map<String, Token> references, List<Token> tokens, int start) {
+        int index = start;
+        while (index < tokens.size()) {
+            String table = RuleSupport.qualifiedName(tokens, index);
+            if (table == null) {
+                return;
+            }
+            references.putIfAbsent(table, tokens.get(index));
+            index = qualifiedNameEnd(tokens, index);
+            if (index >= tokens.size() || !isPunctuation(tokens.get(index), ",")) {
+                return;
+            }
+            index++;
+        }
+    }
+
+    private static int qualifiedNameEnd(List<Token> tokens, int start) {
+        int i = start + 1;
+        while (i + 1 < tokens.size() && RuleSupport.isDot(tokens.get(i))
+                && RuleSupport.identifier(tokens.get(i + 1)) != null) {
+            i += 2;
+        }
+        return i;
+    }
+
+    private static boolean isPunctuation(Token token, String text) {
+        return token.type() == io.github.eyupmiduck.changelogvalidator.linter.lexer.TokenType.PUNCTUATION
+                && token.text().equals(text);
     }
 
     private static void add(Map<String, Token> references, String table, List<Token> tokens, int index) {
@@ -126,13 +174,12 @@ public final class OrderingDependencyRule implements ProjectAnalysisRule {
         Map<String, Located> created = new LinkedHashMap<>();
         for (ProjectStatements.Statement statement : statements) {
             List<Token> tokens = statement.tokens();
-            if (!TokenWords.startsWith(tokens, "CREATE", "TABLE")) {
+            if (!TokenWords.at(tokens, 0, "CREATE")) {
                 continue;
             }
-            int name = 2;
-            if (TokenWords.at(tokens, name, "IF") && TokenWords.at(tokens, name + 1, "NOT")
-                    && TokenWords.at(tokens, name + 2, "EXISTS")) {
-                name += 3;
+            int name = RuleSupport.createdTableNameIndex(tokens, 0);
+            if (name < 0) {
+                continue;
             }
             String table = RuleSupport.qualifiedName(tokens, name);
             if (table != null) {
