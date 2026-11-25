@@ -23,8 +23,8 @@ import java.util.regex.Pattern;
  * <p>GitHub Packages serves {@code <artifactId>/maven-metadata.xml} with a
  * {@code <versions>} listing, and the release jar at
  * {@code <version>/<artifactId>-<version>.jar}. The resolver selects the highest
- * non-{@code SNAPSHOT} version strictly below the current version, then
- * downloads (and caches) that jar.
+ * plain numeric release strictly below the current version, then downloads (and
+ * caches) that jar. Snapshots and pre-release qualifiers are not candidates.
  *
  * <p>Credentials come from {@link RegistryCredentials} and are sent only to the
  * repository's own origin: GitHub Packages answers the jar request with a
@@ -142,8 +142,9 @@ public final class PublishedRelease {
     }
 
     /**
-     * Selects the highest non-{@code SNAPSHOT} version strictly below the
-     * current version.
+     * Selects the highest plain numeric release below the current version. A
+     * snapshot or any pre-release qualifier (for example {@code -RC1} or
+     * {@code -beta}) is not the last shipped release.
      *
      * @param versions       the candidate versions
      * @param currentVersion the version being built
@@ -151,7 +152,7 @@ public final class PublishedRelease {
      */
     static Optional<String> selectPreviousRelease(List<String> versions, String currentVersion) {
         return versions.stream()
-                .filter(version -> !MavenVersion.isSnapshot(version))
+                .filter(MavenVersion::isRelease)
                 .filter(version -> MavenVersion.compare(version, currentVersion) < 0)
                 .max(MavenVersion::compare);
     }
@@ -233,7 +234,14 @@ public final class PublishedRelease {
 
     private static boolean isUsable(Path jar) {
         try {
-            return Files.isRegularFile(jar) && Files.size(jar) > 0;
+            if (!Files.isRegularFile(jar) || Files.size(jar) == 0) {
+                return false;
+            }
+            // A non-empty file is not necessarily a jar: a truncated or corrupt
+            // cache entry must be re-downloaded, not handed to the upgrade test.
+            try (java.util.jar.JarFile file = new java.util.jar.JarFile(jar.toFile())) {
+                return file.entries().hasMoreElements();
+            }
         } catch (IOException e) {
             return false;
         }

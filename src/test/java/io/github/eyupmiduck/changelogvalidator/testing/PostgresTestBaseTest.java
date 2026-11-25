@@ -24,6 +24,38 @@ class PostgresTestBaseTest extends PostgresTestBase {
     }
 
     /**
+     * The database-name suffix is name-derived, stable and wide enough that two
+     * test classes do not share a database.
+     */
+    @Test
+    void databaseNameSuffixIsWideAndStable() {
+        String suffix = databaseNameSuffix(PostgresTestBaseTest.class);
+        String other = databaseNameSuffix(UpgradeTestBaseTest.class);
+
+        assertEquals(32, suffix.length(), "the suffix should carry 128 bits of hash");
+        assertNotEquals(suffix, other);
+        assertEquals(suffix, databaseNameSuffix(PostgresTestBaseTest.class));
+    }
+
+    /**
+     * A scratch database left behind by an interrupted run is replaced, so the
+     * next run does not fail with "database already exists".
+     */
+    @Test
+    void createScratchDatabaseReplacesAStaleDatabase() throws Exception {
+        String scratch = "test_scratch_" + databaseNameSuffix(getClass());
+        try {
+            createDatabase(scratch);
+            createScratchDatabase(scratch);
+            try (Connection connection = openAdminConnection(scratch)) {
+                assertTrue(connection.isValid(5), "the recreated scratch database should be usable");
+            }
+        } finally {
+            dropDatabase(scratch);
+        }
+    }
+
+    /**
      * The private database is cloned from the migrated template and is usable.
      */
     @Test

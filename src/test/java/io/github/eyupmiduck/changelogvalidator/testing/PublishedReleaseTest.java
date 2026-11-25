@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -20,6 +21,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,7 +33,21 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class PublishedReleaseTest {
 
-    private static final byte[] JAR = "dml_utils-1.2.0.jar".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] JAR = minimalJar();
+
+    private static byte[] minimalJar() {
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (JarOutputStream jar = new JarOutputStream(bytes)) {
+                jar.putNextEntry(new JarEntry("db/changelog/db.changelog-master.xml"));
+                jar.write("<databaseChangeLog/>".getBytes(StandardCharsets.UTF_8));
+                jar.closeEntry();
+            }
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException("could not build the test jar", e);
+        }
+    }
     private final List<String> repositoryPaths = new CopyOnWriteArrayList<>();
     private final List<String> blobPaths = new CopyOnWriteArrayList<>();
     private final Map<String, String> repositoryAuthorization = new ConcurrentHashMap<>();
@@ -175,6 +192,31 @@ class PublishedReleaseTest {
     }
 
     /**
+     * A non-empty but corrupt cached file is not treated as a usable jar; it is
+     * downloaded again and replaced.
+     */
+    @Test
+    void reDownloadsACorruptCachedJar() throws IOException {
+        Path cached = cacheDirectory.resolve("dml_utils-1.2.0.jar");
+        Files.writeString(cached, "not a jar");
+        repositoryHandler = exchange -> {
+            if (isMetadata(exchange)) {
+                respond(exchange, 200, metadata("1.2.0"));
+            } else {
+                respond(exchange, 200, JAR);
+            }
+        };
+
+        Optional<PublishedRelease.Resolved> resolved = PublishedRelease.resolve(
+                coordinates("1.2.1-SNAPSHOT"), cacheDirectory, RegistryCredentials.none());
+
+        assertTrue(resolved.isPresent());
+        assertTrue(Files.size(cached) > 0);
+        assertEquals(1, repositoryPaths.stream().filter(path -> path.endsWith(".jar")).count(),
+                "the corrupt cache entry should force a download");
+    }
+
+    /**
      * The jar redirect to blob storage is followed, and the Authorization
      * header is sent to the repository origin but not to the blob origin.
      */
@@ -246,7 +288,12 @@ class PublishedReleaseTest {
         assertEquals(Optional.of("1.5.1"),
                 PublishedRelease.selectPreviousRelease(
                         List.of("1.0.0", "1.5.1", "2.0.0"), "1.5.2"));
+        assertEquals(Optional.of("1.5.1"),
+                PublishedRelease.selectPreviousRelease(
+                        List.of("1.0.0", "1.5.1", "1.6.0-RC1", "1.6.0-SNAPSHOT"), "1.6.0"));
         assertTrue(PublishedRelease.selectPreviousRelease(List.of(), "1.0.0").isEmpty());
+        assertTrue(PublishedRelease.selectPreviousRelease(List.of("1.0.0-RC1"), "1.0.0").isEmpty(),
+                "a pre-release is not the previous release");
     }
 
     private HttpServer start(List<String> paths, Map<String, String> authorization,
