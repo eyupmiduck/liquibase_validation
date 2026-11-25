@@ -24,6 +24,7 @@ final class MavenVersion {
     private static final Pattern SEPARATOR = Pattern.compile("[.\\-_]");
     private static final Pattern SNAPSHOT = Pattern.compile(".*(?:^|[-._])SNAPSHOT(?:$|[-._]).*",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern QUALIFIER = Pattern.compile("([a-z]+)(\\d*)");
 
     private MavenVersion() {
     }
@@ -36,6 +37,19 @@ final class MavenVersion {
      */
     static boolean isSnapshot(String version) {
         return version != null && SNAPSHOT.matcher(version).matches();
+    }
+
+    /**
+     * Returns whether a version is a plain numeric release ({@code MAJOR.MINOR}
+     * or {@code MAJOR.MINOR.PATCH}, and so on) with no pre-release or snapshot
+     * qualifier. Used when selecting a previous release: an RC, beta or snapshot
+     * is not the last shipped release.
+     *
+     * @param version the version string
+     * @return {@code true} for a plain numeric release
+     */
+    static boolean isRelease(String version) {
+        return version != null && version.matches("\\d+(\\.\\d+)*");
     }
 
     /**
@@ -77,7 +91,30 @@ final class MavenVersion {
         if (rightNumeric) {
             return -1;
         }
-        return left.compareTo(right);
+        return compareQualifier(left, right);
+    }
+
+    /**
+     * Compares two qualifier tokens, comparing a trailing numeric part
+     * numerically so {@code RC2 < RC10}. Tokens that do not have a recognized
+     * {@code letters + digits} shape fall back to lexical order.
+     */
+    private static int compareQualifier(String left, String right) {
+        java.util.regex.Matcher leftMatcher = QUALIFIER.matcher(left);
+        java.util.regex.Matcher rightMatcher = QUALIFIER.matcher(right);
+        if (!leftMatcher.matches() || !rightMatcher.matches()) {
+            return left.compareTo(right);
+        }
+        int prefix = leftMatcher.group(1).compareTo(rightMatcher.group(1));
+        if (prefix != 0) {
+            return prefix;
+        }
+        String leftNumber = leftMatcher.group(2);
+        String rightNumber = rightMatcher.group(2);
+        if (leftNumber.isEmpty() || rightNumber.isEmpty()) {
+            return leftNumber.isEmpty() ? -1 : 1;
+        }
+        return compareNumeric(leftNumber, rightNumber);
     }
 
     /**

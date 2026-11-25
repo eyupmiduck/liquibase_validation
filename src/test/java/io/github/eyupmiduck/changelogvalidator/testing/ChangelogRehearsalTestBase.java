@@ -34,13 +34,31 @@ public abstract class ChangelogRehearsalTestBase extends PostgresTestBase {
     private DSLContext rehearsalDsl;
 
     /**
+     * Runs cleanup for a setup failure and keeps {@code primary} as the thrown
+     * error, attaching a cleanup failure as suppressed. Package-private so the
+     * non-masking contract can be tested directly.
+     *
+     * @param primary the original setup failure
+     * @param cleanup the cleanup operation
+     * @return the original failure
+     */
+    static Exception cleanupFailure(Exception primary, Cleanup cleanup) {
+        try {
+            cleanup.run();
+        } catch (Exception e) {
+            primary.addSuppressed(e);
+        }
+        return primary;
+    }
+
+    /**
      * Creates and prepares the scratch database, applies the profile's baseline
      * changelogs, then lets the contract add any non-changelog baseline.
      */
     @BeforeAll
     void createRehearsalDatabase() throws Exception {
-        rehearsalDatabase = "rehearsal_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
-        createDatabase(rehearsalDatabase);
+        rehearsalDatabase = "rehearsal_" + databaseNameSuffix(getClass());
+        createScratchDatabase(rehearsalDatabase);
         try {
             prepareScratchDatabase(rehearsalDatabase, trackingSettings().liquibaseSchema());
             ownerConnection = openOwnerConnection(rehearsalDatabase);
@@ -49,8 +67,9 @@ public abstract class ChangelogRehearsalTestBase extends PostgresTestBase {
             testConnection = openTestConnection(rehearsalDatabase);
             rehearsalDsl = DSL.using(testConnection, SQLDialect.POSTGRES);
         } catch (Exception e) {
-            closeAndDropRehearsalDatabase();
-            throw e;
+            // Keep the setup failure as the primary error; a cleanup failure is
+            // context, not a replacement for the real cause.
+            throw cleanupFailure(e, this::closeAndDropRehearsalDatabase);
         }
     }
 
@@ -214,5 +233,19 @@ public abstract class ChangelogRehearsalTestBase extends PostgresTestBase {
         String schema = trackingSettings().liquibaseSchema();
         return new LiquibaseUpgrade.TrackingSettings(
                 schema, "baseline_" + index + "_changelog", "baseline_" + index + "_lock");
+    }
+
+    /**
+     * A cleanup operation that may fail.
+     */
+    @FunctionalInterface
+    interface Cleanup {
+
+        /**
+         * Runs the cleanup.
+         *
+         * @throws Exception if cleanup fails
+         */
+        void run() throws Exception;
     }
 }

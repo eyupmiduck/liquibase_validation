@@ -49,6 +49,20 @@ class MavenVersionTest {
         assertLess("1.5.2-SNAPSHOT", "1.5.2");
         assertLess("1.5.2-RC1", "1.5.2");
         assertLess("1.5.2-rc1", "1.5.2");
+        assertLess("1.5.2-RC2", "1.5.2-RC10");
+    }
+
+    /**
+     * Release detection accepts only plain numeric versions; snapshots and
+     * pre-release qualifiers are not releases.
+     */
+    @Test
+    void detectsReleases() {
+        assertTrue(MavenVersion.isRelease("1.5.2"));
+        assertTrue(MavenVersion.isRelease("1.5"));
+        assertFalse(MavenVersion.isRelease("1.5.2-SNAPSHOT"));
+        assertFalse(MavenVersion.isRelease("1.5.2-RC1"));
+        assertFalse(MavenVersion.isRelease(null));
     }
 
     /**

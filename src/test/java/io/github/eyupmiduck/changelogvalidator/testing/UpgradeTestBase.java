@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -56,6 +57,42 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     private Connection upgradeConnection;
     private DSLContext upgradeDsl;
     private LiquibaseUpgrade.Report report;
+
+    /**
+     * Closes {@code connection} and drops every non-null database, collecting
+     * failures instead of stopping at the first one. Package-private so the
+     * cleanup contract can be tested without a real container.
+     *
+     * @param connection the connection to close, or {@code null}
+     * @param databases  the database names to drop, possibly with nulls
+     * @param dropper    the drop operation
+     * @return the first failure, with later failures suppressed, or {@code null}
+     */
+    static Exception closeAndDropAll(Connection connection, List<String> databases, DatabaseDropper dropper) {
+        Exception failure = null;
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Exception e) {
+                failure = e;
+            }
+        }
+        for (String database : databases) {
+            if (database == null) {
+                continue;
+            }
+            try {
+                dropper.drop(database);
+            } catch (Exception e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        return failure;
+    }
 
     /**
      * The coordinates of the project's own artifact; the current version must be
@@ -120,8 +157,8 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
                 () -> "no published release below " + releaseCoordinates().currentVersion()
                         + "; nothing to upgrade from");
 
-        upgradeDatabase = "upgrade_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
-        createDatabase(upgradeDatabase);
+        upgradeDatabase = "upgrade_" + databaseNameSuffix(getClass());
+        createScratchDatabase(upgradeDatabase);
         prepareDatabase(upgradeDatabase);
         try (Connection owner = openOwnerConnection(upgradeDatabase)) {
             report = LiquibaseUpgrade.apply(owner, trackingSettings(), previousJar.get(),
@@ -145,8 +182,8 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
             throw new IllegalStateException(
                     "managedSchemas() must not be empty when catalog comparison is enabled");
         }
-        freshDatabase = "fresh_" + Integer.toUnsignedString(getClass().getName().hashCode(), 16);
-        createDatabase(freshDatabase);
+        freshDatabase = "fresh_" + databaseNameSuffix(getClass());
+        createScratchDatabase(freshDatabase);
         prepareDatabase(freshDatabase);
         try (Connection owner = openOwnerConnection(freshDatabase)) {
             LiquibaseUpgrade.applyCurrent(owner, trackingSettings(), configuration().masterResource());
@@ -167,18 +204,16 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     }
 
     /**
-     * Drops the scratch databases and closes the upgraded connection.
+     * Closes the upgraded connection and drops both scratch databases, even when
+     * an earlier step fails. The first failure is rethrown; later cleanup
+     * failures are attached as suppressed so none is silently lost.
      */
     @AfterAll
     void dropUpgradeDatabase() throws Exception {
-        if (upgradeConnection != null) {
-            upgradeConnection.close();
-        }
-        if (upgradeDatabase != null) {
-            dropDatabase(upgradeDatabase);
-        }
-        if (freshDatabase != null) {
-            dropDatabase(freshDatabase);
+        Exception failure = closeAndDropAll(upgradeConnection,
+                java.util.Arrays.asList(upgradeDatabase, freshDatabase), this::dropDatabase);
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -211,5 +246,20 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      */
     protected String upgradeDatabaseName() {
         return upgradeDatabase;
+    }
+
+    /**
+     * A database drop operation that may fail.
+     */
+    @FunctionalInterface
+    interface DatabaseDropper {
+
+        /**
+         * Drops a database.
+         *
+         * @param database the database name
+         * @throws Exception if the drop fails
+         */
+        void drop(String database) throws Exception;
     }
 }

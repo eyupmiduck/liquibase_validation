@@ -19,8 +19,10 @@ import org.junit.jupiter.api.function.Executable;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.Collection;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
@@ -279,6 +281,38 @@ public abstract class PostgresTestBase {
     }
 
     /**
+     * Stops a container whose startup or template preparation failed, attaching a
+     * stop failure as suppressed. Package-private so the reset contract can be
+     * tested without a real container.
+     *
+     * @param failed  the container to stop, or {@code null}
+     * @param failure the startup failure
+     */
+    static void resetContainerAfterFailure(Runnable stop, Exception failure) {
+        if (stop != null) {
+            try {
+                stop.run();
+            } catch (Exception cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+        }
+    }
+
+    /**
+     * Returns a stable, 128-bit name-derived suffix for a test or scratch
+     * database name. The suffix is 32 lower-case hex characters, so the full
+     * identifier stays under PostgreSQL's 63-byte limit for the prefixes used by
+     * the test support.
+     *
+     * @param type the test class
+     * @return the database-name suffix
+     */
+    protected static String databaseNameSuffix(Class<?> type) {
+        return UUID.nameUUIDFromBytes(type.getName().getBytes(StandardCharsets.UTF_8))
+                .toString().replace("-", "");
+    }
+
+    /**
      * Evaluates a SQL expression and returns its scalar value.
      *
      * @param expression the SQL expression
@@ -495,6 +529,12 @@ public abstract class PostgresTestBase {
                     postgres.start();
                     prepareTemplateDatabase(configuration);
                 } catch (Exception e) {
+                    // Leave no half-initialized static state: a started container
+                    // without a prepared template would make every later class
+                    // skip preparation and fail with a misleading error.
+                    var failed = postgres;
+                    postgres = null;
+                    resetContainerAfterFailure(failed == null ? null : failed::stop, e);
                     throw new IllegalStateException("Failed to start the PostgreSQL test container", e);
                 }
             }
@@ -555,11 +595,11 @@ public abstract class PostgresTestBase {
 
     private void createTestDatabase(Configuration configuration) throws SQLException {
         String template = templateDatabaseName(configuration);
-        // Bounded and collision-resistant: a hash suffix of the fully qualified
-        // name keeps the identifier under PostgreSQL's 63-byte limit and wide
-        // enough that two test classes do not collide. Quoted so an unusual
-        // class name cannot produce an invalid identifier.
-        String suffix = Integer.toUnsignedString(getClass().getName().hashCode(), 16);
+        // Bounded and collision-resistant: a 128-bit name-derived suffix keeps
+        // the identifier under PostgreSQL's 63-byte limit and makes a collision
+        // across a large suite negligible. Quoted so an unusual class name
+        // cannot produce an invalid identifier.
+        String suffix = databaseNameSuffix(getClass());
         testDatabaseName = "test_" + suffix;
         try (Connection admin = adminConnection(configuration.databaseName());
              Statement statement = admin.createStatement()) {
@@ -655,6 +695,21 @@ public abstract class PostgresTestBase {
     protected Connection openOwnerConnection(String database) throws SQLException {
         Configuration configuration = configuration();
         return connection(database, configuration.ownerUser(), configuration.ownerPassword());
+    }
+
+    /**
+     * Creates a scratch database, replacing one left behind by an interrupted
+     * earlier run. Unlike {@link #createDatabase(String)}, this is safe to call
+     * after a crash: the stale database is dropped with {@code IF EXISTS ...
+     * WITH (FORCE)} before the new one is created.
+     *
+     * @param database the database to create
+     * @throws SQLException if the stale database cannot be dropped or the new one
+     *                      cannot be created
+     */
+    protected void createScratchDatabase(String database) throws SQLException {
+        dropDatabase(database);
+        createDatabase(database);
     }
 
     /**
