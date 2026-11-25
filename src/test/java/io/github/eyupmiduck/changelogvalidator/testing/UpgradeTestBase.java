@@ -59,6 +59,42 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
     private LiquibaseUpgrade.Report report;
 
     /**
+     * Closes {@code connection} and drops every non-null database, collecting
+     * failures instead of stopping at the first one. Package-private so the
+     * cleanup contract can be tested without a real container.
+     *
+     * @param connection the connection to close, or {@code null}
+     * @param databases  the database names to drop, possibly with nulls
+     * @param dropper    the drop operation
+     * @return the first failure, with later failures suppressed, or {@code null}
+     */
+    static Exception closeAndDropAll(Connection connection, List<String> databases, DatabaseDropper dropper) {
+        Exception failure = null;
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Exception e) {
+                failure = e;
+            }
+        }
+        for (String database : databases) {
+            if (database == null) {
+                continue;
+            }
+            try {
+                dropper.drop(database);
+            } catch (Exception e) {
+                if (failure == null) {
+                    failure = e;
+                } else {
+                    failure.addSuppressed(e);
+                }
+            }
+        }
+        return failure;
+    }
+
+    /**
      * The coordinates of the project's own artifact; the current version must be
      * the version this build produces.
      *
@@ -181,57 +217,6 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
         }
     }
 
-    /**
-     * Closes {@code connection} and drops every non-null database, collecting
-     * failures instead of stopping at the first one. Package-private so the
-     * cleanup contract can be tested without a real container.
-     *
-     * @param connection the connection to close, or {@code null}
-     * @param databases  the database names to drop, possibly with nulls
-     * @param dropper    the drop operation
-     * @return the first failure, with later failures suppressed, or {@code null}
-     */
-    static Exception closeAndDropAll(Connection connection, List<String> databases, DatabaseDropper dropper) {
-        Exception failure = null;
-        if (connection != null) {
-            try {
-                connection.close();
-            } catch (Exception e) {
-                failure = e;
-            }
-        }
-        for (String database : databases) {
-            if (database == null) {
-                continue;
-            }
-            try {
-                dropper.drop(database);
-            } catch (Exception e) {
-                if (failure == null) {
-                    failure = e;
-                } else {
-                    failure.addSuppressed(e);
-                }
-            }
-        }
-        return failure;
-    }
-
-    /**
-     * A database drop operation that may fail.
-     */
-    @FunctionalInterface
-    interface DatabaseDropper {
-
-        /**
-         * Drops a database.
-         *
-         * @param database the database name
-         * @throws Exception if the drop fails
-         */
-        void drop(String database) throws Exception;
-    }
-
     private void prepareDatabase(String database) throws SQLException {
         prepareScratchDatabase(database, trackingSettings().liquibaseSchema());
     }
@@ -261,5 +246,20 @@ public abstract class UpgradeTestBase extends PostgresTestBase {
      */
     protected String upgradeDatabaseName() {
         return upgradeDatabase;
+    }
+
+    /**
+     * A database drop operation that may fail.
+     */
+    @FunctionalInterface
+    interface DatabaseDropper {
+
+        /**
+         * Drops a database.
+         *
+         * @param database the database name
+         * @throws Exception if the drop fails
+         */
+        void drop(String database) throws Exception;
     }
 }

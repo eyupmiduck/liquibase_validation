@@ -34,6 +34,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class PublishedReleaseTest {
 
     private static final byte[] JAR = minimalJar();
+    private final List<String> repositoryPaths = new CopyOnWriteArrayList<>();
+    private final List<String> blobPaths = new CopyOnWriteArrayList<>();
+    private final Map<String, String> repositoryAuthorization = new ConcurrentHashMap<>();
+    private final Map<String, String> blobAuthorization = new ConcurrentHashMap<>();
+    private HttpServer repository;
+    private HttpServer blob;
+    private HttpHandler repositoryHandler;
+    private HttpHandler blobHandler;
+    @TempDir
+    private Path cacheDirectory;
 
     private static byte[] minimalJar() {
         try {
@@ -48,17 +58,6 @@ class PublishedReleaseTest {
             throw new IllegalStateException("could not build the test jar", e);
         }
     }
-    private final List<String> repositoryPaths = new CopyOnWriteArrayList<>();
-    private final List<String> blobPaths = new CopyOnWriteArrayList<>();
-    private final Map<String, String> repositoryAuthorization = new ConcurrentHashMap<>();
-    private final Map<String, String> blobAuthorization = new ConcurrentHashMap<>();
-    private HttpServer repository;
-    private HttpServer blob;
-    private HttpHandler repositoryHandler;
-    private HttpHandler blobHandler;
-
-    @TempDir
-    private Path cacheDirectory;
 
     private static boolean isMetadata(HttpExchange exchange) {
         return exchange.getRequestURI().getPath().endsWith("maven-metadata.xml");
